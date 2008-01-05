@@ -2,6 +2,7 @@ from django.conf import settings
 import os
 import sys
         
+
 def runshell():
     if os.name=='nt':
         db = settings.DATABASE_OPTIONS.get('db', settings.DATABASE_NAME)

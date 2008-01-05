@@ -20,6 +20,7 @@ from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, util
 from django.core.exceptions import ImproperlyConfigured
 from operations import DatabaseOperations
 
+
 try:
     import pyodbc as Database
 except ImportError, e:
