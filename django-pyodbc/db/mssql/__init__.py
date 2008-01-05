@@ -7,7 +7,8 @@ import django.models.fields
 import django-pyodbc.models.fields
 from django.models.fields import TimeField, Field, DateTimeField
 from django-pyodbc.models.fields import TimeField as NewTimeField, Field as NewField, DateTimeField as NewDateTimeField
-
+from django.test.utils import _set_autocommit
+from django.pyodbc.test.utils import _set_autocommitNew
 
 #SessionStore.load - millisec
 SessionStore.load = NewSessionStore.load
@@ -38,3 +39,7 @@ DateTimeField.get_db_prep_lookup = NewDateTimeField.get_db_prep_lookup
 
 #DateTimeField.get_db_prep_save - millisec
 DateTimeField.get_db_prep_save = NewDateTimeField.get_db_prep_save 
+
+#test autocommit
+_set_autocommit=_set_autocommitNew
+
