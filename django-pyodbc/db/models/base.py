@@ -268,7 +268,7 @@ class Model(object):
                     cursor.execute("INSERT INTO %s (%s) VALUES (%s)" % \
                         (qn(self._meta.db_table), ','.join(field_names), ','.join(placeholders)), db_values)
                 finally:
-                    if pk_set and settings.DATABASE_ENGINE == "mssql":
+                    if pk_set:
                         # Ensure that the table is restored to the normal state
                         try:
                             for f in self._meta.fields:
