@@ -1,0 +1,1020 @@
+Index: test/utils.py
+===================================================================
+--- test/utils.py	(revision 7250)
++++ test/utils.py	(working copy)
+@@ -74,7 +74,10 @@
+ def _set_autocommit(connection):
+     "Make sure a connection is in autocommit mode."
+     if hasattr(connection.connection, "autocommit"):
+-        connection.connection.autocommit(True)
++        if callable(connection.connection.autocommit):
++            connection.connection.autocommit(True)
++        else:
++            connection.connection.autocommit = True
+     elif hasattr(connection.connection, "set_isolation_level"):
+         connection.connection.set_isolation_level(0)
+ 
+Index: db/models/base.py
+===================================================================
+--- db/models/base.py	(revision 7250)
++++ db/models/base.py	(working copy)
+@@ -1,5 +1,6 @@
+ import django.db.models.manipulators
+ import django.db.models.manager
++import django.db
+ from django.core import validators
+ from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned
+ from django.db.models.fields import AutoField, ImageField, FieldDoesNotExist
+@@ -259,9 +260,25 @@
+                 db_values.append(cursor.fetchone()[0])
+             record_exists = False
+             if db_values:
+-                cursor.execute("INSERT INTO %s (%s) VALUES (%s)" % \
+-                    (qn(self._meta.db_table), ','.join(field_names),
+-                    ','.join(placeholders)), db_values)
++                try:
++                    if pk_set and settings.DATABASE_ENGINE == "mssql":
++                        # You can't insert an auto value into an identity column in MSSQL unless you do it explicitly
++                        for f in self._meta.fields:
++                            if isinstance(f, AutoField):
++                                cursor.execute("SET IDENTITY_INSERT %s ON" % qn(self._meta.db_table))
++                                break
++                    cursor.execute("INSERT INTO %s (%s) VALUES (%s)" % \
++                        (qn(self._meta.db_table), ','.join(field_names), ','.join(placeholders)), db_values)
++                finally:
++                    if pk_set and settings.DATABASE_ENGINE == "mssql":
++                        # Ensure that the table is restored to the normal state
++                        try:
++                            for f in self._meta.fields:
++                                if isinstance(f, AutoField):
++                                    cursor.execute("SET IDENTITY_INSERT %s OFF" % qn(self._meta.db_table))
++                                    break
++                        except django.db.DatabaseError:
++                            pass
+             else:
+                 # Create a new record with defaults for everything.
+                 cursor.execute("INSERT INTO %s (%s) VALUES (%s)" %
+Index: db/models/fields/__init__.py
+===================================================================
+--- db/models/fields/__init__.py	(revision 7250)
++++ db/models/fields/__init__.py	(working copy)
+@@ -32,7 +32,12 @@
+ BLANK_CHOICE_NONE = [("", "None")]
+ 
+ # prepares a value for use in a LIKE query
+-prep_for_like_query = lambda x: smart_unicode(x).replace("\\", "\\\\").replace("%", "\%").replace("_", "\_")
++# TODO: refactor database specific code
++if settings.DATABASE_ENGINE == 'mssql':
++    # http://msdn2.microsoft.com/en-us/library/ms179859.aspx
++    prep_for_like_query = lambda x: smart_unicode(x).replace('[', '[[]').replace("%", "[%]").replace("_", "[_]")
++else:
++    prep_for_like_query = lambda x: smart_unicode(x).replace("\\", "\\\\").replace("%", "\%").replace("_", "\_")
+ 
+ # returns the <ul> class for a given radio_admin value
+ get_ul_class = lambda x: 'radiolist%s' % ((x == HORIZONTAL) and ' inline' or '')
+@@ -83,7 +88,8 @@
+         core=False, rel=None, default=NOT_PROVIDED, editable=True, serialize=True,
+         prepopulate_from=None, unique_for_date=None, unique_for_month=None,
+         unique_for_year=None, validator_list=None, choices=None, radio_admin=None,
+-        help_text='', db_column=None, db_tablespace=None):
++        help_text='', db_column=None, db_tablespace=None,
++        db_collation=None):
+         self.name = name
+         self.verbose_name = verbose_name
+         self.primary_key = primary_key
+@@ -105,7 +111,8 @@
+         self.help_text = help_text
+         self.db_column = db_column
+         self.db_tablespace = db_tablespace or settings.DEFAULT_INDEX_TABLESPACE
+-
++        if settings.DATABASE_ENGINE == 'mssql': 
++            self.db_collation = (db_collation and "COLLATE %s" % db_collation) or '' 
+         # Set db_index to True if the field has a relationship and doesn't explicitly set db_index.
+         self.db_index = db_index
+ 
+@@ -232,7 +239,7 @@
+                 first = '%s-01-01'
+             else:
+                 first = '%s-01-01 00:00:00'
+-            return [first % value, '%s-12-31 23:59:59.999999' % value]
++            return [first % value, '%s-12-31 23:59:59.99' % value]
+         raise TypeError("Field has invalid lookup: %s" % lookup_type)
+ 
+     def has_default(self):
+@@ -603,12 +610,15 @@
+         if value is not None:
+             # MySQL will throw a warning if microseconds are given, because it
+             # doesn't support microseconds.
+-            if settings.DATABASE_ENGINE == 'mysql' and hasattr(value, 'microsecond'):
++            if settings.DATABASE_ENGINE in ('mysql', 'ado_mssql','mssql') and hasattr(value, 'microsecond'):
+                 value = value.replace(microsecond=0)
+             value = smart_unicode(value)
+         return Field.get_db_prep_save(self, value)
+ 
+     def get_db_prep_lookup(self, lookup_type, value):
++        # MSSQL doesn't like microseconds.
++        if settings.DATABASE_ENGINE in ('mysql', 'ado_mssql','mssql') and hasattr(value, 'microsecond'):
++            value = value.replace(microsecond=0)        
+         if lookup_type == 'range':
+             value = [smart_unicode(v) for v in value]
+         else:
+@@ -1035,7 +1045,7 @@
+         return "TimeField"
+ 
+     def get_db_prep_lookup(self, lookup_type, value):
+-        if settings.DATABASE_ENGINE == 'oracle':
++        if settings.DATABASE_ENGINE in ('oracle', 'mssql'):
+             # Oracle requires a date in order to parse.
+             def prep(value):
+                 if isinstance(value, datetime.time):
+@@ -1061,11 +1071,13 @@
+         # Casts dates into string format for entry into database.
+         if value is not None:
+             # MySQL will throw a warning if microseconds are given, because it
+-            # doesn't support microseconds.
+-            if settings.DATABASE_ENGINE == 'mysql' and hasattr(value, 'microsecond'):
++            # doesn't support microseconds. Ditto MSSQL
++            if settings.DATABASE_ENGINE in ('mysql', 'ado_mssql','mssql') \
++                            and hasattr(value, 'microsecond'):
+                 value = value.replace(microsecond=0)
+-            if settings.DATABASE_ENGINE == 'oracle':
++            if settings.DATABASE_ENGINE in ('oracle', 'mssql'):
+                 # cx_Oracle expects a datetime.datetime to persist into TIMESTAMP field.
++                # SQL Server does not have TIME type.
+                 if isinstance(value, datetime.time):
+                     value = datetime.datetime(1900, 1, 1, value.hour, value.minute,
+                                               value.second, value.microsecond)
+Index: db/backends/mssql/base.py
+===================================================================
+--- db/backends/mssql/base.py	(revision 0)
++++ db/backends/mssql/base.py	(revision 0)
+@@ -0,0 +1,179 @@
++"""
++MSSQL database backend for Django.
++
++Requires pyodbc 2.0.38 or higher (http://pyodbc.sourceforge.net/)
++or pymssql 0.8 (http://pymssql.sourceforge.net)
++
++pyodbc/pymssql params:
++DATABASE_NAME               - Database name. Required. 
++DATABASE_HOST               - SQL Server instance in "server\instance" format.
++DATABASE_PORT               - SQL Server instance port.
++DATABASE_USER               - Database user name. If not given then the
++                              Integrated Security will be used.
++DATABASE_PASSWORD           - Database user password.
++pyodbc only:
++DATABASE_ODBC_DSN           - A named DSN can be used instead of DATABASE_HOST.
++DATABASE_ODBC_DRIVER        - ODBC Driver. Defalut is "{Sql Server}".
++DATABASE_ODBC_EXTRA_PARAMS  - Additional parameters for the ODBC connection.
++                              The format is "param=value;param=value".
++"""
++from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, util
++from django.core.exceptions import ImproperlyConfigured
++from operations import DatabaseOperations
++
++need_param_rewrite=False
++try:
++    import pymssql as Database
++except ImportError, ex:
++    try:
++        need_param_rewrite=True
++        import pyodbc as Database
++        version = tuple(map(int, Database.version.split('.')))
++        if version < (2,0,38) :
++            raise ImportError("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
++    except ImportError, e:
++        raise ImproperlyConfigured("Error loading pymssq/pyodbc modules: %s" % ex)
++
++try:
++    # Only exists in Python 2.4+
++    from threading import local
++except ImportError:
++    # Import copy of _thread_local.py from Python 2.4
++    from django.utils._threading_local import local
++
++DatabaseError = Database.DatabaseError
++IntegrityError = Database.IntegrityError
++
++class DatabaseFeatures(BaseDatabaseFeatures):
++    allows_group_by_ordinal = False
++    allows_unique_and_pk = True
++    autoindexes_primary_keys = True
++    needs_datetime_string_cast = True
++    needs_upper_for_iops = False
++    supports_constraints = True
++    supports_tablespaces = True
++    uses_case_insensitive_names = True
++    uses_custom_queryset = True
++
++class DatabaseWrapper(BaseDatabaseWrapper):
++    features = DatabaseFeatures() 
++    ops = DatabaseOperations()
++
++    # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
++    #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
++    # T-SQL LIKE:       http://msdn2.microsoft.com/en-us/library/ms179859.aspx
++    # Full-Text search: http://msdn2.microsoft.com/en-us/library/ms142571.aspx
++    #   CONTAINS:       http://msdn2.microsoft.com/en-us/library/ms187787.aspx
++    #   FREETEXT:       http://msdn2.microsoft.com/en-us/library/ms176078.aspx
++    
++    operators = {
++        # Since '=' is used not only for string comparision there is no way
++        # to make it case (in)sensitive. It will simply fallback to the
++        # database collation.
++        'exact': '= %s',
++        'iexact': 'LIKE %s COLLATE Latin1_General_CI_AS',
++        'contains': 'LIKE %s COLLATE Latin1_General_CS_AS',
++        'icontains': 'LIKE %s COLLATE Latin1_General_CI_AS',
++        'gt': '> %s',
++        'gte': '>= %s',
++        'lt': '< %s',
++        'lte': '<= %s',
++        'startswith': 'LIKE %s COLLATE Latin1_General_CS_AS',
++        'endswith': 'LIKE %s COLLATE Latin1_General_CS_AS',
++        'istartswith': 'LIKE %s COLLATE Latin1_General_CI_AS',
++        'iendswith': 'LIKE %s COLLATE Latin1_General_CI_AS',
++
++        # TODO: remove, keep native T-SQL LIKE wildcards support
++        # or use a "compatibility layer" and replace '*' with '%'
++        # and '.' with '_'
++        'regex': 'LIKE %s COLLATE Latin1_General_CS_AS',
++        'iregex': 'LIKE %s COLLATE Latin1_General_CI_AS',
++
++        # TODO: freetext, full-text contains...
++    }
++    
++    def __init__(self, autocommit=False, **kwargs):
++        super(DatabaseWrapper, self).__init__(autocommit=autocommit, **kwargs)
++        self.connection = None
++        self.queries = []
++
++    def cursor(self):
++        from django.conf import settings
++        if self.connection is None:
++            if settings.DATABASE_NAME == '':
++                raise ImproperlyConfigured("You need to specify DATABASE_NAME in your Django settings file.")
++
++            if not settings.DATABASE_HOST and not hasattr(settings, "DATABASE_ODBC_DSN"):
++                raise ImproperlyConfigured("You need to specify DATABASE_HOST or DATABASE_ODBC_DSN  in your Django settings file.")
++
++            if settings.DATABASE_PORT:
++                host_str = '%s:%s' % ( settings.DATABASE_HOST ,settings.DATABASE_PORT)
++            else:
++                host_str = settings.DATABASE_HOST
++            
++            odbc_string=""
++
++            if hasattr(settings, "DATABASE_ODBC_DSN"):
++                odbc_string += "DSN=%s;" % settings.DATABASE_ODBC_DSN
++            else:
++                odbc_string += "Server=%s;" % host_str
++            
++            if settings.DATABASE_USER:
++                odbc_string += "Uid=%s;Pwd=%s;" % (settings.DATABASE_USER, settings.DATABASE_PASSWORD)
++            else:
++                odbc_string += "Integrated Security=SSPI;"
++            
++            odbc_string += "Database=%s" % settings.DATABASE_NAME
++            
++            if hasattr(settings, "DATABASE_ODBC_EXTRA_PARAMS"):
++                odbc_string +=  ";" + settings.DATABASE_ODBC_EXTRA_PARAMS
++            self.connection = Database.connect(odbc_string, self.options["autocommit"])
++        
++        self.connection.cursor().execute("SET DATEFORMAT ymd")
++        
++        cursor = CursorWrapper(self.connection.cursor())
++        if settings.DEBUG:
++            return util.CursorDebugWrapper(cursor, self)
++        return cursor
++
++class CursorWrapper(object):
++    """
++    A wrapper around the pyodbc cursor that:
++        2. Replaces '%s' parameter placeholder in sql queries to '?' (pyodbc specific).
++    """
++    def __init__(self, cursor):
++        self.cursor = cursor
++        
++    
++    def format_sql(self, sql):
++        # pyodbc uses '?' instead of '%s' as parameter placeholder.
++        if need_param_rewrite and "%s" in sql:
++            sql = sql.replace('%s', '?')
++        return sql
++                    
++    def execute(self, sql, params=()):
++        sql = self.format_sql(sql)
++        return self.cursor.execute(sql, params)
++
++    def executemany(self, sql, param_list):
++        sql = self.format_sql(sql)
++        return self.cursor.executemany(sql, param_list)
++
++    def fetchone(self):
++        row = self.cursor.fetchone()
++        if row is not None:
++            # Convert row to tuple (pyodbc Rows are not sliceable).
++            return tuple(row)
++        return row
++        
++    def fetchmany(self, chunk):
++        return [tuple(row) for row in self.cursor.fetchmany(chunk)]
++
++    def fetchall(self):
++        return [tuple(row) for row in self.cursor.fetchall()]
++
++    def __getattr__(self, attr):
++        if attr in self.__dict__:
++            return self.__dict__[attr]
++        else:
++            return getattr(self.cursor, attr)
+Index: db/backends/mssql/client.py
+===================================================================
+--- db/backends/mssql/client.py	(revision 0)
++++ db/backends/mssql/client.py	(revision 0)
+@@ -0,0 +1,39 @@
++from django.conf import settings
++import os
++import sys
++        
++def runshell():
++    if os.name=='nt':
++        db = settings.DATABASE_OPTIONS.get('db', settings.DATABASE_NAME)
++        user = settings.DATABASE_OPTIONS.get('user', settings.DATABASE_USER)
++        passwdord = settings.DATABASE_OPTIONS.get('passwd', settings.DATABASE_PASSWORD)
++        server = settings.DATABASE_OPTIONS.get('host', settings.DATABASE_HOST)
++        port = settings.DATABASE_OPTIONS.get('port', settings.DATABASE_PORT)
++        defaults_file = settings.DATABASE_OPTIONS.get('read_default_file')
++
++        args = ['osql']
++        if server:
++            args += ["-S", server]
++        if user:
++            args += ["-U", user]
++            if passwdord:
++                args += ["-P", passwdord]
++        else:
++            args += ["-E"] # Try trusted connection instead
++        if db:
++            args += ["-d", db]
++        if defaults_file:
++            args += ["-i", defaults_file]
++
++        import subprocess
++        try:
++            retcode = subprocess.call(args, shell=True)
++            if retcode:
++                print >>sys.stderr, "error level:", retcode
++                sys.exit(retcode)
++        except KeyboardInterrupt:
++            pass
++        except OSError, e:
++            print >> sys.stderr, "Execution failed:", e
++    else:
++        raise NotImplementedError
+Index: db/backends/mssql/__init__.py
+===================================================================
+--- db/backends/mssql/__init__.py	(revision 0)
++++ db/backends/mssql/__init__.py	(revision 0)
+@@ -0,0 +1 @@
++# Placeholder
+Index: db/backends/mssql/introspection.py
+===================================================================
+--- db/backends/mssql/introspection.py	(revision 0)
++++ db/backends/mssql/introspection.py	(revision 0)
+@@ -0,0 +1,185 @@
++try:
++    import pyodbc as Database
++except ImportError, e:
++    raise ImproperlyConfigured, "Error loading pyodbc module: %s" % e
++
++SQL_AUTOFIELD = -777555
++
++def get_table_list(cursor):
++    """
++    Returns a list of table names in the current database.
++    """
++    # TABLES: http://msdn2.microsoft.com/en-us/library/ms186224.aspx
++    
++    cursor.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
++    return [row[0] for row in cursor.fetchall()]
++    
++    # Or pyodbc specific:
++    #return [row[2] for row in cursor.tables(tableType='TABLE')]
++
++def _is_auto_field(cursor, table_name, column_name):
++    """
++    Checks whether column is Identity
++    """
++    # COLUMNPROPERTY: http://msdn2.microsoft.com/en-us/library/ms174968.aspx
++    
++    from django.db import connection
++    cursor.execute("SELECT COLUMNPROPERTY(OBJECT_ID(%s), %s, 'IsIdentity')",
++                     (connection.ops.quote_name(table_name), column_name))
++    return cursor.fetchall()[0][0]
++
++def get_table_description(cursor, table_name, identity_check=True):
++    """Returns a description of the table, with DB-API cursor.description interface.
++
++    The 'auto_check' parameter has been added to the function argspec.
++    If set to True, the function will check each of the table's fields for the
++    IDENTITY property (the IDENTITY property is the MSSQL equivalent to an AutoField).
++
++    When a field is found with an IDENTITY property, it is given a custom field number
++    of SQL_AUTOFIELD, which maps to the 'AutoField' value in the DATA_TYPES_REVERSE dict.
++    """
++
++    # map pyodbc's cursor.columns to db-api cursor description
++    columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10]] for c in cursor.columns(table=table_name)]
++    items = []
++    for column in columns:
++        if identity_check and _is_auto_field(cursor, table_name, column[0]):
++            column[1] = SQL_AUTOFIELD
++        if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
++            column[1] = Database.SQL_WCHAR
++        items.append(column)
++    return items
++
++def _name_to_index(cursor, table_name):
++    """
++    Returns a dictionary of {field_name: field_index} for the given table.
++    Indexes are 0-based.
++    """
++    return dict([(d[0], i) for i, d in enumerate(get_table_description(cursor, table_name, identity_check=False))])
++
++def get_relations(cursor, table_name):
++    """
++    Returns a dictionary of {field_index: (field_index_other_table, other_table)}
++    representing all relationships to the given table. Indexes are 0-based.    
++    """
++    # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
++    # CONSTRAINT_TABLE_USAGE:  http://msdn2.microsoft.com/en-us/library/ms179883.aspx
++    # REFERENTIAL_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms179987.aspx
++    # TABLE_CONSTRAINTS:       http://msdn2.microsoft.com/en-us/library/ms181757.aspx
++
++    table_index = _name_to_index(cursor, table_name)
++    sql = """
++        SELECT e.COLUMN_NAME AS column_name,
++               c.TABLE_NAME AS referenced_table_name,
++               d.COLUMN_NAME AS referenced_column_name
++          FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS a
++          INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS AS b
++              ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME
++          INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE AS c
++              ON b.UNIQUE_CONSTRAINT_NAME = c.CONSTRAINT_NAME
++          INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
++              ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME
++          INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
++              ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME
++          WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'
++        """
++    cursor.execute(sql, (table_name,))
++    return dict([(table_index[item[0]], (_name_to_index(cursor, item[1])[item[2]], item[1]))
++                 for item in cursor.fetchall()])
++    
++def get_indexes(cursor, table_name):
++    """
++    Returns a dictionary of fieldname -> infodict for the given table,
++    where each infodict is in the format:
++        {'primary_key': boolean representing whether it's the primary key,
++         'unique': boolean representing whether it's a unique index,
++         'db_index': boolean representing whether it's a non-unique index}
++    """
++    # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
++    # TABLE_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms181757.aspx
++    
++    pk_uk_sql = """
++        SELECT b.COLUMN_NAME, a.CONSTRAINT_TYPE
++          FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS a
++          INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS b
++              ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME AND a.TABLE_NAME = b.TABLE_NAME
++          WHERE a.TABLE_NAME = %s AND (CONSTRAINT_TYPE = 'PRIMARY KEY' OR CONSTRAINT_TYPE = 'UNIQUE')
++          
++    """
++    # non-unique, non-compound indexes
++    ix_sql = """
++        SELECT DISTINCT c.name
++          FROM sys.columns c
++          INNER JOIN sys.index_columns ic
++              ON ic.object_id = c.object_id AND ic.column_id = c.column_id
++          INNER JOIN sys.indexes ix
++              ON ix.object_id = ic.object_id AND ix.index_id = ic.index_id
++          INNER JOIN sys.tables t
++              ON t.object_id = ix.object_id
++          WHERE ix.object_id IN (
++                    SELECT ix.object_id
++                      FROM sys.indexes ix
++                      GROUP BY ix.object_id, ix.index_id
++                      HAVING count(1) = 1)
++                AND ix.is_primary_key = 0
++                AND ix.is_unique_constraint = 0
++                AND t.name = %s
++    """
++
++    field_names = [item[0] for item in get_table_description(cursor, table_name, identity_check=False)]
++    indexes, results = {}, {}
++    cursor.execute(pk_uk_sql, (table_name,))
++    data = cursor.fetchall()
++    if data:
++        results.update(data)
++
++    # TODO: how should this import look like? from db .. import .. ?
++    from operations import sql_server_version, SQL_SERVER_2005_VERSION
++    if sql_server_version() >= SQL_SERVER_2005_VERSION:
++        cursor.execute(ix_sql, (table_name,))
++        for column in [r[0] for r in cursor.fetchall()]:
++            if column not in results:
++                results[column] = 'IX'
++
++    for field in field_names:
++        val = results.get(field, None)
++        indexes[field] = dict(primary_key=(val=='PRIMARY KEY'), unique=(val=='UNIQUE'), db_index=(val=='IX'))
++
++    return indexes
++
++def get_collations_list(cursor):
++    """
++    Returns list of available collations and theirs descriptions.
++    """
++    # http://msdn2.microsoft.com/en-us/library/ms184391.aspx
++    # http://msdn2.microsoft.com/en-us/library/ms179886.aspx
++    
++    cursor.execute("SELECT name, description FROM ::fn_helpcollations()")
++    return [tuple(row) for row in cursor.fetchall()]
++
++DATA_TYPES_REVERSE = {
++    SQL_AUTOFIELD:                  'AutoField',
++    Database.SQL_BIGINT:            'IntegerField',
++    #Database.SQL_BINARY:            ,
++    Database.SQL_BIT:               'BooleanField',
++    Database.SQL_CHAR:              'CharField',
++    Database.SQL_DECIMAL:           'DecimalField',
++    Database.SQL_DOUBLE:            'FloatField',
++    Database.SQL_FLOAT:             'FloatField',
++    Database.SQL_GUID:              'TextField',
++    Database.SQL_INTEGER:           'IntegerField',
++    #Database.SQL_LONGVARBINARY:     ,
++    #Database.SQL_LONGVARCHAR:       ,
++    Database.SQL_NUMERIC:           'DecimalField',
++    Database.SQL_REAL:              'FloatField',
++    Database.SQL_SMALLINT:          'SmallIntegerField',
++    Database.SQL_TINYINT:           'SmallIntegerField',
++    Database.SQL_TYPE_DATE:         'DateField',
++    Database.SQL_TYPE_TIME:         'TimeField',
++    Database.SQL_TYPE_TIMESTAMP:    'DateTimeField',
++    #Database.SQL_VARBINARY:         ,
++    Database.SQL_VARCHAR:           'TextField',
++    Database.SQL_WCHAR:             'CharField',
++    Database.SQL_WLONGVARCHAR:      'TextField',
++    Database.SQL_WVARCHAR:          'TextField',
++}
+Index: db/backends/mssql/operations.py
+===================================================================
+--- db/backends/mssql/operations.py	(revision 0)
++++ db/backends/mssql/operations.py	(revision 0)
+@@ -0,0 +1,390 @@
++from django.db.backends import BaseDatabaseOperations, util
++from django.utils.datastructures import SortedDict
++
++# Version specific queries
++
++# LIMIT and OFFSET are turned into inlcusive range
++# start_row = offset + 1
++# end_row = offset + limit
++SQL_SERVER_9_LIMIT_QUERY = \
++"""
++SELECT *
++FROM (
++    SELECT %(distinc)s TOP %(end_row)s
++        %(fields)s, ROW_NUMBER()
++        OVER(
++            ORDER BY  %(orderby)s
++        ) AS row
++    %(sql)s ORDER BY %(orderby)s
++    ) AS x
++    WHERE x.row BETWEEN %(start_row)s AND %(end_row)s
++"""
++
++# end_row = offset + limit -- upper range
++# limit -- chunk size
++SQL_SERVER_8_LIMIT_QUERY = \
++"""
++SELECT * FROM (
++  SELECT TOP %(limit)s * FROM (
++    SELECT TOP %(end_row)s %(distinc)s%(fields)s
++        %(sql)s    
++    ORDER BY %(orderby)s
++  ) AS %(table)s
++  ORDER BY %(orderby_reversed)s) AS %(table)s
++ORDER BY %(orderby)s
++"""
++
++ORDER_ASC = "ASC"
++ORDER_DESC = "DESC"
++
++SQL_SERVER_2005_VERSION = 9
++SQL_SERVER_VERSION = None
++
++def sql_server_version():
++    """
++    Returns the major version of the SQL Server:
++      2000 -> 8
++      2005 -> 9
++    """
++    global SQL_SERVER_VERSION
++    if SQL_SERVER_VERSION is not None:
++        return SQL_SERVER_VERSION
++    else:
++        from django.db import connection
++        cur = connection.cursor()
++        cur.execute("SELECT cast(SERVERPROPERTY('ProductVersion') as varchar)")
++        SQL_SERVER_VERSION = int(cur.fetchone()[0].split('.')[0])
++        return SQL_SERVER_VERSION
++
++class DatabaseOperations(BaseDatabaseOperations):
++    def last_insert_id(self, cursor, table_name, pk_name):
++        # TODO: Check how the `last_insert_id` is being used in the upper layers
++        #       in context of multithreaded access, compare with other backends
++        
++        # IDENT_CURRENT:  http://msdn2.microsoft.com/en-us/library/ms175098.aspx
++        # SCOPE_IDENTITY: http://msdn2.microsoft.com/en-us/library/ms190315.aspx
++        # @@IDENTITY:     http://msdn2.microsoft.com/en-us/library/ms187342.aspx
++        
++        # IDENT_CURRENT is not limited by scope and session; it is limited to
++        # a specified table. IDENT_CURRENT returns the value generated for
++        # a specific table in any session and any scope. 
++        # SCOPE_IDENTITY and @@IDENTITY return the last identity values that
++        # are generated in any table in the current session. However,
++        # SCOPE_IDENTITY returns values inserted only within the current scope;
++        # @@IDENTITY is not limited to a specific scope.
++
++        table_name = self.quote_name(table_name)
++        pk_name = self.quote_name(pk_name)
++        #cursor.execute("SELECT %s FROM %s WHERE %s = IDENT_CURRENT(%%s)" % (pk_name, table_name, pk_name), [table_name]) 
++        cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as int)", [table_name]) 
++        return cursor.fetchone()[0]
++
++    def query_set_class(self, DefaultQuerySet):
++        "Create a custom QuerySet class for SQL Server."
++        from django.db import connection
++        from django.db.models.query import EmptyResultSet, GET_ITERATOR_CHUNK_SIZE, quote_only_if_word
++
++        class SqlServerQuerySet(DefaultQuerySet):
++
++            def iterator(self):
++                "Performs the SELECT database lookup of this QuerySet."
++
++                from django.db.models.query import get_cached_row
++
++                # self._select is a dictionary, and dictionaries' key order is
++                # undefined, so we convert it to a list of tuples.
++                extra_select = self._select.items()
++
++                full_query = None
++
++                try:
++                    try:
++                        select, sql, params, full_query = self._get_sql_clause(get_full_query=True)
++                    except TypeError:
++                        select, sql, params = self._get_sql_clause()
++                except EmptyResultSet:
++                    raise StopIteration
++                if not full_query:
++                    full_query = "SELECT %s%s\n%s" % ((self._distinct and "DISTINCT " or ""), ', '.join(select), sql)
++
++                cursor = connection.cursor()
++                cursor.execute(full_query, params)
++
++                fill_cache = self._select_related
++                fields = self.model._meta.fields
++                index_end = len(fields)
++
++                while 1:
++                    rows = cursor.fetchmany(GET_ITERATOR_CHUNK_SIZE)
++                    if not rows:
++                        raise StopIteration
++                    for row in rows:
++                        row = self.resolve_columns(row, fields)
++                        if fill_cache:
++                            obj, index_end = get_cached_row(klass=self.model, row=row,
++                                                            index_start=0, max_depth=self._max_related_depth)
++                        else:
++                            obj = self.model(*row[:index_end])
++                        for i, k in enumerate(extra_select):
++                            setattr(obj, k[0], row[index_end+i])
++                        yield obj
++
++            def _get_sql_clause(self, get_full_query=False):
++                from django.db.models.query import fill_table_cache, \
++                    handle_legacy_orderlist, orderfield2column
++
++                opts = self.model._meta
++                qn = connection.ops.quote_name
++
++                # Construct the fundamental parts of the query: SELECT X FROM Y WHERE Z.
++                select = ["%s.%s" % (qn(opts.db_table), qn(f.column)) for f in opts.fields]
++                # TODO: quote_only_if_word?
++                tables = [quote_only_if_word(t) for t in self._tables]
++                joins = SortedDict()
++                where = self._where[:]
++                params = self._params[:]
++
++                # Convert self._filters into SQL.
++                joins2, where2, params2 = self._filters.get_sql(opts)
++                joins.update(joins2)
++                where.extend(where2)
++                params.extend(params2)
++
++                # Add additional tables and WHERE clauses based on select_related.
++                if self._select_related:
++                    fill_table_cache(opts, select, tables, where, opts.db_table, [opts.db_table])
++
++                # Add any additional SELECTs.
++                # TODO: quote_only_if_word?
++                if self._select:
++                    select.extend(['(%s) AS %s' % (quote_only_if_word(s[1]), qn(s[0])) for s in self._select.items()])
++
++                # Start composing the body of the SQL statement.
++                sql = [" FROM", qn(opts.db_table)]
++
++                # Compose the join dictionary into SQL describing the joins.
++                if joins:
++                    sql.append(" ".join(["%s %s %s ON %s" % (join_type, table, alias, condition)
++                                    for (alias, (table, join_type, condition)) in joins.items()]))
++
++                # Compose the tables clause into SQL.
++                if tables:
++                    sql.append(", " + ", ".join(tables))
++
++                # Compose the where clause into SQL.
++                if where:
++                    sql.append(where and "WHERE " + " AND ".join(where))
++
++                # Copy version suitable for LIMIT
++                sql2 = sql[:]
++
++                # ORDER BY clause
++                order_by = []
++                if self._order_by is not None:
++                    ordering_to_use = self._order_by
++                else:
++                    ordering_to_use = opts.ordering
++                for f in handle_legacy_orderlist(ordering_to_use):
++                    if f == '?': # Special case.
++                        order_by.append(connection.ops.get_random_function_sql())
++                    else:
++                        if f.startswith('-'):
++                            col_name = f[1:]
++                            order = ORDER_DESC
++                        else:
++                            col_name = f
++                            order = ORDER_ASC
++                        if "." in col_name:
++                            table_prefix, col_name = col_name.split('.', 1)
++                            table_prefix = qn(table_prefix) + '.'
++                        else:
++                            # Use the database table as a column prefix if it wasn't given,
++                            # and if the requested column isn't a custom SELECT.
++                            if "." not in col_name and col_name not in (self._select or ()):
++                                table_prefix = qn(opts.db_table) + '.'
++                            else:
++                                table_prefix = ''
++                        order_by.append('%s%s %s' % (table_prefix, qn(orderfield2column(col_name, opts)), order))
++                if order_by:
++                    sql.append("ORDER BY " + ", ".join(order_by))
++
++                # Look for column name collisions in the select elements
++                # and fix them with an AS alias.  This allows us to do a
++                # SELECT * later in the paging query.
++                cols = [clause.split('.')[-1] for clause in select]
++                for index, col in enumerate(cols):
++                    if cols.count(col) > 1:
++                        col = '%s%d' % (col.replace('[', '').replace(']',''), index)
++                        cols[index] = qn(col)
++                        select[index] = '%s AS %s' % (select[index], qn(col))
++
++                # LIMIT and OFFSET clauses
++                # To support limits and offsets, SQL Server requires some funky rewriting of an otherwise normal looking query.
++                select_clause = ",".join(select)
++                distinct = (self._distinct and "DISTINCT " or "")
++                full_query = None
++
++                # offset: start row (zero indexed)
++                # limit: chunk size
++
++                if self._limit is None:
++                    assert self._offset is None, "'offset' is not allowed without 'limit'" # TODO: actually, why not?
++
++                if self._limit is not None:
++                    limit = int(self._limit)
++                else:
++                    limit = None
++
++                if self._offset is not None and limit > 0:
++                    offset = int(self._offset)
++                else:
++                    offset = 0
++
++                limit_and_offset_clause = ''
++
++                if limit is not None:
++                    limit_and_offset_clause = True
++                elif offset:
++                    limit_and_offset_clause = True
++
++                if limit_and_offset_clause:
++                    # TOP and ROW_NUMBER in T-SQL requires an order.
++                    # If order is not specified the use id column.
++                    if len(order_by)==0:
++                        order_by.append('%s.%s %s' % (qn(opts.db_table), qn(opts.fields[0].db_column or opts.fields[0].column), ORDER_ASC))
++
++                    order_by_clause = ", ".join(order_by)
++                    order_by_clause_reverse = ""
++
++                    if sql_server_version() >= SQL_SERVER_2005_VERSION:
++                        fmt = SQL_SERVER_9_LIMIT_QUERY
++                    else:
++                        # Compatibility mode for older versions
++                        order_by_clause_reverse = ", ".join(self.change_order_direction(order_by))
++                        fmt = SQL_SERVER_8_LIMIT_QUERY
++
++                    full_query = fmt % {'distinc': distinct, 'fields': select_clause,
++                                        'sql': " ".join(sql2), 'orderby': order_by_clause,
++                                        'orderby_reversed': order_by_clause_reverse,
++                                        'table': qn(opts.db_table),
++                                        'limit': limit,
++                                        'start_row': offset + 1, 'end_row': offset + limit}
++                if get_full_query:
++                    return select, " ".join(sql), params, full_query
++                else:
++                    return select, " ".join(sql), params
++
++            def change_order_direction(self, order_by):
++                new_order = []
++                for order in order_by:
++                    if order.endswith(ORDER_ASC):
++                        new_order.append(order[:-len(ORDER_ASC)] + ORDER_DESC)
++                    elif order.endswith(ORDER_DESC):
++                        new_order.append(order[:-len(ORDER_DESC)] + ORDER_ASC)
++                    else:
++                        # TODO: check special case '?' -- random order
++                        new_order.append(order)
++                return new_order
++
++            def resolve_columns(self, row, fields=()):
++                from django.db.models.fields import DateField, DateTimeField, \
++                    TimeField, DecimalField
++                values = []
++                for value, field in map(None, row, fields):
++                    if value is not None:
++                        if isinstance(field, DateTimeField):
++                            pass # do nothing
++                        elif isinstance(field, DateField):
++                            value = value.date() # extract date
++                        elif isinstance(field, TimeField):
++                            value = value.time() # extract time
++                    values.append(value)
++                return values
++
++        return SqlServerQuerySet
++
++    def date_extract_sql(self, lookup_type, field_name):
++        """
++        Given a lookup_type of 'year', 'month' or 'day', returns the SQL that
++        extracts a value from the given date field field_name.
++        """
++        return "DATEPART(%s, %s)" % (lookup_type, field_name)
++
++    def date_trunc_sql(self, lookup_type, field_name):
++        """
++        Given a lookup_type of 'year', 'month' or 'day', returns the SQL that
++        truncates the given date field field_name to a DATE object with only
++        the given specificity.
++        """
++        if lookup_type=='year':
++            return "Convert(datetime, Convert(varchar, DATEPART(year, %s)) + '/01/01')" % field_name
++        if lookup_type=='month':
++            return "Convert(datetime, Convert(varchar, DATEPART(year, %s)) + '/' + Convert(varchar, DATEPART(month, %s)) + '/01')" % (field_name, field_name)
++        if lookup_type=='day':
++            return "Convert(datetime, Convert(varchar(12), %s))" % field_name
++
++    def limit_offset_sql(self, limit, offset=None):
++        # Limits and offset are too complicated to be handled here.
++        # Look for a implementation similar to SQL Server backend
++        return ""
++
++    def quote_name(self, name):
++        """
++        Returns a quoted version of the given table, index or column name. Does
++        not quote the given name if it's already been quoted.
++        """
++        if name.startswith('[') and name.endswith(']'):
++            return name # Quoting once is enough.
++        return '[%s]' % name
++
++    def get_random_function_sql(self):
++        """
++        Returns a SQL expression that returns a random value.
++        """
++        return "RAND()"
++
++    def tablespace_sql(self, tablespace, inline=False):
++        """
++        Returns the tablespace SQL, or None if the backend doesn't use
++        tablespaces.
++        """
++        return "ON %s" % self.quote_name(tablespace)
++
++    def sql_flush(self, style, tables, sequences):
++        """
++        Returns a list of SQL statements required to remove all data from
++        the given database tables (without actually removing the tables
++        themselves).
++
++        The `style` argument is a Style object as returned by either
++        color_style() or no_style() in django.core.management.color.
++        """
++        # Cannot use TRUNCATE on tables that are referenced by a FOREIGN KEY
++        # So must use the much slower DELETE
++        from django.db import connection
++        cursor = connection.cursor()
++        cursor.execute("SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS")
++        fks = cursor.fetchall()
++        sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' % \
++                (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
++        sql_list.extend(['%s %s %s;' % (style.SQL_KEYWORD('DELETE'), style.SQL_KEYWORD('FROM'),
++                         style.SQL_FIELD(self.quote_name(table)) ) for table in tables])
++        # The reset the counters on each table.
++        sql_list.extend(['%s %s (%s, %s, %s) %s %s;' % (
++            style.SQL_KEYWORD('DBCC'),
++            style.SQL_KEYWORD('CHECKIDENT'),
++            style.SQL_FIELD(self.quote_name(seq["table"])),
++            style.SQL_KEYWORD('RESEED'),
++            style.SQL_FIELD('1'),
++            style.SQL_KEYWORD('WITH'),
++            style.SQL_KEYWORD('NO_INFOMSGS'),
++            ) for seq in sequences])
++        sql_list.extend(['ALTER TABLE %s CHECK CONSTRAINT %s;' % \
++                (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks])
++        return sql_list 
++
++    def start_transaction_sql(self):
++        """
++        Returns the SQL statement required to start a transaction.
++        """
++        return "BEGIN TRANSACTION"
+Index: db/backends/mssql/creation.py
+===================================================================
+--- db/backends/mssql/creation.py	(revision 0)
++++ db/backends/mssql/creation.py	(revision 0)
+@@ -0,0 +1,32 @@
++DATA_TYPES = {
++    'AutoField':         'int IDENTITY (1, 1)',
++    'BooleanField':      'bit',
++    'CharField':         'nvarchar(%(max_length)s) %(db_collation)s',
++    'CommaSeparatedIntegerField': 'nvarchar(%(max_length)s) %(db_collation)s',
++    'DateField':         'datetime',
++    'DateTimeField':     'datetime',
++    'DecimalField':      'numeric(%(max_digits)s, %(decimal_places)s)',
++    'FileField':         'nvarchar(254) %(db_collation)s',
++    'FilePathField':     'nvarchar(254) %(db_collation)s',
++    'FloatField':        'double precision',
++    'ImageField':        'nvarchar(254) %(db_collation)s',
++    'IntegerField':      'int',
++    'IPAddressField':    'nvarchar(15)',
++    'ManyToManyField':   None,
++    'NullBooleanField':  'bit',
++    'OneToOneField':     'int',
++    'PhoneNumberField':  'nvarchar(20) %(db_collation)s',
++    #The check must be unique in for the database. Put random so the regresion test not complain about duplicate names
++    'PositiveIntegerField': 'int CONSTRAINT [CK_int_pos_%(creation_counter)s_%(column)s] CHECK ([%(column)s] > 0)',    
++    'PositiveSmallIntegerField': 'smallint CONSTRAINT [CK_smallint_pos_%(creation_counter)s_%(column)s] CHECK ([%(column)s] > 0)',
++    'SlugField':         'nvarchar(%(max_length)s) %(db_collation)s',
++    'SmallIntegerField': 'smallint',
++    'TextField':         'ntext %(db_collation)s',
++    'TimeField':         'datetime',
++    'USStateField':      'nchar(2) %(db_collation)s',
++}
++
++# TODO: how should this import look like? from db .. import ..
++from operations import sql_server_version, SQL_SERVER_2005_VERSION
++if sql_server_version() >= SQL_SERVER_2005_VERSION:
++    DATA_TYPES['TextField'] = 'nvarchar(max) %(db_collation)s'
+Index: contrib/sessions/backends/db.py
+===================================================================
+--- contrib/sessions/backends/db.py	(revision 7250)
++++ contrib/sessions/backends/db.py	(working copy)
+@@ -13,9 +13,12 @@
+ 
+     def load(self):
+         try:
++            datenow = datetime.datetime.now() 
++            if hasattr(datenow, 'microsecond'): 
++                datenow = datenow.replace(microsecond=0) 
+             s = Session.objects.get(
+                 session_key = self.session_key,
+-                expire_date__gt=datetime.datetime.now()
++                expire_date__gt=datenow
+             )
+             return self.decode(s.session_data)
+         except (Session.DoesNotExist, SuspiciousOperation):
