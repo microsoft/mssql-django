@@ -1,34 +1,40 @@
 """
 MSSQL database backend for Django.
 
-Requires pyodbc 2.0.38 or higher (http://pyodbc.sourceforge.net/).
+Requires pyodbc 2.0.38 or higher (http://pyodbc.sourceforge.net/)
+or pymssql 0.8.1 (https://sourceforge.net/tracker/index.php?func=detail&aid=1918448&group_id=40059&atid=426919)
 
-The configurable settings in the settings file are:
-DATABASE_NAME               - Database name. Required.
+The default is pymssql.
+
+pyodbc/pymssql params:
+DATABASE_NAME               - Database name. Required. 
 DATABASE_HOST               - SQL Server instance in "server\instance" format.
 DATABASE_PORT               - SQL Server instance port.
 DATABASE_USER               - Database user name. If not given then the
                               Integrated Security will be used.
 DATABASE_PASSWORD           - Database user password.
+pyodbc only:
 DATABASE_ODBC_DSN           - A named DSN can be used instead of DATABASE_HOST.
 DATABASE_ODBC_DRIVER        - ODBC Driver. Defalut is "{Sql Server}".
 DATABASE_ODBC_EXTRA_PARAMS  - Additional parameters for the ODBC connection.
                               The format is "param=value;param=value".
 """
-
 from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, util
 from django.core.exceptions import ImproperlyConfigured
 from operations import DatabaseOperations
 
-
+need_param_rewrite=False
 try:
-    import pyodbc as Database
-except ImportError, e:
-    raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
-
-version = tuple(map(int, Database.version.split('.')))
-if version < (2,0,38) :
-    raise ImportError("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
+    import pymssql as Database
+except ImportError, ex:
+    try:
+        need_param_rewrite=True
+        import pyodbc as Database
+        version = tuple(map(int, Database.version.split('.')))
+        if version < (2,0,38) :
+            raise ImportError("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
+    except ImportError, e:
+        raise ImproperlyConfigured("Error loading pymssq/pyodbc modules: %s" % ex)
 
 try:
     # Only exists in Python 2.4+
@@ -106,13 +112,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 host_str = '%s:%s' % ( settings.DATABASE_HOST ,settings.DATABASE_PORT)
             else:
                 host_str = settings.DATABASE_HOST
-
-            if hasattr(settings, "DATABASE_ODBC_DRIVER"):
-                odbc_driver = settings.DATABASE_ODBC_DRIVER
-            else:
-                odbc_driver = "{Sql Server}"
             
-            odbc_string = "Driver=%s;" % (odbc_driver)
+            odbc_string=""
 
             if hasattr(settings, "DATABASE_ODBC_DSN"):
                 odbc_string += "DSN=%s;" % settings.DATABASE_ODBC_DSN
@@ -128,7 +129,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             
             if hasattr(settings, "DATABASE_ODBC_EXTRA_PARAMS"):
                 odbc_string +=  ";" + settings.DATABASE_ODBC_EXTRA_PARAMS
-                
             self.connection = Database.connect(odbc_string, self.options["autocommit"])
         
         self.connection.cursor().execute("SET DATEFORMAT ymd")
@@ -141,39 +141,24 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 class CursorWrapper(object):
     """
     A wrapper around the pyodbc cursor that:
-        1. Converts input strings to unicde.
         2. Replaces '%s' parameter placeholder in sql queries to '?' (pyodbc specific).
     """
     def __init__(self, cursor):
         self.cursor = cursor
         
-    def format_params(self, params, encoding='utf-8', errors='strict'):
-        new_params = []
-        for param in params:
-            if isinstance(param, str):
-                # Ensure that plain strings are converted to unicode using proper encoding.
-                # Assumed input encoding is 'utf-8'
-                # TODO: Verify this with upper layers
-                param = unicode(param, encoding, errors)
-            new_params.append(param)
-        return tuple(new_params)
     
     def format_sql(self, sql):
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
-        if "%s" in sql:
+        if need_param_rewrite and "%s" in sql:
             sql = sql.replace('%s', '?')
         return sql
                     
     def execute(self, sql, params=()):
-        if params:
-            params = self.format_params(params)
-            sql = self.format_sql(sql)
+        sql = self.format_sql(sql)
         return self.cursor.execute(sql, params)
 
     def executemany(self, sql, param_list):
-        if param_list:
-            param_list = [self.format_params(params) for params in param_list]
-            sql = self.format_sql(sql)
+        sql = self.format_sql(sql)
         return self.cursor.executemany(sql, param_list)
 
     def fetchone(self):
