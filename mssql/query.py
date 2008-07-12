@@ -4,6 +4,7 @@ Derives from: django.db.models.sql.query.Query
 """
 
 import datetime
+import string
 
 from django.db.backends import util
 
@@ -49,7 +50,7 @@ def query_class(QueryClass):
             if self.distinct:
                 result.append('DISTINCT')
             if with_top_n:
-                result.append('TOP %(end_rows)s')
+                result.append('TOP ${end_rows} ')
             result.append(', '.join(out_cols + self.ordering_aliases))
 
             result.append('FROM')
@@ -122,7 +123,8 @@ def query_class(QueryClass):
             # SQL> select * from (select TOP 20 * from (select top 30 * from hello_page order by id ASC) as p order by p.id desc) as x order by id asc;
             sql, params= self.as_sql_internal(with_col_aliases=True, with_top_n=True)
             fmt = """SELECT * FROM (SELECT TOP  %(limit)d * FROM (%(sql)s ORDER BY %(ordering)s ) as %(table)s ORDER BY %(ordering_rev)s ) AS %(table)s ORDER BY %(ordering)s"""
-            sqlp = sql % {'end_rows':self.high_mark}
+            tmpl = string.Template(sql)
+            sqlp = tmpl.substitute({'end_rows':self.high_mark})
             ordering_save = self.standard_ordering
             self.standard_ordering = not self.standard_ordering
             ordering_rev = self.get_ordering()
@@ -151,11 +153,15 @@ def query_class(QueryClass):
         def set_limits(self, low=None, high=None):
             super(SqlServerQuery, self).set_limits(low, high)
 
-            # We need to select the row number for the LIMIT/OFFSET sql.
-            # A placeholder is added to extra_select now, because as_sql is
-            # too late to be modifying extra_select.  However, the actual sql
-            # depends on the ordering, so that is generated in as_sql.
-            self.extra_select['rn'] = '1'
+            from django.db import connection
+            from operations import SQL_SERVER_2005_VERSION
+            if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
+                # For Sqlserver 2005 and up, we use row_number() for limit/offset
+                # We need to select the row number for the LIMIT/OFFSET sql.
+                # A placeholder is added to extra_select now, because as_sql is
+                # too late to be modifying extra_select.  However, the actual sql
+                # depends on the ordering, so that is generated in as_sql.
+                self.extra_select['rn'] = '1'
 
         def clear_limits(self):
             super(SqlServerQuery, self).clear_limits()

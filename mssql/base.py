@@ -21,6 +21,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.conf import settings
 from operations import DatabaseOperations
 import datetime
+import os
 
 if not settings.DATABASE_COLLATE:
     settings.DATABASE_COLLATE = 'Latin1_General_CI_AS'
@@ -139,7 +140,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             from operations import SQL_SERVER_2005_VERSION
             if self.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 from creation import DATA_TYPES
-                DATA_TYPES['TextField'] = 'nvarchar(max) %(db_collation)s'
+                DATA_TYPES['TextField'] = 'nvarchar(max)'
             cursor = CursorWrapper(self.connection.cursor())
         if settings.DEBUG:
             return util.CursorDebugWrapper(cursor, self)
@@ -163,7 +164,10 @@ class CursorWrapper(object):
         ps = []
         for p in params:
             if isinstance(p, unicode): 
-                ps.append(unicode(p).encode('utf-8')) # convert from unicode to utf-8 for pyodbc
+                if os.name == 'nt':
+                    ps.append(p)
+                else:
+                    ps.append(unicode(p).encode('utf-8')) # convert from unicode to utf-8 for pyodbc use freetds under Linux
             elif isinstance(p,type(True)): # convert bool to integer
                 if p:
                     ps.append(1)
