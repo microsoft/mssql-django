@@ -15,10 +15,12 @@ New BSD LICENSE
 
 CREDITS
 =======
-
+Filip Wasilewski (http://code.djangoproject.com/ticket/5246)
+mamcx(http://code.djangoproject.com/ticket/5062) 
 Wei guangjing `<http://djangopeople.net/vcc/>`_
 Peter hausel  `<http://djangopeople.net/pk11/>`_
 
+let us know if we missed anybody!
 
 
 
