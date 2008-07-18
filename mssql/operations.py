@@ -123,3 +123,5 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         return "BEGIN TRANSACTION"
 
+    def fulltext_search_sql(self, field_name):
+        return 'CONTAINS(%s, %%s)' % field_name

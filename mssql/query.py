@@ -2,8 +2,6 @@
 Custom Query class for SQL Server.
 Derives from: django.db.models.sql.query.Query
 """
-
-import datetime
 import string
 
 from django.db.backends import util
@@ -119,21 +117,29 @@ def query_class(QueryClass):
                 # Returning the SQL w/params.
                 return ' '.join(result), params
 
-            # else SQL SERVER 2000 below
-            # SQL> select * from (select TOP 20 * from (select top 30 * from hello_page order by id ASC) as p order by p.id desc) as x order by id asc;
+            # else SQL SERVER 2000 and below
+            # For example: limit,offset 10,20
+            # SQL as> select * from (select TOP 20 * from (select top 30 * from hello_page order by id ASC) as p order by p.id desc) as x order by id asc;
             sql, params= self.as_sql_internal(with_col_aliases=True, with_top_n=True)
+            qn = self.quote_name_unless_alias
+            opts = self.model._meta
+            if not ordering: # if don't has ordering, we make a default ordering
+                ordering = '%s.%s' % (qn(opts.db_table), qn(opts.fields[0].db_column or opts.fields[0].column))
+                ordering_rev = '%s DESC' % ordering
+            else:
+                self.standard_ordering = not self.standard_ordering
+                ordering_rev = self.get_ordering()
+                self.standard_ordering = not self.standard_ordering
+                ordering = ','.join(ordering)
+                ordering_rev = ','.join(ordering_rev)
             fmt = """SELECT * FROM (SELECT TOP  %(limit)d * FROM (%(sql)s ORDER BY %(ordering)s ) as %(table)s ORDER BY %(ordering_rev)s ) AS %(table)s ORDER BY %(ordering)s"""
             tmpl = string.Template(sql)
             sqlp = tmpl.substitute({'end_rows':self.high_mark})
-            ordering_save = self.standard_ordering
-            self.standard_ordering = not self.standard_ordering
-            ordering_rev = self.get_ordering()
-            self.standard_ordering = not self.standard_ordering
             result = fmt % {'limit':self.high_mark-self.low_mark,
                             'sql':sqlp,
-                            'ordering':','.join(ordering),
-                            'ordering_rev':','.join(ordering_rev),
-                            'table':self.quote_name_unless_alias(self.model._meta.db_table),
+                            'ordering':ordering,
+                            'ordering_rev':ordering_rev,
+                            'table':qn(opts.db_table),
                             }
             return result, params
 

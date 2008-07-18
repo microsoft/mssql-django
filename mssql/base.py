@@ -23,7 +23,7 @@ from operations import DatabaseOperations
 import datetime
 import os
 
-if not settings.DATABASE_COLLATE:
+if not hasattr(settings, "DATABASE_COLLATE"):
     settings.DATABASE_COLLATE = 'Latin1_General_CI_AS'
 
 try:
