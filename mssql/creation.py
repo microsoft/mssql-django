@@ -17,9 +17,8 @@ DATA_TYPES = {
     'NullBooleanField':  'bit',
     'OneToOneField':     'int',
     'PhoneNumberField':  'nvarchar(20) ',
-    #The check must be unique in for the database. Put random so the regresion test not complain about duplicate names
-    'PositiveIntegerField': 'int CONSTRAINT [CK_int_pos_%(creation_counter)s_%(column)s] CHECK ([%(column)s] > 0)',    
-    'PositiveSmallIntegerField': 'smallint CONSTRAINT [CK_smallint_pos_%(creation_counter)s_%(column)s] CHECK ([%(column)s] > 0)',
+    'PositiveIntegerField': 'int CHECK ([%(column)s] >= 0)',    
+    'PositiveSmallIntegerField': 'smallint CHECK ([%(column)s] >= 0)',
     'SlugField':         'nvarchar(%(max_length)s)',
     'SmallIntegerField': 'smallint',
     'TextField':         'ntext',
@@ -27,3 +26,15 @@ DATA_TYPES = {
     'USStateField':      'nchar(2)',
 }
 
+def destroy_test_db(settings, connection, old_database_name, verbosity=1):
+    connection.close()
+    TEST_DATABASE_NAME = settings.DATABASE_NAME
+    settings.DATABASE_NAME = old_database_name
+    cursor = connection.cursor()
+    connection.connection.autocommit = True
+    cursor.execute("ALTER DATABASE %s SET SINGLE_USER WITH ROLLBACK IMMEDIATE " % connection.ops.quote_name(TEST_DATABASE_NAME))
+    cursor.execute("DROP DATABASE %s" %connection.ops.quote_name(TEST_DATABASE_NAME))
+    connection.close()
+
+
+    

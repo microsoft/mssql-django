@@ -8,6 +8,9 @@ ORDER_DESC = "DESC"
 SQL_SERVER_2005_VERSION = 9
 
 class DatabaseOperations(BaseDatabaseOperations):
+
+    sqlserver_version = None
+    
     def last_insert_id(self, cursor, table_name, pk_name):
         # TODO: Check how the `last_insert_id` is being used in the upper layers
         #       in context of multithreaded access, compare with other backends
@@ -71,7 +74,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             return name # Quoting once is enough.
         return '[%s]' % name
 
-    def get_random_function_sql(self):
+    def random_function_sql(self):
         """
         Returns a SQL expression that returns a random value.
         """
@@ -125,3 +128,17 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def fulltext_search_sql(self, field_name):
         return 'CONTAINS(%s, %%s)' % field_name
+    
+    def field_cast_sql(self, db_type):
+        if self.sqlserver_version < SQL_SERVER_2005_VERSION and db_type and db_type.startswith('ntext'):
+            return "substring(%s,1,8000)"
+        else:
+            return "%s"
+    
+    def no_limit_value(self):
+        return 9223372036854775807L
+
+    def lookup_cast(self, lookup_type):
+        if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
+            return "UPPER(%s)"
+        return "%s"

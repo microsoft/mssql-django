@@ -78,6 +78,8 @@ def query_class(QueryClass):
             from django.db import connection
             from operations import SQL_SERVER_2005_VERSION
 
+            if with_limits and self.high_mark == 0 and self.low_mark == 0:
+                return "",()
             do_offset = with_limits and (self.high_mark or self.low_mark)
 
             # If no offsets, just return the result of the base class
@@ -92,6 +94,9 @@ def query_class(QueryClass):
 
             if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 # Getting the "ORDER BY" SQL for the ROW_NUMBER() result.
+                if not self.high_mark:
+                    self.high_mark = connection.ops.no_limit_value()
+
                 if ordering:
                     rn_orderby = ', '.join(ordering)
                 else:
@@ -134,8 +139,11 @@ def query_class(QueryClass):
                 ordering_rev = ','.join(ordering_rev)
             fmt = """SELECT * FROM (SELECT TOP  %(limit)d * FROM (%(sql)s ORDER BY %(ordering)s ) as %(table)s ORDER BY %(ordering_rev)s ) AS %(table)s ORDER BY %(ordering)s"""
             tmpl = string.Template(sql)
-            sqlp = tmpl.substitute({'end_rows':self.high_mark})
-            result = fmt % {'limit':self.high_mark-self.low_mark,
+            if not self.high_mark:
+                raise "SQL SERVER 2000 not supper [OFFSET:] "
+            else:
+                sqlp = tmpl.substitute({'end_rows':self.high_mark})
+                result = fmt % {'limit':self.high_mark-self.low_mark,
                             'sql':sqlp,
                             'ordering':ordering,
                             'ordering_rev':ordering_rev,
@@ -151,8 +159,12 @@ def query_class(QueryClass):
             sql, params = self._parent_as_sql(*args,**kwargs)
             
             if (meta.pk.attname in self.columns) and (meta.pk.__class__.__name__ == "AutoField"):
-                sql = "SET IDENTITY_INSERT %s ON;%s;SET IDENTITY_INSERT %s OFF" %\
-                    (quoted_table, sql, quoted_table)
+                # check if only have pk and default value
+                if len(self.columns)==1 and len(params)==0:
+                    sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
+                else:
+                    sql = "SET IDENTITY_INSERT %s ON;%s;SET IDENTITY_INSERT %s OFF" %\
+                        (quoted_table, sql, quoted_table)
 
             return sql, params
 

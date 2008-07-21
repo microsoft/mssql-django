@@ -73,18 +73,18 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # Since '=' is used not only for string comparision there is no way
         # to make it case (in)sensitive. It will simply fallback to the
         # database collation.
-        'exact': '= %s',
-        'iexact': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATE,
-        'contains': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATE,
-        'icontains': 'LIKE %s COLLATE '+ settings.DATABASE_COLLATE,
+        'exact': '= %s ',
+        'iexact': "= UPPER(%s) ",
+        'contains': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
+        'icontains': "LIKE UPPER(%s) ESCAPE '\\' COLLATE "+ settings.DATABASE_COLLATE,
         'gt': '> %s',
         'gte': '>= %s',
         'lt': '< %s',
         'lte': '<= %s',
-        'startswith': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATE,
-        'endswith': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATE,
-        'istartswith': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATE,
-        'iendswith': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATE,
+        'startswith': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
+        'endswith': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
+        'istartswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
+        'iendswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
 
         # TODO: remove, keep native T-SQL LIKE wildcards support
         # or use a "compatibility layer" and replace '*' with '%'
@@ -137,6 +137,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if not self.sqlserver_version:
             cursor.execute("SELECT cast(SERVERPROPERTY('ProductVersion') as varchar)")
             self.sqlserver_version = int(cursor.fetchone()[0].split('.')[0])
+            self.ops.sqlserver_version = self.sqlserver_version
             from operations import SQL_SERVER_2005_VERSION
             if self.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 from creation import DATA_TYPES
@@ -184,8 +185,14 @@ class CursorWrapper(object):
 
     def executemany(self, sql, param_list):
         sql = self.format_sql(sql)
-        new_param_list = [self.format_params(params) for params in param_list]
-        return self.cursor.executemany(sql, new_param_listp)
+        if param_list == []:
+            if "?" in sql:
+                return 
+            else:
+                new_param_list = []
+        else:
+            new_param_list = [self.format_params(params) for params in param_list]
+        return self.cursor.executemany(sql, new_param_list)
 
     def fetchone(self):
         row = self.cursor.fetchone()
