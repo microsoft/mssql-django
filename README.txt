@@ -6,7 +6,7 @@ The external database backends for Django that support Microsoft SQL Server usin
 INSTALL
 =======
 
-First install `pyodbc <http://pyodbc.sourceforge.net>`_, then copy "mssql" folder to your PYTHONPATH, e.g. lib/site-packages ,django/db/backends. and patch the django use django_r7671.diff.
+First install `pyodbc <http://pyodbc.sourceforge.net>`_, then copy "mssql" folder to your PYTHONPATH, e.g. lib/site-packages ,django/db/backends.
 
 LICENSE
 =======
