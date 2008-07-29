@@ -92,7 +92,7 @@ def query_class(QueryClass):
             out_cols = self.get_columns(with_col_aliases)
             ordering = self.get_ordering()
 
-            if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
+            if connection.ops.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 # Getting the "ORDER BY" SQL for the ROW_NUMBER() result.
                 if not self.high_mark:
                     self.high_mark = connection.ops.no_limit_value()
@@ -173,7 +173,7 @@ def query_class(QueryClass):
 
             from django.db import connection
             from operations import SQL_SERVER_2005_VERSION
-            if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
+            if connection.ops.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 # For Sqlserver 2005 and up, we use row_number() for limit/offset
                 # We need to select the row number for the LIMIT/OFFSET sql.
                 # A placeholder is added to extra_select now, because as_sql is

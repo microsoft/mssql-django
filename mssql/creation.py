@@ -31,6 +31,8 @@ def destroy_test_db(settings, connection, old_database_name, verbosity=1):
     TEST_DATABASE_NAME = settings.DATABASE_NAME
     settings.DATABASE_NAME = old_database_name
     cursor = connection.cursor()
+    if not connection.connection.autocommit:
+        connection.connection.commit()
     connection.connection.autocommit = True
     cursor.execute("ALTER DATABASE %s SET SINGLE_USER WITH ROLLBACK IMMEDIATE " % connection.ops.quote_name(TEST_DATABASE_NAME))
     cursor.execute("DROP DATABASE %s" %connection.ops.quote_name(TEST_DATABASE_NAME))

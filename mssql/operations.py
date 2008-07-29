@@ -142,3 +142,21 @@ class DatabaseOperations(BaseDatabaseOperations):
         if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
             return "UPPER(%s)"
         return "%s"
+
+    def value_to_db_datetime(self, value):
+        # Sql Server doesn't support microseconds
+        if value is None:
+            return None
+        return unicode(value.replace(microsecond=0))
+
+    def value_to_db_time(self, value):
+        # Sql Server doesn't support microseconds
+        if value is None:
+            return None
+        return unicode(value.replace(microsecond=0))
+
+    def year_lookup_bounds(self, value):
+        # Again, no microseconds
+        first = '%s-01-01 00:00:00'
+        second = '%s-12-31 23:59:59.99'
+        return [first % value, second % value]

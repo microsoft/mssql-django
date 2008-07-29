@@ -32,8 +32,12 @@ try:
     if version < (2,0,38) :
         raise ImportError("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
 except ImportError, e:
-    raise ImproperlyConfigured("Error loading pymssq/pyodbc modules: %s" % ex)
+    raise ImproperlyConfigured("Error loading pyodbc modules: %s" % ex)
 
+need_convert_utf8 = False 
+if os.name != 'nt':
+    need_convert_utf8 = True # For FreeTDS
+    
 try:
     # Only exists in Python 2.4+
     from threading import local
@@ -54,13 +58,10 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_tablespaces = True
     uses_case_insensitive_names = True
     uses_custom_query_class = True
-    supports_usecs = False
-    time_field_needs_date = False
 
 class DatabaseWrapper(BaseDatabaseWrapper):
     features = DatabaseFeatures() 
     ops = DatabaseOperations()
-    sqlserver_version = None
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
@@ -134,15 +135,16 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.connection = Database.connect(odbc_string, self.options["autocommit"])
 
         cursor = CursorWrapper(self.connection.cursor())
-        if not self.sqlserver_version:
+        if not self.ops.sqlserver_version:
             cursor.execute("SELECT cast(SERVERPROPERTY('ProductVersion') as varchar)")
-            self.sqlserver_version = int(cursor.fetchone()[0].split('.')[0])
-            self.ops.sqlserver_version = self.sqlserver_version
+            self.ops.sqlserver_version = int(cursor.fetchone()[0].split('.')[0])
             from operations import SQL_SERVER_2005_VERSION
-            if self.sqlserver_version >= SQL_SERVER_2005_VERSION:
+            if self.ops.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 from creation import DATA_TYPES
                 DATA_TYPES['TextField'] = 'nvarchar(max)'
-            cursor = CursorWrapper(self.connection.cursor())
+            # FreeTDS can't execute some sql like CREATE DATABASE ... etc. in Multi-statement, so need commit for avoid this
+            if not self.connection.autocommit:
+                self.connection.commit()
         if settings.DEBUG:
             return util.CursorDebugWrapper(cursor, self)
         return cursor
@@ -165,7 +167,7 @@ class CursorWrapper(object):
         ps = []
         for p in params:
             if isinstance(p, unicode): 
-                if os.name == 'nt':
+                if not need_convert_utf8:
                     ps.append(p)
                 else:
                     ps.append(unicode(p).encode('utf-8')) # convert from unicode to utf-8 for pyodbc use freetds under Linux
@@ -194,18 +196,29 @@ class CursorWrapper(object):
             new_param_list = [self.format_params(params) for params in param_list]
         return self.cursor.executemany(sql, new_param_list)
 
+    def format_result(self, rows):
+        if not need_convert_utf8:
+            return rows
+        news = []
+        for row in rows:
+            if isinstance(row, str):
+                news.append(unicode(row).decode('utf-8'))
+            else:
+                news.append(row)
+        return tuple(news)
+
     def fetchone(self):
         row = self.cursor.fetchone()
         if row is not None:
             # Convert row to tuple (pyodbc Rows are not sliceable).
-            return tuple(row)
+            return tuple(self.format_result(row))
         return row
 
     def fetchmany(self, chunk):
-        return [tuple(row) for row in self.cursor.fetchmany(chunk)]
+        return [tuple(self.format_result(row)) for row in self.cursor.fetchmany(chunk)]
 
     def fetchall(self):
-        return [tuple(row) for row in self.cursor.fetchall()]
+        return [tuple(self.format_result(row)) for row in self.cursor.fetchall()]
 
     def __getattr__(self, attr):
         if attr in self.__dict__:

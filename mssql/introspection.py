@@ -136,7 +136,7 @@ def get_indexes(cursor, table_name):
     # TODO: how should this import look like? from db .. import .. ?
     from django.db import connection
     from operations import SQL_SERVER_2005_VERSION
-    if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
+    if connection.ops.sqlserver_version >= SQL_SERVER_2005_VERSION:
         cursor.execute(ix_sql, (table_name,))
         for column in [r[0] for r in cursor.fetchall()]:
             if column not in results:
