@@ -92,7 +92,7 @@ def query_class(QueryClass):
             out_cols = self.get_columns(with_col_aliases)
             ordering = self.get_ordering()
 
-            if connection.ops.sqlserver_version >= SQL_SERVER_2005_VERSION:
+            if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 # Getting the "ORDER BY" SQL for the ROW_NUMBER() result.
                 if not self.high_mark:
                     self.high_mark = connection.ops.no_limit_value()
@@ -128,16 +128,18 @@ def query_class(QueryClass):
             sql, params= self.as_sql_internal(with_col_aliases=True, with_top_n=True)
             qn = self.quote_name_unless_alias
             opts = self.model._meta
+            as_temp_table = '__XXX_as_XXX__'
             if not ordering: # if don't has ordering, we make a default ordering
                 ordering = '%s.%s' % (qn(opts.db_table), qn(opts.fields[0].db_column or opts.fields[0].column))
-                ordering_rev = '%s DESC' % ordering
+                ordering_as = '%s.%s' % (as_temp_table, qn(opts.fields[0].db_column or opts.fields[0].column))
+                ordering_rev = '%s DESC' % ordering_as
             else:
                 self.standard_ordering = not self.standard_ordering
                 ordering_rev = self.get_ordering()
                 self.standard_ordering = not self.standard_ordering
                 ordering = ','.join(ordering)
                 ordering_rev = ','.join(ordering_rev)
-            fmt = """SELECT * FROM (SELECT TOP  %(limit)d * FROM (%(sql)s ORDER BY %(ordering)s ) as %(table)s ORDER BY %(ordering_rev)s ) AS %(table)s ORDER BY %(ordering)s"""
+            fmt = """SELECT * FROM (SELECT TOP  %(limit)d * FROM (%(sql)s ORDER BY %(ordering)s ) as %(table)s ORDER BY %(ordering_rev)s ) AS %(table)s ORDER BY %(ordering_as)s"""
             tmpl = string.Template(sql)
             if not self.high_mark:
                 raise "SQL SERVER 2000 not supper [OFFSET:] "
@@ -146,8 +148,9 @@ def query_class(QueryClass):
                 result = fmt % {'limit':self.high_mark-self.low_mark,
                             'sql':sqlp,
                             'ordering':ordering,
+                            'ordering_as':ordering_as,
                             'ordering_rev':ordering_rev,
-                            'table':qn(opts.db_table),
+                            'table':as_temp_table,
                             }
             return result, params
 
@@ -173,7 +176,7 @@ def query_class(QueryClass):
 
             from django.db import connection
             from operations import SQL_SERVER_2005_VERSION
-            if connection.ops.sqlserver_version >= SQL_SERVER_2005_VERSION:
+            if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 # For Sqlserver 2005 and up, we use row_number() for limit/offset
                 # We need to select the row number for the LIMIT/OFFSET sql.
                 # A placeholder is added to extra_select now, because as_sql is

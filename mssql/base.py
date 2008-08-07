@@ -37,7 +37,7 @@ except ImportError, e:
 need_convert_utf8 = False 
 if os.name != 'nt':
     need_convert_utf8 = True # For FreeTDS
-    
+
 try:
     # Only exists in Python 2.4+
     from threading import local
@@ -63,6 +63,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     features = DatabaseFeatures() 
     ops = DatabaseOperations()
 
+    sqlserver_version = None
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
     # T-SQL LIKE:       http://msdn2.microsoft.com/en-us/library/ms179859.aspx
@@ -135,11 +136,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.connection = Database.connect(odbc_string, self.options["autocommit"])
 
         cursor = CursorWrapper(self.connection.cursor())
-        if not self.ops.sqlserver_version:
+        if not self.sqlserver_version:
             cursor.execute("SELECT cast(SERVERPROPERTY('ProductVersion') as varchar)")
-            self.ops.sqlserver_version = int(cursor.fetchone()[0].split('.')[0])
+            self.sqlserver_version = int(cursor.fetchone()[0].split('.')[0])
             from operations import SQL_SERVER_2005_VERSION
-            if self.ops.sqlserver_version >= SQL_SERVER_2005_VERSION:
+            if self.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 from creation import DATA_TYPES
                 DATA_TYPES['TextField'] = 'nvarchar(max)'
             # FreeTDS can't execute some sql like CREATE DATABASE ... etc. in Multi-statement, so need commit for avoid this
@@ -170,7 +171,10 @@ class CursorWrapper(object):
                 if not need_convert_utf8:
                     ps.append(p)
                 else:
-                    ps.append(unicode(p).encode('utf-8')) # convert from unicode to utf-8 for pyodbc use freetds under Linux
+                    ps.append(p.encode('utf-8'))# convert from unicode to utf-8 for pyodbc use freetds under Linux
+            elif isinstance(p,str):
+                np = p.decode('utf-8') # TODO: use system encoding?
+                ps.append(np.encode('utf-8'))
             elif isinstance(p,type(True)): # convert bool to integer
                 if p:
                     ps.append(1)
@@ -202,7 +206,7 @@ class CursorWrapper(object):
         news = []
         for row in rows:
             if isinstance(row, str):
-                news.append(unicode(row).decode('utf-8'))
+                news.append(row.decode('utf-8'))
             else:
                 news.append(row)
         return tuple(news)

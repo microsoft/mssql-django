@@ -8,9 +8,6 @@ ORDER_DESC = "DESC"
 SQL_SERVER_2005_VERSION = 9
 
 class DatabaseOperations(BaseDatabaseOperations):
-
-    sqlserver_version = None
-    
     def last_insert_id(self, cursor, table_name, pk_name):
         # TODO: Check how the `last_insert_id` is being used in the upper layers
         #       in context of multithreaded access, compare with other backends
@@ -130,7 +127,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         return 'CONTAINS(%s, %%s)' % field_name
     
     def field_cast_sql(self, db_type):
-        if self.sqlserver_version < SQL_SERVER_2005_VERSION and db_type and db_type.startswith('ntext'):
+        from django.db import connection
+        if connection.sqlserver_version < SQL_SERVER_2005_VERSION and db_type and db_type.startswith('ntext'):
             return "substring(%s,1,8000)"
         else:
             return "%s"
