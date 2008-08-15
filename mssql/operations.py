@@ -1,6 +1,6 @@
 from django.db.backends import BaseDatabaseOperations, util
 from django.utils.datastructures import SortedDict
-from django.db.backends.mssql import query
+import query
 
 ORDER_ASC = "ASC"
 ORDER_DESC = "DESC"
