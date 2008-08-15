@@ -73,7 +73,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10]] for c in cursor.columns(table=table_name)]
         items = []
         for column in columns:
-            if identity_check and _is_auto_field(cursor, table_name, column[0]):
+            if identity_check and self._is_auto_field(cursor, table_name, column[0]):
                 column[1] = SQL_AUTOFIELD
             if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
                 column[1] = Database.SQL_WCHAR
@@ -85,7 +85,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Returns a dictionary of {field_name: field_index} for the given table.
         Indexes are 0-based.
         """
-        return dict([(d[0], i) for i, d in enumerate(get_table_description(cursor, table_name, identity_check=False))])
+        return dict([(d[0], i) for i, d in enumerate(self.get_table_description(cursor, table_name, identity_check=False))])
     
     def get_relations(self, cursor, table_name):
         """
@@ -97,7 +97,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         # REFERENTIAL_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms179987.aspx
         # TABLE_CONSTRAINTS:       http://msdn2.microsoft.com/en-us/library/ms181757.aspx
     
-        table_index = _name_to_index(cursor, table_name)
+        table_index = self._name_to_index(cursor, table_name)
         sql = """
             SELECT e.COLUMN_NAME AS column_name,
                    c.TABLE_NAME AS referenced_table_name,
@@ -114,7 +114,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
               WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'
             """
         cursor.execute(sql, (table_name,))
-        return dict([(table_index[item[0]], (_name_to_index(cursor, item[1])[item[2]], item[1]))
+        return dict([(table_index[item[0]], (self._name_to_index(cursor, item[1])[item[2]], item[1]))
                      for item in cursor.fetchall()])
         
     def get_indexes(self, cursor, table_name):
@@ -156,7 +156,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     AND t.name = %s
         """
     
-        field_names = [item[0] for item in get_table_description(cursor, table_name, identity_check=False)]
+        field_names = [item[0] for item in self.get_table_description(cursor, table_name, identity_check=False)]
         indexes, results = {}, {}
         cursor.execute(pk_uk_sql, (table_name,))
         data = cursor.fetchall()
