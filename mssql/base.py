@@ -16,10 +16,13 @@ DATABASE_ODBC_EXTRA_PARAMS  - Additional parameters for the ODBC connection.
                               The format is "param=value;param=value".
 DATABASE_COLLATE            - Collations 
 """
-from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, util
+from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, util, BaseDatabaseValidation
 from django.core.exceptions import ImproperlyConfigured
 from django.conf import settings
 from operations import DatabaseOperations
+from client import DatabaseClient
+from creation import DatabaseCreation
+from introspection import DatabaseIntrospection
 import datetime
 import os
 
@@ -101,6 +104,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         super(DatabaseWrapper, self).__init__(autocommit=autocommit, **kwargs)
         self.connection = None
         self.queries = []
+        self.client = DatabaseClient()
+        self.creation = DatabaseCreation(self)
+        self.introspection = DatabaseIntrospection(self)
+        self.validation = BaseDatabaseValidation()
 
     def cursor(self):
         from django.conf import settings
@@ -141,8 +148,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.sqlserver_version = int(cursor.fetchone()[0].split('.')[0])
             from operations import SQL_SERVER_2005_VERSION
             if self.sqlserver_version >= SQL_SERVER_2005_VERSION:
-                from creation import DATA_TYPES
-                DATA_TYPES['TextField'] = 'nvarchar(max)'
+                self.creation.data_types['TextField'] = 'nvarchar(max)'
             # FreeTDS can't execute some sql like CREATE DATABASE ... etc. in Multi-statement, so need commit for avoid this
             if not self.connection.autocommit:
                 self.connection.commit()
