@@ -30,7 +30,7 @@ def query_class(QueryClass):
                 self._parent_as_sql = self.as_sql
                 self.as_sql = self._insert_as_sql
 
-        def as_sql_internal(self, with_col_aliases=False, with_row_number=False, with_top_n=False):
+        def as_sql_internal(self, with_col_aliases=False, with_row_number=False, with_top_n=False, rn_orderby=''):
             """
                 SQL SERVER row_number() already have ordering, so this return sql don't has ordering
             """
@@ -42,13 +42,16 @@ def query_class(QueryClass):
             from_, f_params = self.get_from_clause()
 
             where, w_params = self.where.as_sql(qn=self.quote_name_unless_alias)
-            params = list(self.extra_select_params)
-
+            params = []
+            for val in self.extra_select.itervalues():
+                params.extend(val[1])
             result = ['SELECT']
             if self.distinct:
                 result.append('DISTINCT')
             if with_top_n:
                 result.append('TOP ${end_rows} ')
+            else: 
+                self.ordering_aliases.append('(ROW_NUMBER() OVER (ORDER BY %s)) AS [rn]' % rn_orderby)
             result.append(', '.join(out_cols + self.ordering_aliases))
 
             result.append('FROM')
@@ -109,8 +112,7 @@ def query_class(QueryClass):
 
                 # Getting the selection SQL and the params, which has the `rn`
                 # extra selection SQL.
-                self.extra_select['rn'] = 'ROW_NUMBER() OVER (ORDER BY %s )' % rn_orderby
-                sql, params= self.as_sql_internal(with_col_aliases=True, with_row_number=True)
+                sql, params= self.as_sql_internal(with_col_aliases=True, with_row_number=True, rn_orderby=rn_orderby)
 
                 # Constructing the result SQL, using the initial select SQL
                 # obtained above.
@@ -142,7 +144,7 @@ def query_class(QueryClass):
             fmt = """SELECT * FROM (SELECT TOP  %(limit)d * FROM (%(sql)s ORDER BY %(ordering)s ) as %(table)s ORDER BY %(ordering_rev)s ) AS %(table)s ORDER BY %(ordering_as)s"""
             tmpl = string.Template(sql)
             if not self.high_mark:
-                raise "SQL SERVER 2000 not supper [OFFSET:] "
+                raise "FIXME: SQL SERVER 2000 not supper [OFFSET:] "
             else:
                 sqlp = tmpl.substitute({'end_rows':self.high_mark})
                 result = fmt % {'limit':self.high_mark-self.low_mark,
@@ -170,24 +172,6 @@ def query_class(QueryClass):
                         (quoted_table, sql, quoted_table)
 
             return sql, params
-
-        def set_limits(self, low=None, high=None):
-            super(SqlServerQuery, self).set_limits(low, high)
-
-            from django.db import connection
-            from operations import SQL_SERVER_2005_VERSION
-            if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
-                # For Sqlserver 2005 and up, we use row_number() for limit/offset
-                # We need to select the row number for the LIMIT/OFFSET sql.
-                # A placeholder is added to extra_select now, because as_sql is
-                # too late to be modifying extra_select.  However, the actual sql
-                # depends on the ordering, so that is generated in as_sql.
-                self.extra_select['rn'] = '1'
-
-        def clear_limits(self):
-            super(SqlServerQuery, self).clear_limits()
-            if 'rn' in self.extra_select:
-                del self.extra_select['rn']
 
     _classes[QueryClass] = SqlServerQuery
     return SqlServerQuery
