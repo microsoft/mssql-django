@@ -134,8 +134,19 @@ INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS b
   ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME AND a.TABLE_NAME = b.TABLE_NAME
 WHERE a.TABLE_NAME = %s AND (CONSTRAINT_TYPE = 'PRIMARY KEY' OR CONSTRAINT_TYPE = 'UNIQUE')"""
 
-        # non-unique, non-compound indexes
-        ix_sql = """
+        field_names = [item[0] for item in self.get_table_description(cursor, table_name, identity_check=False)]
+        indexes, results = {}, {}
+        cursor.execute(pk_uk_sql, (table_name,))
+        data = cursor.fetchall()
+        if data:
+            results.update(data)
+
+        # TODO: how should this import look like? from db .. import .. ?
+        from django.db import connection
+        from operations import SQL_SERVER_2005_VERSION
+        if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
+            # non-unique, non-compound indexes, only in SS2005?
+            ix_sql = """
 SELECT DISTINCT c.name
 FROM sys.columns c
 INNER JOIN sys.index_columns ic
@@ -153,17 +164,6 @@ AND ix.is_primary_key = 0
 AND ix.is_unique_constraint = 0
 AND t.name = %s"""
 
-        field_names = [item[0] for item in self.get_table_description(cursor, table_name, identity_check=False)]
-        indexes, results = {}, {}
-        cursor.execute(pk_uk_sql, (table_name,))
-        data = cursor.fetchall()
-        if data:
-            results.update(data)
-
-        # TODO: how should this import look like? from db .. import .. ?
-        from django.db import connection
-        from operations import SQL_SERVER_2005_VERSION
-        if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
             cursor.execute(ix_sql, (table_name,))
             for column in [r[0] for r in cursor.fetchall()]:
                 if column not in results:
