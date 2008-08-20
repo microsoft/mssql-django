@@ -1,6 +1,7 @@
-from django.db.backends import BaseDatabaseOperations, util
-from django.utils.datastructures import SortedDict
+from django.db.backends import BaseDatabaseOperations
 import query
+import datetime
+import time
 
 ORDER_ASC = "ASC"
 ORDER_DESC = "DESC"
