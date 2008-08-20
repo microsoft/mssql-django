@@ -29,6 +29,32 @@ def query_class(QueryClass):
             if self.__class__.__name__ == "InsertQuery":
                 self._parent_as_sql = self.as_sql
                 self.as_sql = self._insert_as_sql
+                
+        def resolve_columns(self, row, fields=()):
+            """
+            Cater for the fact that SQL Server has no separate Date and Time
+            data types.
+            """
+            from django.db.models.fields import DateField, DateTimeField, \
+                TimeField, BooleanField, NullBooleanField
+            values = []
+            for value, field in map(None, row, fields):
+                if value is not None:
+                    if isinstance(field, DateTimeField):
+                        # DateTimeField subclasses DateField so must be checked
+                        # first.
+                        pass # do nothing
+                    elif isinstance(field, DateField):
+                        value = value.date() # extract date
+                    elif isinstance(field, TimeField):
+                        value = value.time() # extract time
+                    elif isinstance(field, (BooleanField, NullBooleanField)):
+                        if value in (1,'t','True','1',True):
+                            value = True
+                        else:
+                            value = False
+                values.append(value)
+            return values
 
         def as_sql_internal(self, with_col_aliases=False, with_row_number=False, with_top_n=False, rn_orderby=''):
             """

@@ -52,15 +52,8 @@ DatabaseError = Database.DatabaseError
 IntegrityError = Database.IntegrityError
 
 class DatabaseFeatures(BaseDatabaseFeatures):
-    allows_group_by_ordinal = False
-    allows_unique_and_pk = True
-    autoindexes_primary_keys = True
-    needs_datetime_string_cast = True
-    needs_upper_for_iops = False
-    supports_constraints = True
-    supports_tablespaces = True
-    uses_case_insensitive_names = True
     uses_custom_query_class = True
+    can_use_chunked_reads = False
 
 class DatabaseWrapper(BaseDatabaseWrapper):
     features = DatabaseFeatures() 
@@ -141,6 +134,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 odbc_string +=  ";" + settings.DATABASE_ODBC_EXTRA_PARAMS
 
             self.connection = Database.connect(odbc_string, self.options["autocommit"])
+            self.connection.cursor().execute("SET DATEFORMAT ymd")
 
         cursor = CursorWrapper(self.connection.cursor())
         if not self.sqlserver_version:

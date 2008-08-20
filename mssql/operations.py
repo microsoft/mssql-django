@@ -57,11 +57,6 @@ class DatabaseOperations(BaseDatabaseOperations):
         if lookup_type=='day':
             return "Convert(datetime, Convert(varchar(12), %s))" % field_name
 
-    def limit_offset_sql(self, limit, offset=None):
-        # Limits and offset are too complicated to be handled here.
-        # Look for a implementation similar to SQL Server backend
-        return ""
-
     def quote_name(self, name):
         """
         Returns a quoted version of the given table, index or column name. Does
@@ -151,6 +146,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         # Sql Server doesn't support microseconds
         if value is None:
             return None
+        if isinstance(value, basestring):
+            return datetime.datetime(*(time.strptime(value, '%H:%M:%S')[:6]))
         return unicode(value.replace(microsecond=0))
 
     def year_lookup_bounds(self, value):
@@ -158,3 +155,9 @@ class DatabaseOperations(BaseDatabaseOperations):
         first = '%s-01-01 00:00:00'
         second = '%s-12-31 23:59:59.99'
         return [first % value, second % value]
+    
+    def prep_for_like_query(self, x):
+        """Prepares a value for use in a LIKE query."""
+        from django.utils.encoding import smart_unicode
+        # http://msdn2.microsoft.com/en-us/library/ms179859.aspx
+        return smart_unicode(x).replace('\\', '\\\\').replace('[', '[[]').replace('%', '[%]').replace('_', '[_]')
