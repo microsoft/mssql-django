@@ -141,9 +141,7 @@ WHERE a.TABLE_NAME = %s AND (CONSTRAINT_TYPE = 'PRIMARY KEY' OR CONSTRAINT_TYPE 
         if data:
             results.update(data)
 
-        # TODO: how should this import look like? from db .. import .. ?
-        from django.db import connection
-        if connection.sqlserver_version >= 2005:
+        if self.connection.sqlserver_version >= 2005:
             # non-unique, non-compound indexes, only in SS2005?
             ix_sql = """
 SELECT DISTINCT c.name
