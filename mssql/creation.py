@@ -12,7 +12,6 @@ class DatabaseCreation(BaseDatabaseCreation):
         'FileField':         'nvarchar(%(max_length)s)',
         'FilePathField':     'nvarchar(%(max_length)s)',
         'FloatField':        'double precision',
-        'ImageField':        'nvarchar(254)',
         'IntegerField':      'int',
         'IPAddressField':    'nvarchar(15)',
         'ManyToManyField':   None,
