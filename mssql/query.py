@@ -4,8 +4,6 @@ Derives from: django.db.models.sql.query.Query
 """
 import string
 
-from django.db.backends import util
-
 # Cache. Maps default query class to new SqlServer query class.
 _classes = {}
 
@@ -29,7 +27,7 @@ def query_class(QueryClass):
             if self.__class__.__name__ == "InsertQuery":
                 self._parent_as_sql = self.as_sql
                 self.as_sql = self._insert_as_sql
-                
+
         def resolve_columns(self, row, fields=()):
             """
             Cater for the fact that SQL Server has no separate Date and Time
@@ -76,7 +74,7 @@ def query_class(QueryClass):
                 result.append('DISTINCT')
             if with_top_n:
                 result.append('TOP ${end_rows} ')
-            else: 
+            else:
                 self.ordering_aliases.append('(ROW_NUMBER() OVER (ORDER BY %s)) AS [rn]' % rn_orderby)
             result.append(', '.join(out_cols + self.ordering_aliases))
 
@@ -184,11 +182,11 @@ def query_class(QueryClass):
 
         def _insert_as_sql(self, *args, **kwargs):
             meta = self.get_meta()
-            
+
             quoted_table = self.connection.ops.quote_name(meta.db_table)
             # Get (sql,params) from original InsertQuery.as_sql
             sql, params = self._parent_as_sql(*args,**kwargs)
-            
+
             if (meta.pk.attname in self.columns) and (meta.pk.__class__.__name__ == "AutoField"):
                 # check if only have pk and default value
                 if len(self.columns)==1 and len(params)==0:
