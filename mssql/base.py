@@ -1,10 +1,10 @@
 """
-MSSQL database backend for Django.
+MS SQL Server database backend for Django.
 
 Requires pyodbc 2.0.38 or higher (http://pyodbc.sourceforge.net/)
 
 pyodbc params:
-DATABASE_NAME               - Database name. Required. 
+DATABASE_NAME               - Database name. Required.
 DATABASE_HOST               - SQL Server instance in "server\instance" format.
 DATABASE_PORT               - SQL Server instance port.
 DATABASE_USER               - Database user name. If not given then the
@@ -14,7 +14,7 @@ DATABASE_ODBC_DSN           - A named DSN can be used instead of DATABASE_HOST.
 DATABASE_ODBC_DRIVER        - ODBC Driver. Defalut is "{Sql Server}".
 DATABASE_ODBC_EXTRA_PARAMS  - Additional parameters for the ODBC connection.
                               The format is "param=value;param=value".
-DATABASE_COLLATE            - Collations 
+DATABASE_COLLATE            - Collations
 """
 from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, util, BaseDatabaseValidation
 from django.core.exceptions import ImproperlyConfigured
@@ -23,7 +23,6 @@ from operations import DatabaseOperations
 from client import DatabaseClient
 from creation import DatabaseCreation
 from introspection import DatabaseIntrospection
-import datetime
 import os
 
 if not hasattr(settings, "DATABASE_COLLATE"):
@@ -32,21 +31,14 @@ if not hasattr(settings, "DATABASE_COLLATE"):
 try:
     import pyodbc as Database
     version = tuple(map(int, Database.version.split('.')))
-    if version < (2,0,38) :
+    if version < (2, 0, 38) :
         raise ImportError("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
 except ImportError, e:
-    raise ImproperlyConfigured("Error loading pyodbc modules: %s" % ex)
+    raise ImproperlyConfigured("Error loading pyodbc modules: %s" % e)
 
-need_convert_utf8 = False 
+need_convert_utf8 = False
 if os.name != 'nt':
     need_convert_utf8 = True # For FreeTDS
-
-try:
-    # Only exists in Python 2.4+
-    from threading import local
-except ImportError:
-    # Import copy of _thread_local.py from Python 2.4
-    from django.utils._threading_local import local
 
 DatabaseError = Database.DatabaseError
 IntegrityError = Database.IntegrityError
@@ -56,7 +48,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     can_use_chunked_reads = False
 
 class DatabaseWrapper(BaseDatabaseWrapper):
-    features = DatabaseFeatures() 
+    features = DatabaseFeatures()
     ops = DatabaseOperations()
 
     sqlserver_version = None
@@ -152,8 +144,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
 class CursorWrapper(object):
     """
-    A wrapper around the pyodbc cursor that:
-        2. Replaces '%s' parameter placeholder in sql queries to '?' (pyodbc specific).
+    A wrapper around cursor that takes in account some
+    particularities of the pyodbc DB-API 2.0 implementation.
     """
     def __init__(self, cursor):
         self.cursor = cursor
@@ -167,7 +159,7 @@ class CursorWrapper(object):
     def format_params(self, params):
         ps = []
         for p in params:
-            if isinstance(p, unicode): 
+            if isinstance(p, unicode):
                 if not need_convert_utf8:
                     ps.append(p)
                 else:
@@ -193,7 +185,7 @@ class CursorWrapper(object):
         sql = self.format_sql(sql)
         if param_list == []:
             if "?" in sql:
-                return 
+                return
             else:
                 new_param_list = []
         else:
