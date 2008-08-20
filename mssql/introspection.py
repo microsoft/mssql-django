@@ -1,4 +1,5 @@
 from django.db.backends import BaseDatabaseIntrospection
+from django.core.exceptions import ImproperlyConfigured
 
 try:
     import pyodbc as Database
