@@ -3,9 +3,6 @@ import query
 import datetime
 import time
 
-ORDER_ASC = "ASC"
-ORDER_DESC = "DESC"
-
 SQL_SERVER_2005_VERSION = 9
 
 class DatabaseOperations(BaseDatabaseOperations):
