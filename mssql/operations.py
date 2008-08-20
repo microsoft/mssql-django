@@ -150,10 +150,14 @@ class DatabaseOperations(BaseDatabaseOperations):
         return "%s"
 
     def value_to_db_datetime(self, value):
-        # Sql Server doesn't support microseconds
+        """
+        Transform a datetime value to an object compatible with what is expected
+        by the backend driver for datetime columns.
+        """
         if value is None:
             return None
-        return unicode(value.replace(microsecond=0))
+        # SQL Server doesn't support microseconds
+        return value.replace(microsecond=0)
 
     def value_to_db_time(self, value):
         # Sql Server doesn't support microseconds
