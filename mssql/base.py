@@ -97,35 +97,41 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def _cursor(self):
         if self.connection is None:
-            if settings.DATABASE_NAME == '':
+            if not settings.DATABASE_NAME:
                 raise ImproperlyConfigured("You need to specify DATABASE_NAME in your Django settings file.")
 
-            if not settings.DATABASE_HOST and not hasattr(settings, "DATABASE_ODBC_DSN"):
-                raise ImproperlyConfigured("You need to specify DATABASE_HOST or DATABASE_ODBC_DSN  in your Django settings file.")
-
-            if settings.DATABASE_PORT:
-                host_str = '%s:%s' % ( settings.DATABASE_HOST ,settings.DATABASE_PORT)
-            else:
-                host_str = settings.DATABASE_HOST
-
-            odbc_string=""
-
+            connstr = []
             if hasattr(settings, "DATABASE_ODBC_DSN"):
-                odbc_string += "DSN=%s;" % settings.DATABASE_ODBC_DSN
+                connstr.append("DSN=%s" % settings.DATABASE_ODBC_DSN)
             else:
-                odbc_string += "Server=%s;" % host_str
+                if settings.DATABASE_HOST:
+                    host_str = settings.DATABASE_HOST
+                else:
+                    host_str = 'localhost'
+                if settings.DATABASE_PORT:
+                    host_str += ',%s' % settings.DATABASE_PORT
+                connstr.append("Server=%s" % host_str)
+
+            if hasattr(settings, "DATABASE_ODBC_DRIVER"):
+                odbc_driver = settings.DATABASE_ODBC_DRIVER
+            else:
+                if os.name == 'nt':
+                    odbc_driver = "SQL Server"
+                else:
+                    odbc_driver = "FreeTDS"
+            connstr.append("Driver={%s}" % odbc_driver)
 
             if settings.DATABASE_USER:
-                odbc_string += "Uid=%s;Pwd=%s;" % (settings.DATABASE_USER, settings.DATABASE_PASSWORD)
+                connstr.append("Uid=%s;Pwd=%s" % (settings.DATABASE_USER, settings.DATABASE_PASSWORD))
             else:
-                odbc_string += "Integrated Security=SSPI;"
+                connstr.append("Integrated Security=SSPI")
 
-            odbc_string += "Database=%s" % settings.DATABASE_NAME
+            connstr.append("Database=%s" % settings.DATABASE_NAME)
 
             if hasattr(settings, "DATABASE_ODBC_EXTRA_PARAMS"):
-                odbc_string +=  ";" + settings.DATABASE_ODBC_EXTRA_PARAMS
+                connstr.append(settings.DATABASE_ODBC_EXTRA_PARAMS)
 
-            self.connection = Database.connect(odbc_string, self.options["autocommit"])
+            self.connection = Database.connect(';'.join(connstr), autocommit=self.options["autocommit"])
             self.connection.cursor().execute("SET DATEFORMAT ymd")
 
         cursor = CursorWrapper(self.connection.cursor())
