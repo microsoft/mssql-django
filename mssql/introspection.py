@@ -175,15 +175,3 @@ AND t.name = %s"""
             indexes[field] = dict(primary_key=(val=='PRIMARY KEY'), unique=(val=='UNIQUE'), db_index=(val=='IX'))
 
         return indexes
-
-    def get_collations_list(self, cursor):
-        """
-        Returns list of available collations and theirs descriptions.
-        """
-        # http://msdn2.microsoft.com/en-us/library/ms184391.aspx
-        # http://msdn2.microsoft.com/en-us/library/ms179886.aspx
-
-        cursor.execute("SELECT name, description FROM ::fn_helpcollations()")
-        return [tuple(row) for row in cursor.fetchall()]
-
-
