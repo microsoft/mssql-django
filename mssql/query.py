@@ -103,7 +103,6 @@ def query_class(QueryClass):
             """
             """
             from django.db import connection
-            from operations import SQL_SERVER_2005_VERSION
 
             if with_limits and self.high_mark == 0 and self.low_mark == 0:
                 return "",()
@@ -119,7 +118,7 @@ def query_class(QueryClass):
             out_cols = self.get_columns(with_col_aliases)
             ordering = self.get_ordering()
 
-            if connection.sqlserver_version >= SQL_SERVER_2005_VERSION:
+            if connection.sqlserver_version >= 2005:
                 # Getting the "ORDER BY" SQL for the ROW_NUMBER() result.
                 if not self.high_mark:
                     self.high_mark = connection.ops.no_limit_value()

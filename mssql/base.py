@@ -131,9 +131,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         cursor = CursorWrapper(self.connection.cursor())
         if not self.sqlserver_version:
             cursor.execute("SELECT cast(SERVERPROPERTY('ProductVersion') as varchar)")
-            self.sqlserver_version = int(cursor.fetchone()[0].split('.')[0])
-            from operations import SQL_SERVER_2005_VERSION
-            if self.sqlserver_version >= SQL_SERVER_2005_VERSION:
+            ver_code = int(cursor.fetchone()[0].split('.')[0])
+            if ver_code >= 9:
+                self.sqlserver_version = 2005
+            else:
+                self.sqlserver_version = 2000
+
+            if self.sqlserver_version >= 2005:
                 self.creation.data_types['TextField'] = 'nvarchar(max)'
             # FreeTDS can't execute some sql like CREATE DATABASE ... etc.
             # in Multi-statement, so need commit for avoid this

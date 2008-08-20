@@ -3,8 +3,6 @@ import query
 import datetime
 import time
 
-SQL_SERVER_2005_VERSION = 9
-
 class DatabaseOperations(BaseDatabaseOperations):
     def last_insert_id(self, cursor, table_name, pk_name):
         # TODO: Check how the `last_insert_id` is being used in the upper layers
@@ -133,7 +131,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def field_cast_sql(self, db_type):
         from django.db import connection
-        if connection.sqlserver_version < SQL_SERVER_2005_VERSION and db_type and db_type.startswith('ntext'):
+        if connection.sqlserver_version < 2005 and db_type and db_type.startswith('ntext'):
             return "substring(%s,1,8000)"
         else:
             return "%s"
