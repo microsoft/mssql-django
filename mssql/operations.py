@@ -11,14 +11,14 @@ class DatabaseOperations(BaseDatabaseOperations):
     def last_insert_id(self, cursor, table_name, pk_name):
         # TODO: Check how the `last_insert_id` is being used in the upper layers
         #       in context of multithreaded access, compare with other backends
-        
+
         # IDENT_CURRENT:  http://msdn2.microsoft.com/en-us/library/ms175098.aspx
         # SCOPE_IDENTITY: http://msdn2.microsoft.com/en-us/library/ms190315.aspx
         # @@IDENTITY:     http://msdn2.microsoft.com/en-us/library/ms187342.aspx
-        
+
         # IDENT_CURRENT is not limited by scope and session; it is limited to
         # a specified table. IDENT_CURRENT returns the value generated for
-        # a specific table in any session and any scope. 
+        # a specific table in any session and any scope.
         # SCOPE_IDENTITY and @@IDENTITY return the last identity values that
         # are generated in any table in the current session. However,
         # SCOPE_IDENTITY returns values inserted only within the current scope;
@@ -26,16 +26,12 @@ class DatabaseOperations(BaseDatabaseOperations):
 
         table_name = self.quote_name(table_name)
         pk_name = self.quote_name(pk_name)
-        #cursor.execute("SELECT %s FROM %s WHERE %s = IDENT_CURRENT(%%s)" % (pk_name, table_name, pk_name), [table_name]) 
-        cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as int)", [table_name]) 
+        #cursor.execute("SELECT %s FROM %s WHERE %s = IDENT_CURRENT(%%s)" % (pk_name, table_name, pk_name), [table_name])
+        cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as int)", [table_name])
         return cursor.fetchone()[0]
 
     def query_class(self,DefaultQueryClass):
         return query.query_class(DefaultQueryClass)
-    
-    def query_set_class(self, DefaultQuerySet):
-        "Create a custom QuerySet class for SQL Server."
-        return SqlServerQuerySet
 
     def date_extract_sql(self, lookup_type, field_name):
         """
@@ -110,7 +106,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             ) for seq in sequences])
         sql_list.extend(['ALTER TABLE %s CHECK CONSTRAINT %s;' % \
                 (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks])
-        return sql_list 
+        return sql_list
 
     def start_transaction_sql(self):
         """
@@ -120,14 +116,14 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def fulltext_search_sql(self, field_name):
         return 'CONTAINS(%s, %%s)' % field_name
-    
+
     def field_cast_sql(self, db_type):
         from django.db import connection
         if connection.sqlserver_version < SQL_SERVER_2005_VERSION and db_type and db_type.startswith('ntext'):
             return "substring(%s,1,8000)"
         else:
             return "%s"
-    
+
     def no_limit_value(self):
         return 9223372036854775807L
 
@@ -155,7 +151,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         first = '%s-01-01 00:00:00'
         second = '%s-12-31 23:59:59.99'
         return [first % value, second % value]
-    
+
     def prep_for_like_query(self, x):
         """Prepares a value for use in a LIKE query."""
         from django.utils.encoding import smart_unicode
