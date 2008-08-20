@@ -16,7 +16,7 @@ DATABASE_ODBC_EXTRA_PARAMS  - Additional parameters for the ODBC connection.
                               The format is "param=value;param=value".
 DATABASE_COLLATE            - Collations
 """
-from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, util, BaseDatabaseValidation
+from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, BaseDatabaseValidation
 from django.core.exceptions import ImproperlyConfigured
 from django.conf import settings
 from operations import DatabaseOperations
@@ -87,15 +87,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def __init__(self, autocommit=False, **kwargs):
         super(DatabaseWrapper, self).__init__(autocommit=autocommit, **kwargs)
-        self.connection = None
-        self.queries = []
+
         self.client = DatabaseClient()
         self.creation = DatabaseCreation(self)
         self.introspection = DatabaseIntrospection(self)
         self.validation = BaseDatabaseValidation()
 
-    def cursor(self):
-        from django.conf import settings
+        self.connection = None
+
+    def _cursor(self):
         if self.connection is None:
             if settings.DATABASE_NAME == '':
                 raise ImproperlyConfigured("You need to specify DATABASE_NAME in your Django settings file.")
@@ -135,11 +135,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             from operations import SQL_SERVER_2005_VERSION
             if self.sqlserver_version >= SQL_SERVER_2005_VERSION:
                 self.creation.data_types['TextField'] = 'nvarchar(max)'
-            # FreeTDS can't execute some sql like CREATE DATABASE ... etc. in Multi-statement, so need commit for avoid this
+            # FreeTDS can't execute some sql like CREATE DATABASE ... etc.
+            # in Multi-statement, so need commit for avoid this
             if not self.connection.autocommit:
                 self.connection.commit()
-        if settings.DEBUG:
-            return util.CursorDebugWrapper(cursor, self)
+
         return cursor
 
 class CursorWrapper(object):
