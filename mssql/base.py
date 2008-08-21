@@ -36,10 +36,6 @@ try:
 except ImportError, e:
     raise ImproperlyConfigured("Error loading pyodbc modules: %s" % e)
 
-need_convert_utf8 = False
-if os.name != 'nt':
-    need_convert_utf8 = True # For FreeTDS
-
 DatabaseError = Database.DatabaseError
 IntegrityError = Database.IntegrityError
 
@@ -50,8 +46,9 @@ class DatabaseFeatures(BaseDatabaseFeatures):
 class DatabaseWrapper(BaseDatabaseWrapper):
     features = DatabaseFeatures()
     ops = DatabaseOperations()
-
     sqlserver_version = None
+    driver_needs_utf8 = None
+
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
     # T-SQL LIKE:       http://msdn2.microsoft.com/en-us/library/ms179859.aspx
@@ -134,7 +131,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.connection = Database.connect(';'.join(connstr), autocommit=self.options["autocommit"])
             self.connection.cursor().execute("SET DATEFORMAT ymd")
 
-        cursor = CursorWrapper(self.connection.cursor())
+        cursor = self.connection.cursor()
         if not self.sqlserver_version:
             cursor.execute("SELECT cast(SERVERPROPERTY('ProductVersion') as varchar)")
             ver_code = int(cursor.fetchone()[0].split('.')[0])
@@ -146,21 +143,27 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             if self.sqlserver_version < 2005:
                 self.creation.data_types['TextField'] = 'ntext'
 
+            if self.driver_needs_utf8 is None:
+                self.driver_needs_utf8 = True
+                if self.connection.getinfo(Database.SQL_DRIVER_NAME) == 'SQLSRV32.DLL':
+                    self.driver_needs_utf8 = False
+
             # FreeTDS can't execute some sql like CREATE DATABASE etc. in
             # Multi-statement, so we need to commit the above SQL sentences to
             # avoid this
             if not self.connection.autocommit:
                 self.connection.commit()
 
-        return cursor
+        return CursorWrapper(cursor, self.driver_needs_utf8)
 
 class CursorWrapper(object):
     """
     A wrapper around cursor that takes in account some
     particularities of the pyodbc DB-API 2.0 implementation.
     """
-    def __init__(self, cursor):
+    def __init__(self, cursor, driver_needs_utf8):
         self.cursor = cursor
+        self.driver_needs_utf8 = driver_needs_utf8
 
     def format_sql(self, sql):
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
@@ -172,14 +175,14 @@ class CursorWrapper(object):
         ps = []
         for p in params:
             if isinstance(p, unicode):
-                if not need_convert_utf8:
+                if not self.driver_needs_utf8:
                     ps.append(p)
                 else:
                     ps.append(p.encode('utf-8'))# convert from unicode to utf-8 for pyodbc use freetds under Linux
-            elif isinstance(p,str):
+            elif isinstance(p, str):
                 np = p.decode('utf-8') # TODO: use system encoding?
                 ps.append(np.encode('utf-8'))
-            elif isinstance(p,type(True)): # convert bool to integer
+            elif isinstance(p, type(True)): # convert bool to integer
                 if p:
                     ps.append(1)
                 else:
@@ -205,7 +208,7 @@ class CursorWrapper(object):
         return self.cursor.executemany(sql, new_param_list)
 
     def format_result(self, rows):
-        if not need_convert_utf8:
+        if not self.driver_needs_utf8:
             return rows
         news = []
         for row in rows:
