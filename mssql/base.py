@@ -31,10 +31,10 @@ if not hasattr(settings, "DATABASE_COLLATE"):
 try:
     import pyodbc as Database
     version = tuple(map(int, Database.version.split('.')))
-    if version < (2, 0, 38) :
+    if version < (2, 0, 38):
         raise ImportError("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
 except ImportError, e:
-    raise ImproperlyConfigured("Error loading pyodbc modules: %s" % e)
+    raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
 
 DatabaseError = Database.DatabaseError
 IntegrityError = Database.IntegrityError
@@ -92,7 +92,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         self.connection = None
 
-    def _cursor(self):
+    def _cursor(self, settings):
         if self.connection is None:
             if not settings.DATABASE_NAME:
                 raise ImproperlyConfigured("You need to specify DATABASE_NAME in your Django settings file.")
