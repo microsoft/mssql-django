@@ -43,6 +43,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     uses_custom_query_class = True
     can_use_chunked_reads = False
 
+
 class DatabaseWrapper(BaseDatabaseWrapper):
     features = DatabaseFeatures()
     ops = DatabaseOperations()
@@ -93,7 +94,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         self.connection = None
 
     def _cursor(self, settings):
+        new_conn = False
         if self.connection is None:
+            new_conn = True
             if not settings.DATABASE_NAME:
                 raise ImproperlyConfigured("You need to specify DATABASE_NAME in your Django settings file.")
 
@@ -129,24 +132,35 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 connstr.append(settings.DATABASE_ODBC_EXTRA_PARAMS)
 
             self.connection = Database.connect(';'.join(connstr), autocommit=self.options["autocommit"])
-            self.connection.cursor().execute("SET DATEFORMAT ymd")
 
         cursor = self.connection.cursor()
-        if not self.sqlserver_version:
-            cursor.execute("SELECT cast(SERVERPROPERTY('ProductVersion') as varchar)")
-            ver_code = int(cursor.fetchone()[0].split('.')[0])
-            if ver_code >= 9:
-                self.sqlserver_version = 2005
-            else:
-                self.sqlserver_version = 2000
+        if new_conn:
+            cursor().execute("SET DATEFORMAT ymd")
+
+            if not self.sqlserver_version:
+                cursor.execute("SELECT cast(SERVERPROPERTY('ProductVersion') as varchar)")
+                ver_code = int(cursor.fetchone()[0].split('.')[0])
+                if ver_code >= 9:
+                    self.sqlserver_version = 2005
+                else:
+                    self.sqlserver_version = 2000
 
             if self.sqlserver_version < 2005:
                 self.creation.data_types['TextField'] = 'ntext'
 
             if self.driver_needs_utf8 is None:
                 self.driver_needs_utf8 = True
-                if self.connection.getinfo(Database.SQL_DRIVER_NAME) == 'SQLSRV32.DLL':
+                drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
+                if drv_name == 'SQLSRV32.DLL':
                     self.driver_needs_utf8 = False
+
+                # http://msdn.microsoft.com/en-us/library/ms131686.aspx
+                #if self.sqlserver_version >= 2005 and drv_name == 'SQLNCLI.DLL':
+                #    # TODO: How can we know when MARS is active?
+                #    # How to use the conn string to activate it: Add
+                #    # "MARS_Connection=yes" to DATABASE_ODBC_EXTRA_PARAMS
+                #    self.features.can_use_chunked_reads = True
+                #
 
             # FreeTDS can't execute some sql like CREATE DATABASE etc. in
             # Multi-statement, so we need to commit the above SQL sentences to
@@ -155,6 +169,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 self.connection.commit()
 
         return CursorWrapper(cursor, self.driver_needs_utf8)
+
 
 class CursorWrapper(object):
     """
