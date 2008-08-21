@@ -130,11 +130,16 @@ class DatabaseOperations(BaseDatabaseOperations):
         return 'CONTAINS(%s, %%s)' % field_name
 
     def field_cast_sql(self, db_type):
+        """
+        Given a column type (e.g. 'BLOB', 'VARCHAR'), returns the SQL necessary
+        to cast it before using it in a WHERE statement. Note that the
+        resulting string should contain a '%s' placeholder for the column being
+        searched against.
+        """
         from django.db import connection
-        if connection.sqlserver_version < 2005 and db_type and db_type.startswith('ntext'):
-            return "substring(%s,1,8000)"
-        else:
-            return "%s"
+        if connection.sqlserver_version < 2005 and db_type and db_type.lower() == 'ntext':
+            return 'CAST(%s as nvarchar)'
+        return '%s'
 
     def no_limit_value(self):
         return 9223372036854775807L

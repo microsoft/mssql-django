@@ -143,10 +143,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             else:
                 self.sqlserver_version = 2000
 
-            if self.sqlserver_version >= 2005:
-                self.creation.data_types['TextField'] = 'nvarchar(max)'
-            # FreeTDS can't execute some sql like CREATE DATABASE ... etc.
-            # in Multi-statement, so need commit for avoid this
+            if self.sqlserver_version < 2005:
+                self.creation.data_types['TextField'] = 'ntext'
+
+            # FreeTDS can't execute some sql like CREATE DATABASE etc. in
+            # Multi-statement, so we need to commit the above SQL sentences to
+            # avoid this
             if not self.connection.autocommit:
                 self.connection.commit()
 

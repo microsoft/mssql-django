@@ -22,7 +22,7 @@ class DatabaseCreation(BaseDatabaseCreation):
         'PositiveSmallIntegerField': 'smallint CHECK ([%(column)s] >= 0)',
         'SlugField':         'nvarchar(%(max_length)s)',
         'SmallIntegerField': 'smallint',
-        'TextField':         'ntext',
+        'TextField':         'nvarchar(max)',
         'TimeField':         'datetime',
         'USStateField':      'nchar(2)',
     }
