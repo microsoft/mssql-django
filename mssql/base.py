@@ -135,7 +135,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         cursor = self.connection.cursor()
         if new_conn:
-            cursor().execute("SET DATEFORMAT ymd")
+            cursor.execute("SET DATEFORMAT ymd")
 
             if not self.sqlserver_version:
                 cursor.execute("SELECT cast(SERVERPROPERTY('ProductVersion') as varchar)")
