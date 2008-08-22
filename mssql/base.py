@@ -173,8 +173,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
 class CursorWrapper(object):
     """
-    A wrapper around cursor that takes in account some
-    particularities of the pyodbc DB-API 2.0 implementation.
+    A wrapper around the pyodbc's cursor that takes in account some pyodbc
+    DB-API 2.0 implementation and common ODBC driver particularities.
     """
     def __init__(self, cursor, driver_needs_utf8):
         self.cursor = cursor
@@ -187,64 +187,68 @@ class CursorWrapper(object):
         return sql
 
     def format_params(self, params):
-        ps = []
+        fp = []
         for p in params:
             if isinstance(p, unicode):
-                if not self.driver_needs_utf8:
-                    ps.append(p)
+                if self.driver_needs_utf8:
+                    # FreeTDS (and other ODBC drivers?) doesn't support Unicode
+                    # yet, so we need to encode parameters in utf-8
+                    fp.append(p.encode('utf-8'))
                 else:
-                    ps.append(p.encode('utf-8'))# convert from unicode to utf-8 for pyodbc use freetds under Linux
+                    fp.append(p)
             elif isinstance(p, str):
                 np = p.decode('utf-8') # TODO: use system encoding?
-                ps.append(np.encode('utf-8'))
-            elif isinstance(p, type(True)): # convert bool to integer
+                fp.append(np.encode('utf-8'))
+            elif isinstance(p, type(True)):
                 if p:
-                    ps.append(1)
+                    fp.append(1)
                 else:
-                    ps.append(0)
+                    fp.append(0)
             else:
-                ps.append(p)
-        return tuple(ps)
+                fp.append(p)
+        return tuple(fp)
 
     def execute(self, sql, params=()):
         sql = self.format_sql(sql)
         params = self.format_params(params)
         return self.cursor.execute(sql, params)
 
-    def executemany(self, sql, param_list):
+    def executemany(self, sql, params_list):
         sql = self.format_sql(sql)
-        if param_list == []:
-            if "?" in sql:
+        # pyodbc's cursor.executemany() doesn't support an empty param_list
+        if not params_list:
+            if '?' in sql:
                 return
-            else:
-                new_param_list = []
         else:
-            new_param_list = [self.format_params(params) for params in param_list]
-        return self.cursor.executemany(sql, new_param_list)
+            raw_pll = params_list
+            params_list = [self.format_params(p) for p in raw_pll]
+        return self.cursor.executemany(sql, params_list)
 
-    def format_result(self, rows):
+    def format_results(self, rows):
         if not self.driver_needs_utf8:
             return rows
-        news = []
+        # FreeTDS (and other ODBC drivers?) doesn't support Unicode
+        # yet, so we need to decode utf-8 data coming from the DB
+        fr = []
         for row in rows:
             if isinstance(row, str):
-                news.append(row.decode('utf-8'))
+                fr.append(row.decode('utf-8'))
             else:
-                news.append(row)
-        return tuple(news)
+                fr.append(row)
+        return tuple(fr)
 
     def fetchone(self):
         row = self.cursor.fetchone()
         if row is not None:
             # Convert row to tuple (pyodbc Rows are not sliceable).
-            return tuple(self.format_result(row))
+            return tuple(self.format_results(row))
         return row
 
     def fetchmany(self, chunk):
-        return [tuple(self.format_result(row)) for row in self.cursor.fetchmany(chunk)]
+        return [tuple(self.format_results(row)) for row in self.cursor.fetchmany(chunk)]
 
     def fetchall(self):
-        return [tuple(self.format_result(row)) for row in self.cursor.fetchall()]
+        return [tuple(self.format_results(row)) for row in self.cursor.fetchall()]
 
     def __getattr__(self, attr):
         if attr in self.__dict__:
