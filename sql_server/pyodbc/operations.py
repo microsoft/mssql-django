@@ -1,5 +1,5 @@
 from django.db.backends import BaseDatabaseOperations
-import query
+from sql_server.pyodbc import query
 import datetime
 import time
 

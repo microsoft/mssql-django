@@ -20,9 +20,9 @@ from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, BaseDa
 from django.core.exceptions import ImproperlyConfigured
 from django.conf import settings
 from operations import DatabaseOperations
-from client import DatabaseClient
-from creation import DatabaseCreation
-from introspection import DatabaseIntrospection
+from sql_server.pyodbc.client import DatabaseClient
+from sql_server.pyodbc.creation import DatabaseCreation
+from sql_server.pyodbc.introspection import DatabaseIntrospection
 import os
 
 if not hasattr(settings, "DATABASE_COLLATE"):
