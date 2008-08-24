@@ -49,6 +49,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     ops = DatabaseOperations()
     sqlserver_version = None
     driver_needs_utf8 = None
+    MARS_Connection = False
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
@@ -85,6 +86,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def __init__(self, autocommit=False, **kwargs):
         super(DatabaseWrapper, self).__init__(autocommit=autocommit, **kwargs)
+        
+        if kwargs.get('MARS_Connection',False):
+            self.MARS_Connection = True
 
         self.client = DatabaseClient()
         self.creation = DatabaseCreation(self)
@@ -128,6 +132,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
             connstr.append("Database=%s" % settings.DATABASE_NAME)
 
+            if self.MARS_Connection:
+                connstr.append("MARS_Connection=yes")
             if hasattr(settings, "DATABASE_ODBC_EXTRA_PARAMS"):
                 connstr.append(settings.DATABASE_ODBC_EXTRA_PARAMS)
 
@@ -151,16 +157,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             if self.driver_needs_utf8 is None:
                 self.driver_needs_utf8 = True
                 drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
-                if drv_name == 'SQLSRV32.DLL':
+                if drv_name in ('SQLSRV32.DLL','SQLNCLI.DLL'):
                     self.driver_needs_utf8 = False
 
                 # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-                #if self.sqlserver_version >= 2005 and drv_name == 'SQLNCLI.DLL':
-                #    # TODO: How can we know when MARS is active?
-                #    # How to use the conn string to activate it: Add
-                #    # "MARS_Connection=yes" to DATABASE_ODBC_EXTRA_PARAMS
-                #    self.features.can_use_chunked_reads = True
-                #
+                if self.sqlserver_version >= 2005 and drv_name == 'SQLNCLI.DLL' and self.MARS_Connection:
+                    # How to to activate it: Add
+                    # "{'MARS_Connection':True}" to DATABASE_OPTIONS
+                    self.features.can_use_chunked_reads = True
+                
 
             # FreeTDS can't execute some sql like CREATE DATABASE etc. in
             # Multi-statement, so we need to commit the above SQL sentences to
