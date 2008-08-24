@@ -19,7 +19,7 @@ DATABASE_COLLATE            - Collations
 from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, BaseDatabaseValidation
 from django.core.exceptions import ImproperlyConfigured
 from django.conf import settings
-from operations import DatabaseOperations
+from sql_server.pyodbc.operations import DatabaseOperations
 from sql_server.pyodbc.client import DatabaseClient
 from sql_server.pyodbc.creation import DatabaseCreation
 from sql_server.pyodbc.introspection import DatabaseIntrospection
