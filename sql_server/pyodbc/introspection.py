@@ -1,10 +1,5 @@
 from django.db.backends import BaseDatabaseIntrospection
-from django.core.exceptions import ImproperlyConfigured
-
-try:
-    import pyodbc as Database
-except ImportError, e:
-    raise ImproperlyConfigured, "Error loading pyodbc module: %s" % e
+import pyodbc as Database
 
 SQL_AUTOFIELD = -777555
 

@@ -16,8 +16,19 @@ DATABASE_ODBC_EXTRA_PARAMS  - Additional parameters for the ODBC connection.
                               The format is "param=value;param=value".
 DATABASE_COLLATE            - Collations
 """
+
+try:
+    import pyodbc as Database
+except ImportError, e:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
+
+version = tuple(map(int, Database.version.split('.')))
+if version < (2, 0, 38):
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
+
 from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, BaseDatabaseValidation
-from django.core.exceptions import ImproperlyConfigured
 from django.conf import settings
 from sql_server.pyodbc.operations import DatabaseOperations
 from sql_server.pyodbc.client import DatabaseClient
@@ -27,14 +38,6 @@ import os
 
 if not hasattr(settings, "DATABASE_COLLATE"):
     settings.DATABASE_COLLATE = 'Latin1_General_CI_AS'
-
-try:
-    import pyodbc as Database
-    version = tuple(map(int, Database.version.split('.')))
-    if version < (2, 0, 38):
-        raise ImportError("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
-except ImportError, e:
-    raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
 
 DatabaseError = Database.DatabaseError
 IntegrityError = Database.IntegrityError
@@ -86,7 +89,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def __init__(self, autocommit=False, **kwargs):
         super(DatabaseWrapper, self).__init__(autocommit=autocommit, **kwargs)
-        
+
         if kwargs.get('MARS_Connection',False):
             self.MARS_Connection = True
 
@@ -102,6 +105,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if self.connection is None:
             new_conn = True
             if not settings.DATABASE_NAME:
+                from django.core.exceptions import ImproperlyConfigured
                 raise ImproperlyConfigured("You need to specify DATABASE_NAME in your Django settings file.")
 
             connstr = []
@@ -165,7 +169,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     # How to to activate it: Add
                     # "{'MARS_Connection':True}" to DATABASE_OPTIONS
                     self.features.can_use_chunked_reads = True
-                
+
 
             # FreeTDS can't execute some sql like CREATE DATABASE etc. in
             # Multi-statement, so we need to commit the above SQL sentences to
