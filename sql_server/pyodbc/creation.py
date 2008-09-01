@@ -17,14 +17,12 @@ class DatabaseCreation(BaseDatabaseCreation):
         'ManyToManyField':   None,
         'NullBooleanField':  'bit',
         'OneToOneField':     'int',
-        'PhoneNumberField':  'nvarchar(20) ',
         'PositiveIntegerField': 'int CHECK ([%(column)s] >= 0)',
         'PositiveSmallIntegerField': 'smallint CHECK ([%(column)s] >= 0)',
         'SlugField':         'nvarchar(%(max_length)s)',
         'SmallIntegerField': 'smallint',
         'TextField':         'nvarchar(max)',
         'TimeField':         'datetime',
-        'USStateField':      'nchar(2)',
     }
 
     def _destroy_test_db(self, test_database_name, verbosity):
