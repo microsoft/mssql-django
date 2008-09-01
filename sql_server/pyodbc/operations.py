@@ -178,3 +178,10 @@ class DatabaseOperations(BaseDatabaseOperations):
         from django.utils.encoding import smart_unicode
         # http://msdn2.microsoft.com/en-us/library/ms179859.aspx
         return smart_unicode(x).replace('\\', '\\\\').replace('[', '[[]').replace('%', '[%]').replace('_', '[_]')
+
+    def prep_for_iexact_query(self, x):
+        """
+        Same as prep_for_like_query(), but called for "iexact" matches, which
+        need not necessarily be implemented using "LIKE" in the backend.
+        """
+        return x
