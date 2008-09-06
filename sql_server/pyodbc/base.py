@@ -1,20 +1,5 @@
 """
 MS SQL Server database backend for Django.
-
-Requires pyodbc 2.0.38 or higher (http://pyodbc.sourceforge.net/)
-
-pyodbc params:
-DATABASE_NAME               - Database name. Required.
-DATABASE_HOST               - SQL Server instance in "server\instance" format.
-DATABASE_PORT               - SQL Server instance port.
-DATABASE_USER               - Database user name. If not given then the
-                              Integrated Security will be used.
-DATABASE_PASSWORD           - Database user password.
-DATABASE_ODBC_DSN           - A named DSN can be used instead of DATABASE_HOST.
-DATABASE_ODBC_DRIVER        - ODBC Driver. Defalut is "{Sql Server}".
-DATABASE_ODBC_EXTRA_PARAMS  - Additional parameters for the ODBC connection.
-                              The format is "param=value;param=value".
-DATABASE_COLLATE            - Collations
 """
 
 try:
@@ -90,7 +75,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def __init__(self, autocommit=False, **kwargs):
         super(DatabaseWrapper, self).__init__(autocommit=autocommit, **kwargs)
 
-        if kwargs.get('MARS_Connection',False):
+        if kwargs.get('MARS_Connection', False):
             self.MARS_Connection = True
 
         self.client = DatabaseClient()
@@ -166,8 +151,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
                 # http://msdn.microsoft.com/en-us/library/ms131686.aspx
                 if self.sqlserver_version >= 2005 and drv_name == 'SQLNCLI.DLL' and self.MARS_Connection:
-                    # How to to activate it: Add
-                    # "{'MARS_Connection':True}" to DATABASE_OPTIONS
+                    # How to to activate it: Add 'MARS_Connection': True
+                    # to the DATABASE_OPTIONS disctionary setting
                     self.features.can_use_chunked_reads = True
 
 
