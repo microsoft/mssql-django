@@ -89,7 +89,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             # DBCC CHEKIDENT(table, RESEED, n) behavior.
             seqs = []
             for seq in sequences:
-                cursor.execute("SELECT COUNT(*) FROM %s" % seq["table"])
+                cursor.execute("SELECT COUNT(*) FROM %s" % self.quote_name(seq["table"]))
                 rowcnt = cursor.fetchone()[0]
                 elem = {}
                 if rowcnt:
