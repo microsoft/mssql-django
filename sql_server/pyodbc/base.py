@@ -190,6 +190,10 @@ class CursorWrapper(object):
         self.driver_needs_utf8 = driver_needs_utf8
 
     def format_sql(self, sql):
+        if self.driver_needs_utf8 and isinstance(sql, unicode):
+            # FreeTDS (and other ODBC drivers?) doesn't support Unicode
+            # yet, so we need to encode the SQL clause itself in utf-8
+            sql = sql.encode('utf-8')
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
         if "%s" in sql:
             sql = sql.replace('%s', '?')
