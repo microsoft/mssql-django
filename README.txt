@@ -70,7 +70,8 @@ Standard Django settings
 
     ``MARS_Connection``
         Boolean. Only relevant when running on Windows and with SQL Server 2005
-        or later through MS *SQL Server Native client* driver. See
+        or later through MS *SQL Server Native client* driver (i.e. setting
+	``DATABASE_ODBC_DRIVER`` to ``"SQL Native Client"``). See
         http://msdn.microsoft.com/en-us/library/ms131686.aspx.
         Default value is ``False``.
 
@@ -90,7 +91,8 @@ Standard Django settings
 
 ``DATABASE_COLLATION``
     String. Name of the collation to use when performing text field lookups
-    against the database.
+    against the database. Default value is ``"Latin1_General_CI_AS"``.
+    For Chinese language you can set it to ``"Chinese_PRC_CI_AS"``.
 
 License
 =======
