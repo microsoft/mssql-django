@@ -21,8 +21,8 @@ from sql_server.pyodbc.creation import DatabaseCreation
 from sql_server.pyodbc.introspection import DatabaseIntrospection
 import os
 
-if not hasattr(settings, "DATABASE_COLLATE"):
-    settings.DATABASE_COLLATE = 'Latin1_General_CI_AS'
+if not hasattr(settings, "DATABASE_COLLATION"):
+    settings.DATABASE_COLLATION = 'Latin1_General_CI_AS'
 
 DatabaseError = Database.DatabaseError
 IntegrityError = Database.IntegrityError
@@ -52,22 +52,22 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # database collation.
         'exact': '= %s ',
         'iexact': "= UPPER(%s) ",
-        'contains': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
-        'icontains': "LIKE UPPER(%s) ESCAPE '\\' COLLATE "+ settings.DATABASE_COLLATE,
+        'contains': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
+        'icontains': "LIKE UPPER(%s) ESCAPE '\\' COLLATE "+ settings.DATABASE_COLLATION,
         'gt': '> %s',
         'gte': '>= %s',
         'lt': '< %s',
         'lte': '<= %s',
-        'startswith': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
-        'endswith': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
-        'istartswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
-        'iendswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATE,
+        'startswith': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
+        'endswith': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
+        'istartswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
+        'iendswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
 
         # TODO: remove, keep native T-SQL LIKE wildcards support
         # or use a "compatibility layer" and replace '*' with '%'
         # and '.' with '_'
-        'regex': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATE,
-        'iregex': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATE,
+        'regex': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATION,
+        'iregex': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATION,
 
         # TODO: freetext, full-text contains...
     }

@@ -88,7 +88,7 @@ Standard Django settings
     String. Additional parameters for the ODBC connection. The format is
     ``"param=value;param=value"``.
 
-``DATABASE_COLLATE``
+``DATABASE_COLLATION``
     String. Name of the collation to use when performing text field lookups
     against the database.
 
