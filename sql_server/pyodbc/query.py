@@ -153,22 +153,49 @@ def query_class(QueryClass):
             sql, params= self.as_sql_internal(with_col_aliases=True, with_top_n=True)
             qn = self.quote_name_unless_alias
             opts = self.model._meta
-            as_temp_table = '__XXX_as_XXX__'
+            # 
+            # We can have model's db_table as [dbname].[dbo].[tablename] (actually dbname].[dbo].[tablename ;-) , 
+            # so we need change: 
+            #     as [dbname].[dbo].[tablename] order by [dbname].[dbo].[tablename].[field] 
+            #  => as X order by [X].[field]
+            #
+            as_temp_table = 'X'
             if not ordering: # if don't has ordering, we make a default ordering
                 ordering = '%s.%s' % (qn(opts.db_table), qn(opts.fields[0].db_column or opts.fields[0].column))
                 ordering_as = '%s.%s' % (as_temp_table, qn(opts.fields[0].db_column or opts.fields[0].column))
                 ordering_rev = '%s DESC' % ordering_as
             else:
-                self.standard_ordering = not self.standard_ordering
-                ordering_rev = self.get_ordering()
-                self.standard_ordering = not self.standard_ordering
+                o_as = []
+                o_rev = []
+                for o in ordering:
+                    field, order = o.split(".")[-1].split(' ')
+                    o_as += ["%s.%s %s" % (as_temp_table, field, order)]
+                    if order=="DESC": 
+                        order="ASC" 
+                    else: 
+                        order="DESC"
+                    o_rev += ["%s.%s %s" % (as_temp_table, field, order)]
+                ordering_as = ','.join(o_as)
+                ordering_rev = ','.join(o_rev)
                 ordering = ','.join(ordering)
-                ordering_rev = ','.join(ordering_rev)
-            fmt = """SELECT * FROM (SELECT TOP  %(limit)d * FROM (%(sql)s ORDER BY %(ordering)s ) as %(table)s ORDER BY %(ordering_rev)s ) AS %(table)s ORDER BY %(ordering_as)s"""
-            tmpl = string.Template(sql)
             if not self.high_mark:
-                raise "FIXME: SQL SERVER 2000 not supper [OFFSET:] "
+                fmt = """SELECT %(cols)s FROM %(table)s WHERE %(key)s NOT IN (%(sql)s ORDER BY %(ordering)s)"""
+                # get cols and replace by key
+                cols_begin = sql.find('${end_rows}')+len('${end_rows}')+1
+                cols_end = sql.find(' FROM ')
+                cols = sql[cols_begin:cols_end]
+                sql = sql[:cols_begin]+' ${key} ' + sql[cols_end:]
+                tmpl = string.Template(sql)
+                sqlp = tmpl.substitute({'end_rows':self.low_mark,'key':qn(opts.pk.db_column or opts.pk.column)})
+                result = fmt % {'sql':sqlp,
+                                'ordering':ordering,
+                                'table':qn(opts.db_table),
+                                'key':qn(opts.pk.db_column or opts.pk.column),
+                                'cols':cols,
+                                }
             else:
+                fmt = """SELECT * FROM (SELECT TOP  %(limit)d * FROM (%(sql)s ORDER BY %(ordering)s ) as %(table)s ORDER BY %(ordering_rev)s ) AS %(table)s ORDER BY %(ordering_as)s"""
+                tmpl = string.Template(sql)
                 sqlp = tmpl.substitute({'end_rows':self.high_mark})
                 result = fmt % {'limit':self.high_mark-self.low_mark,
                             'sql':sqlp,
