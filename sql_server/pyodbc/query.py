@@ -28,6 +28,18 @@ def query_class(QueryClass):
                 self._parent_as_sql = self.as_sql
                 self.as_sql = self._insert_as_sql
 
+        def __reduce__(self):
+            """
+            Enable pickling for this class (normal pickling handling doesn't
+            work as Python can only pickle module-level classes by default).
+            """
+            if hasattr(QueryClass, '__getstate__'):
+                assert hasattr(QueryClass, '__setstate__')
+                data = self.__getstate__()
+            else:
+                data = self.__dict__
+            return (unpickle_query_class, (QueryClass,), data)
+
         def resolve_columns(self, row, fields=()):
             """
             Cater for the fact that SQL Server has no separate Date and Time
@@ -225,3 +237,12 @@ def query_class(QueryClass):
 
     _classes[QueryClass] = SqlServerQuery
     return SqlServerQuery
+
+def unpickle_query_class(QueryClass):
+    """
+    Utility function, called by Python's unpickling machinery, that handles
+    unpickling of Oracle Query subclasses.
+    """
+    klass = query_class(QueryClass)
+    return klass.__new__(klass)
+unpickle_query_class.__safe_for_unpickling__ = True
