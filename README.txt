@@ -1,11 +1,22 @@
-Django mssql backend using pyodbc
-=================================
+=============
+django-pyodbc
+=============
 
 A Django_ MS SQL Server external DB backend that uses ODBC by employing
 the pyodbc_ library. It supports SQL Server 2000 and 2005.
 
 .. _Django: http://djangoproject.com/
 .. _pyodbc: http://pyodbc.sourceforge.net
+
+Features
+========
+
+* Supports LIMIT+OFFSET and offset w/o LIMIT emulation under SS2005.
+* Supports LIMIT+OFFSET under SS2000.
+* Transparently supports Django's TextField both under SS2000 and SS2005.
+* Passes most of the tests of the Django test suite.
+* Compatible with SQL Server and SQL Server Native Client from Microsoft
+  (Windows) and FreeTDS ODBC drivers (Linux).
 
 Dependencies
 ============
