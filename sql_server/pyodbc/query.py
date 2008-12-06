@@ -163,10 +163,10 @@ def query_class(QueryClass):
             sql, params= self.as_sql_internal(with_col_aliases=True, with_top_n=True)
             qn = self.quote_name_unless_alias
             opts = self.model._meta
-            # 
-            # We can have model's db_table as [dbname].[dbo].[tablename] (actually dbname].[dbo].[tablename ;-) , 
-            # so we need change: 
-            #     as [dbname].[dbo].[tablename] order by [dbname].[dbo].[tablename].[field] 
+            #
+            # We can have model's db_table as [dbname].[dbo].[tablename] (actually dbname].[dbo].[tablename ;-) ,
+            # so we need change:
+            #     as [dbname].[dbo].[tablename] order by [dbname].[dbo].[tablename].[field]
             #  => as X order by [X].[field]
             #
             as_temp_table = 'X'
@@ -180,9 +180,9 @@ def query_class(QueryClass):
                 for o in ordering:
                     field, order = o.split(".")[-1].split(' ')
                     o_as += ["%s.%s %s" % (as_temp_table, field, order)]
-                    if order=="DESC": 
-                        order="ASC" 
-                    else: 
+                    if order=="DESC":
+                        order="ASC"
+                    else:
                         order="DESC"
                     o_rev += ["%s.%s %s" % (as_temp_table, field, order)]
                 ordering_as = ','.join(o_as)
@@ -239,7 +239,7 @@ def query_class(QueryClass):
 def unpickle_query_class(QueryClass):
     """
     Utility function, called by Python's unpickling machinery, that handles
-    unpickling of Oracle Query subclasses.
+    unpickling of our custom Query subclasses.
     """
     klass = query_class(QueryClass)
     return klass.__new__(klass)
