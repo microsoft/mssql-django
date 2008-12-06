@@ -8,8 +8,12 @@ except ImportError, e:
     from django.core.exceptions import ImproperlyConfigured
     raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
 
-version = tuple(map(int, Database.version.split('.')))
-if version < (2, 0, 38):
+import re
+m = re.match(r'(\d+)\.(\d+)\.(\d+)(?:-beta(\d+))?', Database.version)
+vlist = list(m.groups())
+if vlist[3] is None: vlist[3] = '9999'
+pyodbc_ver = tuple(map(int, vlist))
+if pyodbc_ver < (2, 0, 38, 9999):
     from django.core.exceptions import ImproperlyConfigured
     raise ImproperlyConfigured("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
 
