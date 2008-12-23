@@ -23,9 +23,9 @@ def query_class(QueryClass):
         def __init__(self, *args, **kwargs):
             super(SqlServerQuery, self).__init__(*args, **kwargs)
 
-            # If we are an insert query, wrap "as_sql"
+            # If we are an insert query, monkeypatch the "as_sql" method
             if self.__class__.__name__ == "InsertQuery":
-                self._parent_as_sql = self.as_sql
+                self._orig_as_sql = self.as_sql
                 self.as_sql = self._insert_as_sql
 
         def __reduce__(self):
@@ -68,7 +68,7 @@ def query_class(QueryClass):
 
         def as_sql_internal(self, with_col_aliases=False, with_row_number=False, with_top_n=False, rn_orderby=''):
             """
-                SQL SERVER row_number() already have ordering, so this return sql don't has ordering
+            SQL SERVER row_number() already have ordering, so this return sql don't has ordering
             """
             out_cols = self.get_columns(with_col_aliases)
             ordering = self.get_ordering()
@@ -222,15 +222,16 @@ def query_class(QueryClass):
             return result, params
 
         def _insert_as_sql(self, *args, **kwargs):
+            """Helper method for monkeypatching Django InsertQuery's as_sql."""
             meta = self.get_meta()
 
             quoted_table = self.connection.ops.quote_name(meta.db_table)
             # Get (sql,params) from original InsertQuery.as_sql
-            sql, params = self._parent_as_sql(*args,**kwargs)
+            sql, params = self._orig_as_sql(*args, **kwargs)
 
-            if (meta.pk.attname in self.columns) and (meta.pk.__class__.__name__ == "AutoField"):
+            if meta.pk.attname in self.columns and meta.pk.__class__.__name__ == "AutoField":
                 # check if only have pk and default value
-                if len(self.columns)==1 and len(params)==0:
+                if len(self.columns) == 1 and not params:
                     sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
                 else:
                     sql = "SET IDENTITY_INSERT %s ON;%s;SET IDENTITY_INSERT %s OFF" %\
