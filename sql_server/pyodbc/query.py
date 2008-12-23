@@ -108,6 +108,11 @@ def query_class(QueryClass):
                 grouping = self.get_grouping()
                 result.append('GROUP BY %s' % ', '.join(grouping))
 
+            if self.having:
+                having, h_params = self.get_having()
+                result.append('HAVING %s' % ','.join(having))
+                params.extend(h_params)
+
             params.extend(self.extra_params)
             return ' '.join(result), tuple(params)
 
