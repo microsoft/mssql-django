@@ -97,9 +97,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 from django.core.exceptions import ImproperlyConfigured
                 raise ImproperlyConfigured("You need to specify DATABASE_NAME in your Django settings file.")
 
-            connstr = []
+            cstr_parts = []
             if hasattr(settings, "DATABASE_ODBC_DSN"):
-                connstr.append("DSN=%s" % settings.DATABASE_ODBC_DSN)
+                cstr_parts.append("DSN=%s" % settings.DATABASE_ODBC_DSN)
             else:
                 if settings.DATABASE_HOST:
                     host_str = settings.DATABASE_HOST
@@ -107,7 +107,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     host_str = 'localhost'
                 if settings.DATABASE_PORT:
                     host_str += ',%s' % settings.DATABASE_PORT
-                connstr.append("Server=%s" % host_str)
+                cstr_parts.append("Server=%s" % host_str)
 
             if hasattr(settings, "DATABASE_ODBC_DRIVER"):
                 odbc_driver = settings.DATABASE_ODBC_DRIVER
@@ -116,21 +116,22 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     odbc_driver = "SQL Server"
                 else:
                     odbc_driver = "FreeTDS"
-            connstr.append("Driver={%s}" % odbc_driver)
+            cstr_parts.append("Driver={%s}" % odbc_driver)
 
             if settings.DATABASE_USER:
-                connstr.append("Uid=%s;Pwd=%s" % (settings.DATABASE_USER, settings.DATABASE_PASSWORD))
+                cstr_parts.append("Uid=%s;Pwd=%s" % (settings.DATABASE_USER, settings.DATABASE_PASSWORD))
             else:
-                connstr.append("Integrated Security=SSPI")
+                cstr_parts.append("Integrated Security=SSPI")
 
-            connstr.append("Database=%s" % settings.DATABASE_NAME)
+            cstr_parts.append("Database=%s" % settings.DATABASE_NAME)
 
             if self.MARS_Connection:
-                connstr.append("MARS_Connection=yes")
+                cstr_parts.append("MARS_Connection=yes")
             if hasattr(settings, "DATABASE_ODBC_EXTRA_PARAMS"):
-                connstr.append(settings.DATABASE_ODBC_EXTRA_PARAMS)
+                cstr_parts.append(settings.DATABASE_ODBC_EXTRA_PARAMS)
 
-            self.connection = Database.connect(';'.join(connstr), autocommit=self.options["autocommit"])
+            connstr = ';'.join(cstr_parts)
+            self.connection = Database.connect(connstr, autocommit=self.options["autocommit"])
 
         cursor = self.connection.cursor()
         if new_conn:
