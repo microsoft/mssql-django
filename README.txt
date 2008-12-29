@@ -86,6 +86,22 @@ Standard Django settings
         http://msdn.microsoft.com/en-us/library/ms131686.aspx.
         Default value is ``False``.
 
+    ``host_is_server``
+        Boolean. Only relevant if using the FreeTDS ODBC driver under
+        Unix/Linux.
+
+        By default, when using the FreeTDS ODBC driver the value specified in
+        the ``DATABASE_HOST`` setting is used in a ``SERVERNAME`` ODBC
+        connection string component instead of being used in a ``SERVER``
+        component; this means that this value should be the name of a
+        *dataserver* definition present in the ``freetds.conf`` FreeTDS
+        configuration file instead of a hostname or an IP address.
+
+        But if this option is present and it's value is True, this special
+        behavior is turned off.
+
+        See http://freetds.org/userguide/dsnless.htm for more information.
+
 ``django-pyodbc``-specific settings
 -----------------------------------
 
