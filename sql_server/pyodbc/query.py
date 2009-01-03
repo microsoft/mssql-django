@@ -48,12 +48,12 @@ def query_class(QueryClass):
             """
             from django.db.models.fields import DateField, DateTimeField, \
                 TimeField, BooleanField, NullBooleanField
+            from datetime import datetime
             values = []
             for value, field in map(None, row, fields):
                 if value is not None:
+                    # DateTimeField subclasses DateField so must be checked first
                     if isinstance(field, DateTimeField):
-                        # DateTimeField subclasses DateField so must be checked
-                        # first.
                         pass # do nothing
                     elif isinstance(field, DateField):
                         value = value.date() # extract date
@@ -64,6 +64,16 @@ def query_class(QueryClass):
                             value = True
                         else:
                             value = False
+                    # Some cases (for example when select_related() is used)
+                    # aren't caught by the DateField case above and date
+                    # fields come from the DB as datetime instances.
+                    # Implement a workaround stealing the idea from the Oracle
+                    # backend, the same warning applies (i.e. if a query
+                    # results in valid date+time values with the time part set
+                    # to midnight, this workaround can surprise the user by
+                    # converting them to the Python date type).
+                    elif isinstance(value, datetime) and value.hour == value.minute == value.second == value.microsecond == 0:
+                        value = value.date()
                 values.append(value)
             return values
 
