@@ -299,13 +299,6 @@ datetime.datetime(2005, 7, 28, 0, 0)
 [<Article: Default headline>]
 
 # Using an offset without a limit is also possible.
->>> Article.objects.values('id', 'headline')
-''
->>> sql, params = Article.objects.all()[5:].query.as_sql()
->>> print sql
-''
->>> print Article.objects.all()[:5].query.as_sql()[0]
-''
 >>> Article.objects.all()[5:]
 [<Article: Fourth article>, <Article: Article 7>, <Article: Updated article 8>]
 

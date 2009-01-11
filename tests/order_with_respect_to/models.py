@@ -70,14 +70,7 @@ The ordering can be altered:
 >>> id_list.insert(-1, x)
 >>> a5.question.get_answer_order() == id_list
 False
->>> from django.conf import settings
->>> settings.DEBUG=True
 >>> a5.question.set_answer_order(id_list)
->>> from django.db import connection
->>> from pprint import pprint
->>> pprint(connection.queries)
-x
->>> settings.DEBUG=False
 >>> q1.answer_set.all()
 [<Answer: John>, <Answer: Paul>, <Answer: George>, <Answer: Number five>, <Answer: Ringo>]
 
