@@ -4,16 +4,21 @@ import os
 import sys
 
 class DatabaseClient(BaseDatabaseClient):
+    if os.name=='nt':
+        executable_name = 'osql'
+    else:
+        executable_name = 'isql'
+
     def runshell(self):
+        user = settings.DATABASE_OPTIONS.get('user', settings.DATABASE_USER)
+        password = settings.DATABASE_OPTIONS.get('passwd', settings.DATABASE_PASSWORD)
         if os.name=='nt':
             db = settings.DATABASE_OPTIONS.get('db', settings.DATABASE_NAME)
-            user = settings.DATABASE_OPTIONS.get('user', settings.DATABASE_USER)
-            password = settings.DATABASE_OPTIONS.get('passwd', settings.DATABASE_PASSWORD)
             server = settings.DATABASE_OPTIONS.get('host', settings.DATABASE_HOST)
             port = settings.DATABASE_OPTIONS.get('port', settings.DATABASE_PORT)
             defaults_file = settings.DATABASE_OPTIONS.get('read_default_file')
 
-            args = ['osql']
+            args = [self.executable_name]
             if server:
                 args += ["-S", server]
             if user:
@@ -28,18 +33,10 @@ class DatabaseClient(BaseDatabaseClient):
                 args += ["-i", defaults_file]
         else:
             dsn = settings.DATABASE_OPTIONS.get('dsn', settings.DATABASE_ODBC_DSN)
-            user = settings.DATABASE_OPTIONS.get('user', settings.DATABASE_USER)
-            password = settings.DATABASE_OPTIONS.get('passwd', settings.DATABASE_PASSWORD)
-            args = ['isql -v %s %s %s' %(dsn, user, password)]
+            args = ['%s -v %s %s %s' % (self.executable_name, dsn, user, password)]
 
         import subprocess
         try:
-            retcode = subprocess.call(args, shell=True)
-            if retcode:
-                print >>sys.stderr, "error level:", retcode
-                sys.exit(retcode)
+            subprocess.call(args, shell=True)
         except KeyboardInterrupt:
             pass
-        except OSError, e:
-            print >>sys.stderr, "Execution failed:", e
-
