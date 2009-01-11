@@ -78,4 +78,6 @@ INSTALLED_APPS = (
     'issue019',
     'issue028',
     'issue031',
+    'basic',
+    'order_with_respect_to',
 )
