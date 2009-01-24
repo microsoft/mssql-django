@@ -4,6 +4,7 @@ import pyodbc as Database
 SQL_AUTOFIELD = -777555
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
+    # Map type codes to Django Field types.
     data_types_reverse = {
         SQL_AUTOFIELD:                  'AutoField',
         Database.SQL_BIGINT:            'IntegerField',
@@ -49,6 +50,9 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         # COLUMNPROPERTY: http://msdn2.microsoft.com/en-us/library/ms174968.aspx
 
+        #from django.db import connection
+        #cursor.execute("SELECT COLUMNPROPERTY(OBJECT_ID(%s), %s, 'IsIdentity')",
+        #                 (connection.ops.quote_name(table_name), column_name))
         cursor.execute("SELECT COLUMNPROPERTY(OBJECT_ID(%s), %s, 'IsIdentity')",
                          (self.connection.ops.quote_name(table_name), column_name))
         return cursor.fetchall()[0][0]
@@ -136,9 +140,8 @@ WHERE a.TABLE_NAME = %s AND (CONSTRAINT_TYPE = 'PRIMARY KEY' OR CONSTRAINT_TYPE 
         if data:
             results.update(data)
 
-        if self.connection.sqlserver_version >= 2005:
-            # non-unique, non-compound indexes, only in SS2005?
-            ix_sql = """
+        # non-unique, non-compound indexes, only in SS2005?
+        ix_sql = """
 SELECT DISTINCT c.name
 FROM sys.columns c
 INNER JOIN sys.index_columns ic
@@ -156,6 +159,7 @@ AND ix.is_primary_key = 0
 AND ix.is_unique_constraint = 0
 AND t.name = %s"""
 
+        if self.connection.ops.sql_server_ver >= 2005:
             cursor.execute(ix_sql, (table_name,))
             for column in [r[0] for r in cursor.fetchall()]:
                 if column not in results:
@@ -166,3 +170,13 @@ AND t.name = %s"""
             indexes[field] = dict(primary_key=(val=='PRIMARY KEY'), unique=(val=='UNIQUE'), db_index=(val=='IX'))
 
         return indexes
+
+    #def get_collations_list(self, cursor):
+    #    """
+    #    Returns list of available collations and theirs descriptions.
+    #    """
+    #    # http://msdn2.microsoft.com/en-us/library/ms184391.aspx
+    #    # http://msdn2.microsoft.com/en-us/library/ms179886.aspx
+    #
+    #    cursor.execute("SELECT name, description FROM ::fn_helpcollations()")
+    #    return [tuple(row) for row in cursor.fetchall()]

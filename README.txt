@@ -53,6 +53,8 @@ Installation
 Configuration
 =============
 
+The following settings control the behavior of the backend:
+
 Standard Django settings
 ------------------------
 
@@ -129,8 +131,7 @@ New BSD LICENSE
 Credits
 =======
 
-* Filip Wasilewski (http://code.djangoproject.com/ticket/5246)
-* mamcx(http://code.djangoproject.com/ticket/5062)
-* Wei guangjing `<http://djangopeople.net/vcc/>`_
-* Peter hausel  `<http://djangopeople.net/pk11/>`_
 * Ramiro Morales `<http://djangopeople.net/ramiro/>`_
+* Filip Wasilewski (http://code.djangoproject.com/ticket/5246)
+* Wei guangjing `<http://djangopeople.net/vcc/>`_
+* mamcx (http://code.djangoproject.com/ticket/5062)

@@ -1,5 +1,5 @@
 """
-Specifying ordering, excerpt from the django ordeting modeltests.
+Specifying ordering, excerpt from the django ordering modeltests.
 """
 
 from django.db import models

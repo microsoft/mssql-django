@@ -1,0 +1,180 @@
+[
+    {
+        "pk": 1,
+        "model": "fixtures.store",
+        "fields": {
+            "book": 1,
+            "name": "Amazon.com"
+        }
+    },
+    {
+        "pk": 2,
+        "model": "fixtures.store",
+        "fields": {
+            "book": 3,
+            "name": "Books.com"
+        }
+    },
+    {
+        "pk": 3,
+        "model": "fixtures.store",
+        "fields": {
+            "book": 4,
+            "name": "Mamma and Pappa's Books"
+        }
+    },
+    {
+        "pk": 1,
+        "model": "fixtures.book",
+        "fields": {
+            "publisher": 1,
+            "name": "The Definitive Guide to Django: Web Development Done Right",
+            "authors": [1, 2]
+        }
+    },
+    {
+        "pk": 2,
+        "model": "fixtures.book",
+        "fields": {
+            "publisher": 2,
+            "name": "Sams Teach Yourself Django in 24 Hours",
+            "authors": [3]
+        }
+    },
+    {
+        "pk": 3,
+        "model": "fixtures.book",
+        "fields": {
+            "publisher": 1,
+            "name": "Practical Django Projects",
+            "authors": [4]
+        }
+    },
+    {
+        "pk": 4,
+        "model": "fixtures.book",
+        "fields": {
+            "publisher": 3,
+            "name": "Python Web Development with Django",
+            "authors": [5, 6, 7]
+        }
+    },
+    {
+        "pk": 5,
+        "model": "fixtures.book",
+        "fields": {
+            "publisher": 3,
+            "name": "Artificial Intelligence: A Modern Approach",
+            "authors": [8, 9]
+        }
+    },
+    {
+        "pk": 6,
+        "model": "fixtures.book",
+        "fields": {
+            "publisher": 4,
+            "name": "Paradigms of Artificial Intelligence Programming: Case Studies in Common Lisp",
+            "authors": [8]
+        }
+    },
+    {
+        "pk": 1,
+        "model": "fixtures.author",
+        "fields": {
+            "friends": [2, 4],
+            "name": "Adrian Holovaty"
+        }
+    },
+    {
+        "pk": 2,
+        "model": "fixtures.author",
+        "fields": {
+            "friends": [1, 7],
+            "name": "Jacob Kaplan-Moss"
+        }
+    },
+    {
+        "pk": 3,
+        "model": "fixtures.author",
+        "fields": {
+            "friends": [],
+            "name": "Brad Dayley"
+        }
+    },
+    {
+        "pk": 4,
+        "model": "fixtures.author",
+        "fields": {
+            "friends": [1],
+            "name": "James Bennett"
+        }
+    },
+    {
+        "pk": 5,
+        "model": "fixtures.author",
+        "fields": {
+            "friends": [6, 7],
+            "name": "Jeffrey Forcier"
+        }
+    },
+    {
+        "pk": 6,
+        "model": "fixtures.author",
+        "fields": {
+            "friends": [5, 7],
+            "name": "Paul Bissex"
+        }
+    },
+    {
+        "pk": 7,
+        "model": "fixtures.author",
+        "fields": {
+            "friends": [2, 5, 6],
+            "name": "Wesley J. Chun"
+        }
+    },
+    {
+        "pk": 8,
+        "model": "fixtures.author",
+        "fields": {
+            "friends": [9],
+            "name": "Peter Norvig"
+        }
+    },
+    {
+        "pk": 9,
+        "model": "fixtures.author",
+        "fields": {
+            "friends": [8],
+            "name": "Stuart Russell"
+        }
+    },
+    {
+        "pk": 1,
+        "model": "fixtures.publisher",
+        "fields": {
+            "name": "Apress"
+        }
+    },
+    {
+        "pk": 2,
+        "model": "fixtures.publisher",
+        "fields": {
+            "name": "Sams"
+        }
+    },
+    {
+        "pk": 3,
+        "model": "fixtures.publisher",
+        "fields": {
+            "name": "Prentice Hall"
+        }
+    },
+    {
+        "pk": 4,
+        "model": "fixtures.publisher",
+        "fields": {
+            "name": "Morgan Kaufmann"
+        }
+    }
+]

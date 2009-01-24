@@ -1,5 +1,5 @@
 """
-
+Queries that involve models with fields stored in columns with the same name.
 """
 
 from django.db import models

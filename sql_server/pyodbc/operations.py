@@ -4,7 +4,75 @@ import datetime
 import time
 
 class DatabaseOperations(BaseDatabaseOperations):
+    def __init__(self):
+        self._ss_ver = None
+
+    def _get_sql_server_ver(self):
+        """
+        Returns the version of the SQL Server in use:
+        """
+        if self._ss_ver is not None:
+            return self._ss_ver
+        else:
+            from django.db import connection
+            cur = connection.cursor()
+            cur.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') as varchar)")
+            ver_code = int(cur.fetchone()[0].split('.')[0])
+            if ver_code >= 9:
+                self._ss_ver = 2005
+            else:
+                self._ss_ver = 2000
+            return self._ss_ver
+    sql_server_ver = property(_get_sql_server_ver)
+
+    def date_extract_sql(self, lookup_type, field_name):
+        """
+        Given a lookup_type of 'year', 'month' or 'day', returns the SQL that
+        extracts a value from the given date field field_name.
+        """
+        return "DATEPART(%s, %s)" % (lookup_type, self.quote_name(field_name))
+
+    def date_trunc_sql(self, lookup_type, field_name):
+        """
+        Given a lookup_type of 'year', 'month' or 'day', returns the SQL that
+        truncates the given date field field_name to a DATE object with only
+        the given specificity.
+        """
+        field_name = self.quote_name(field_name)
+        if lookup_type == 'year':
+            return "Convert(datetime, Convert(varchar, DATEPART(year, %s)) + '/01/01')" % field_name
+        if lookup_type == 'month':
+            return "Convert(datetime, Convert(varchar, DATEPART(year, %s)) + '/' + Convert(varchar, DATEPART(month, %s)) + '/01')" % (field_name, field_name)
+        if lookup_type == 'day':
+            return "Convert(datetime, Convert(varchar(12), %s))" % field_name
+
+    def field_cast_sql(self, db_type):
+        """
+        Given a column type (e.g. 'BLOB', 'VARCHAR'), returns the SQL necessary
+        to cast it before using it in a WHERE statement. Note that the
+        resulting string should contain a '%s' placeholder for the column being
+        searched against.
+        """
+        if self.sql_server_ver < 2005 and db_type and db_type.lower() == 'ntext':
+            return 'CAST(%s as nvarchar)'
+        return '%s'
+
+    def fulltext_search_sql(self, field_name):
+        """
+        Returns the SQL WHERE clause to use in order to perform a full-text
+        search of the given field_name. Note that the resulting string should
+        contain a '%s' placeholder for the value being searched against.
+        """
+        return 'CONTAINS(%s, %%s)' % field_name
+
     def last_insert_id(self, cursor, table_name, pk_name):
+        """
+        Given a cursor object that has just performed an INSERT statement into
+        a table that has an auto-incrementing ID, returns the newly created ID.
+
+        This method also receives the table name and the name of the primary-key
+        column.
+        """
         # TODO: Check how the `last_insert_id` is being used in the upper layers
         #       in context of multithreaded access, compare with other backends
 
@@ -21,33 +89,22 @@ class DatabaseOperations(BaseDatabaseOperations):
         # @@IDENTITY is not limited to a specific scope.
 
         table_name = self.quote_name(table_name)
-        pk_name = self.quote_name(pk_name)
-        #cursor.execute("SELECT %s FROM %s WHERE %s = IDENT_CURRENT(%%s)" % (pk_name, table_name, pk_name), [table_name])
-        cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as int)", [table_name])
+        cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as bigint)", [table_name])
         return cursor.fetchone()[0]
 
-    def query_class(self,DefaultQueryClass):
+    def lookup_cast(self, lookup_type):
+        if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
+            return "UPPER(%s)"
+        return "%s"
+
+    def query_class(self, DefaultQueryClass):
+        """
+        Given the default Query class, returns a custom Query class
+        to use for this backend. Returns None if a custom Query isn't used.
+        See also BaseDatabaseFeatures.uses_custom_query_class, which regulates
+        whether this method is called at all.
+        """
         return query.query_class(DefaultQueryClass)
-
-    def date_extract_sql(self, lookup_type, field_name):
-        """
-        Given a lookup_type of 'year', 'month' or 'day', returns the SQL that
-        extracts a value from the given date field field_name.
-        """
-        return "DATEPART(%s, %s)" % (lookup_type, field_name)
-
-    def date_trunc_sql(self, lookup_type, field_name):
-        """
-        Given a lookup_type of 'year', 'month' or 'day', returns the SQL that
-        truncates the given date field field_name to a DATE object with only
-        the given specificity.
-        """
-        if lookup_type=='year':
-            return "Convert(datetime, Convert(varchar, DATEPART(year, %s)) + '/01/01')" % field_name
-        if lookup_type=='month':
-            return "Convert(datetime, Convert(varchar, DATEPART(year, %s)) + '/' + Convert(varchar, DATEPART(month, %s)) + '/01')" % (field_name, field_name)
-        if lookup_type=='day':
-            return "Convert(datetime, Convert(varchar(12), %s))" % field_name
 
     def quote_name(self, name):
         """
@@ -64,12 +121,37 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         return "RAND()"
 
-    def tablespace_sql(self, tablespace, inline=False):
+    def last_executed_query(self, cursor, sql, params):
         """
-        Returns the tablespace SQL, or None if the backend doesn't use
-        tablespaces.
+        Returns a string of the query last executed by the given cursor, with
+        placeholders replaced with actual values.
+
+        `sql` is the raw query containing placeholders, and `params` is the
+        sequence of parameters. These are used by default, but this method
+        exists for database backends to provide a better implementation
+        according to their own quoting schemes.
         """
-        return "ON %s" % self.quote_name(tablespace)
+        return super(DatabaseOperations, self).last_executed_query(cursor, cursor.last_sql, cursor.last_params)
+
+    #def savepoint_create_sql(self, sid):
+    #    """
+    #    Returns the SQL for starting a new savepoint. Only required if the
+    #    "uses_savepoints" feature is True. The "sid" parameter is a string
+    #    for the savepoint id.
+    #    """
+    #    return "SAVE TRANSACTION %s" % sid
+
+    #def savepoint_commit_sql(self, sid):
+    #    """
+    #    Returns the SQL for committing the given savepoint.
+    #    """
+    #    return "COMMIT TRANSACTION %s" % sid
+
+    #def savepoint_rollback_sql(self, sid):
+    #    """
+    #    Returns the SQL for rolling back the given savepoint.
+    #    """
+    #    return "ROLLBACK TRANSACTION %s" % sid
 
     def sql_flush(self, style, tables, sequences):
         """
@@ -120,58 +202,37 @@ class DatabaseOperations(BaseDatabaseOperations):
         else:
             return []
 
+    #def sequence_reset_sql(self, style, model_list):
+    #    """
+    #    Returns a list of the SQL statements required to reset sequences for
+    #    the given models.
+    #
+    #    The `style` argument is a Style object as returned by either
+    #    color_style() or no_style() in django.core.management.color.
+    #    """
+    #    from django.db import models
+    #    output = []
+    #    for model in model_list:
+    #        for f in model._meta.local_fields:
+    #            if isinstance(f, models.AutoField):
+    #                output.append(...)
+    #                break # Only one AutoField is allowed per model, so don't bother continuing.
+    #        for f in model._meta.many_to_many:
+    #            output.append(...)
+    #    return output
+
     def start_transaction_sql(self):
         """
         Returns the SQL statement required to start a transaction.
         """
         return "BEGIN TRANSACTION"
 
-    def fulltext_search_sql(self, field_name):
-        return 'CONTAINS(%s, %%s)' % field_name
-
-    def field_cast_sql(self, db_type):
+    def sql_for_tablespace(self, tablespace, inline=False):
         """
-        Given a column type (e.g. 'BLOB', 'VARCHAR'), returns the SQL necessary
-        to cast it before using it in a WHERE statement. Note that the
-        resulting string should contain a '%s' placeholder for the column being
-        searched against.
+        Returns the SQL that will be appended to tables or rows to define
+        a tablespace. Returns '' if the backend doesn't use tablespaces.
         """
-        from django.db import connection
-        if connection.sqlserver_version < 2005 and db_type and db_type.lower() == 'ntext':
-            return 'CAST(%s as nvarchar)'
-        return '%s'
-
-    def no_limit_value(self):
-        return 9223372036854775807L
-
-    def lookup_cast(self, lookup_type):
-        if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
-            return "UPPER(%s)"
-        return "%s"
-
-    def value_to_db_datetime(self, value):
-        """
-        Transform a datetime value to an object compatible with what is expected
-        by the backend driver for datetime columns.
-        """
-        if value is None:
-            return None
-        # SQL Server doesn't support microseconds
-        return value.replace(microsecond=0)
-
-    def value_to_db_time(self, value):
-        # Sql Server doesn't support microseconds
-        if value is None:
-            return None
-        if isinstance(value, basestring):
-            return datetime.datetime(*(time.strptime(value, '%H:%M:%S')[:6]))
-        return unicode(value.replace(microsecond=0))
-
-    def year_lookup_bounds(self, value):
-        # Again, no microseconds
-        first = '%s-01-01 00:00:00'
-        second = '%s-12-31 23:59:59.99'
-        return [first % value, second % value]
+        return "ON %s" % self.quote_name(tablespace)
 
     def prep_for_like_query(self, x):
         """Prepares a value for use in a LIKE query."""
@@ -185,3 +246,37 @@ class DatabaseOperations(BaseDatabaseOperations):
         need not necessarily be implemented using "LIKE" in the backend.
         """
         return x
+
+    def value_to_db_datetime(self, value):
+        """
+        Transform a datetime value to an object compatible with what is expected
+        by the backend driver for datetime columns.
+        """
+        if value is None:
+            return None
+        # SQL Server doesn't support microseconds
+        return value.replace(microsecond=0)
+
+    def value_to_db_time(self, value):
+        """
+        Transform a time value to an object compatible with what is expected
+        by the backend driver for time columns.
+        """
+        if value is None:
+            return None
+        # SQL Server doesn't support microseconds
+        if isinstance(value, basestring):
+            return datetime.datetime(*(time.strptime(value, '%H:%M:%S')[:6]))
+        return datetime.datetime(1900, 1, 1, value.hour, value.minute, value.second)
+
+    def year_lookup_bounds(self, value):
+        """
+        Returns a two-elements list with the lower and upper bound to be used
+        with a BETWEEN operator to query a field value using a year lookup
+
+        `value` is an int, containing the looked-up year.
+        """
+        first = '%s-01-01 00:00:00'
+        # SQL Server doesn't support microseconds
+        last = '%s-12-31 23:59:59'
+        return [first % value, last % value]

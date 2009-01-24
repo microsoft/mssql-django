@@ -1,17 +1,50 @@
 """
-Custom Query class for SQL Server.
+Custom Query class for MS SQL Server.
 Derives from: django.db.models.sql.query.Query
 """
-import string
 
-# Cache. Maps default query class to new SqlServer query class.
+from datetime import datetime
+
+REV_ODIR = {
+    'ASC': 'DESC',
+    'DESC': 'ASC'
+}
+
+SQL_SERVER_8_LIMIT_QUERY = \
+"""SELECT *
+FROM (
+  SELECT TOP %(limit)s *
+  FROM (
+    %(orig_sql)s
+    ORDER BY %(ord)s
+  ) AS %(table)s
+  ORDER BY %(rev_ord)s
+) AS %(table)s
+ORDER BY %(ord)s"""
+
+SQL_SERVER_8_NO_LIMIT_QUERY = \
+"""SELECT *
+FROM %(table)s
+WHERE %(key)s NOT IN (
+  %(orig_sql)s
+  ORDER BY %(ord)s
+)"""
+
+# Strategies for handling limit+offset emulation:
+USE_ROW_NUMBER = 0 # For SQL Server >= 2005
+USE_TOP_HMARK = 1 # For SQL Server 2000 when both limit and offset are provided
+USE_TOP_LMARK = 2 # For SQL Server 2000 when offset but no limit is provided
+
+# Cache. Maps default query class to new MS SQL query class.
 _classes = {}
 
+# Gets the base class for all Django queries.
+# Django's subquery items (InsertQuery, DeleteQuery, etc.) will then inherit
+# from this custom class.
 def query_class(QueryClass):
     """
     Returns a custom django.db.models.sql.query.Query subclass that is
-    appropriate for SQL Server.
-
+    appropriate for MS SQL Server.
     """
     global _classes
     try:
@@ -19,15 +52,35 @@ def query_class(QueryClass):
     except KeyError:
         pass
 
-    class SqlServerQuery(QueryClass):
+    class PyOdbcSSQuery(QueryClass):
+        from sql_server.pyodbc import aggregates
+        aggregates_module = aggregates
+
         def __init__(self, *args, **kwargs):
-            super(SqlServerQuery, self).__init__(*args, **kwargs)
+            super(PyOdbcSSQuery, self).__init__(*args, **kwargs)
+            self.default_reverse_ordering = False
+            self._ord = []
 
             # If we are an insert query, monkeypatch the "as_sql" method
             from django.db.models.sql.subqueries import InsertQuery
             if isinstance(self, InsertQuery):
                 self._orig_as_sql = self.as_sql
                 self.as_sql = self._insert_as_sql
+
+        def _insert_as_sql(self, *args, **kwargs):
+            """Helper method for monkeypatching Django InsertQuery's as_sql."""
+            meta = self.get_meta()
+            quoted_table = self.connection.ops.quote_name(meta.db_table)
+            # Get (sql, params) from original InsertQuery.as_sql
+            sql, params = self._orig_as_sql(*args, **kwargs)
+            if meta.pk.attname in self.columns and meta.pk.__class__.__name__ == "AutoField":
+                if len(self.columns) == 1 and not params:
+                    sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
+                else:
+                    sql = "SET IDENTITY_INSERT %s ON;\n%s;\nSET IDENTITY_INSERT %s OFF" % \
+                        (quoted_table, sql, quoted_table)
+
+            return sql, params
 
         def __reduce__(self):
             """
@@ -41,65 +94,149 @@ def query_class(QueryClass):
                 data = self.__dict__
             return (unpickle_query_class, (QueryClass,), data)
 
+        def convert_values(self, value, field):
+            """
+            Coerce the value returned by the database backend into a consistent
+            type that is compatible with the field type.
+
+            In our case, cater for the fact that SQL Server < 2008 has no
+            separate Date and Time data types.
+            TODO: See how we'll handle this for SQL Server >= 2008
+            """
+            if value is None:
+                return None
+            if field and field.get_internal_type() == 'DateTimeField':
+                return value
+            elif field and field.get_internal_type() == 'DateField':
+                value = value.date() # extract date
+            elif field and field.get_internal_type() == 'TimeField':
+                value = value.time() # extract time
+            # Some cases (for example when select_related() is used) aren't
+            # caught by the DateField case above and date fields arrive from
+            # the DB as datetime instances.
+            # Implement a workaround stealing the idea from the Oracle
+            # backend. It's not perfect so the same warning applies (i.e. if a
+            # query results in valid date+time values with the time part set
+            # to midnight, this workaround can surprise us by converting them
+            # to the datetime.date Python type).
+            elif isinstance(value, datetime) and value.hour == value.minute == value.second == value.microsecond == 0:
+                value = value.date()
+            # Force floats to the correct type
+            elif value is not None and field and field.get_internal_type() == 'FloatField':
+                value = float(value)
+            return value
+
         def resolve_columns(self, row, fields=()):
-            """
-            Cater for the fact that SQL Server has no separate Date and Time
-            data types.
-            """
-            from django.db.models.fields import DateField, DateTimeField, \
-                TimeField, BooleanField, NullBooleanField
-            from datetime import datetime
             values = []
             for value, field in map(None, row, fields):
-                if value is not None:
-                    # DateTimeField subclasses DateField so must be checked first
-                    if isinstance(field, DateTimeField):
-                        pass # do nothing
-                    elif isinstance(field, DateField):
-                        value = value.date() # extract date
-                    elif isinstance(field, TimeField):
-                        value = value.time() # extract time
-                    elif isinstance(field, (BooleanField, NullBooleanField)):
-                        if value in (1,'t','True','1',True):
-                            value = True
-                        else:
-                            value = False
-                    # Some cases (for example when select_related() is used)
-                    # aren't caught by the DateField case above and date
-                    # fields come from the DB as datetime instances.
-                    # Implement a workaround stealing the idea from the Oracle
-                    # backend, the same warning applies (i.e. if a query
-                    # results in valid date+time values with the time part set
-                    # to midnight, this workaround can surprise the user by
-                    # converting them to the Python date type).
-                    elif isinstance(value, datetime) and value.hour == value.minute == value.second == value.microsecond == 0:
-                        value = value.date()
-                values.append(value)
+                values.append(self.convert_values(value, field))
             return values
 
-        def as_sql_internal(self, with_col_aliases=False, with_row_number=False, with_top_n=False, rn_orderby=''):
+        def modify_query(self, strategy, ordering, out_cols):
             """
-            SQL SERVER row_number() already has ordering, so this return sql doesn't have
+            Helper method, called from _as_sql()
+
+            Sets the value of the self._ord and self.default_reverse_ordering
+            attributes.
+            Can modify the values of the out_cols list argument and the
+            self.ordering_aliases attribute.
             """
-            out_cols = self.get_columns(with_col_aliases)
+            self.default_reverse_ordering = False
+            self._ord = []
+            cnt = 0
+            extra_select_aliases = [k.strip('[]') for k in self.extra_select.keys()]
+            for ord_spec_item in ordering:
+                if ord_spec_item.endswith(' ASC') or ord_spec_item.endswith(' DESC'):
+                    parts = ord_spec_item.split()
+                    col, odir = ' '.join(parts[:-1]), parts[-1]
+                    if col not in self.ordering_aliases and col.strip('[]') not in extra_select_aliases:
+                        if col.isdigit():
+                            cnt += 1
+                            n = int(col)-1
+                            alias = 'OrdAlias%d' % cnt
+                            out_cols[n] = '%s AS [%s]' % (out_cols[n], alias)
+                            self._ord.append((alias, odir))
+                        elif col in out_cols:
+                            if strategy == USE_TOP_HMARK:
+                                cnt += 1
+                                n = out_cols.index(col)
+                                alias = 'OrdAlias%d' % cnt
+                                out_cols[n] = '%s AS %s' % (col, alias)
+                                self._ord.append((alias, odir))
+                            else:
+                                self._ord.append((col, odir))
+                        elif strategy == USE_TOP_HMARK:
+                            # Special case: '_order' column created by Django
+                            # when Meta.order_with_respect_to is used
+                            if col.split('.')[-1] == '[_order]' and odir == 'DESC':
+                                self.default_reverse_ordering = True
+                            cnt += 1
+                            alias = 'OrdAlias%d' % cnt
+                            self._ord.append((alias, odir))
+                            self.ordering_aliases.append('%s AS [%s]' % (col, alias))
+                        else:
+                            self._ord.append((col, odir))
+                    else:
+                        self._ord.append((col, odir))
+
+            if strategy == USE_TOP_HMARK and not self._ord:
+                # XXX:
+                #meta = self.get_meta()
+                meta = self.model._meta
+                qn = self.quote_name_unless_alias
+                pk_col = '%s.%s' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))
+                if pk_col not in out_cols:
+                    out_cols.append(pk_col)
+
+        def _as_sql(self, strategy):
+            """
+            Helper method, called from as_sql()
+            Similar to django/db/models/sql/query.py:Query.as_sql() but without
+            the ordering and limits code.
+
+            Returns SQL that hasn't an order-by clause.
+            """
+            # get_columns needs to be called before get_ordering to populate
+            # _select_alias.
+            out_cols = self.get_columns(True)
             ordering = self.get_ordering()
+            if strategy == USE_ROW_NUMBER:
+                if not ordering:
+                    meta = self.get_meta()
+                    qn = self.quote_name_unless_alias
+                    ordering = ['%s.%s ASC' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))]
+
+            if strategy in (USE_TOP_HMARK, USE_ROW_NUMBER):
+                self.modify_query(strategy, ordering, out_cols)
+
+            if strategy == USE_ROW_NUMBER:
+                ord = ', '.join(['%s %s' % pair for pair in self._ord])
+                self.ordering_aliases.append('(ROW_NUMBER() OVER (ORDER BY %s)) AS [rn]' % ord)
 
             # This must come after 'select' and 'ordering' -- see docstring of
             # get_from_clause() for details.
             from_, f_params = self.get_from_clause()
 
-            where, w_params = self.where.as_sql(qn=self.quote_name_unless_alias)
+            qn = self.quote_name_unless_alias
+            where, w_params = self.where.as_sql(qn=qn)
+            having, h_params = self.having.as_sql(qn=qn)
             params = []
             for val in self.extra_select.itervalues():
                 params.extend(val[1])
+
             result = ['SELECT']
             if self.distinct:
                 result.append('DISTINCT')
-            if with_top_n:
-                result.append('TOP ${end_rows} ')
+
+            if strategy == USE_TOP_LMARK:
+                # XXX:
+                #meta = self.get_meta()
+                meta = self.model._meta
+                result.append('TOP %s %s' % (self.low_mark, self.quote_name_unless_alias(meta.pk.db_column or meta.pk.column)))
             else:
-                self.ordering_aliases.append('(ROW_NUMBER() OVER (ORDER BY %s)) AS [rn]' % rn_orderby)
-            result.append(', '.join(out_cols + self.ordering_aliases))
+                if strategy == USE_TOP_HMARK and self.high_mark is not None:
+                    result.append('TOP %s' % self.high_mark)
+                result.append(', '.join(out_cols + self.ordering_aliases))
 
             result.append('FROM')
             result.extend(from_)
@@ -119,9 +256,8 @@ def query_class(QueryClass):
                 grouping = self.get_grouping()
                 result.append('GROUP BY %s' % ', '.join(grouping))
 
-            if self.having:
-                having, h_params = self.get_having()
-                result.append('HAVING %s' % ','.join(having))
+            if having:
+                result.append('HAVING %s' % having)
                 params.extend(h_params)
 
             params.extend(self.extra_params)
@@ -129,129 +265,92 @@ def query_class(QueryClass):
 
         def as_sql(self, with_limits=True, with_col_aliases=False):
             """
+            Creates the SQL for this query. Returns the SQL string and list of
+            parameters.
+
+            If 'with_limits' is False, any limit/offset information is not included
+            in the query.
             """
-            if with_limits and self.high_mark == 0 and self.low_mark == 0:
-                return "",()
-            do_offset = with_limits and (self.high_mark or self.low_mark)
+            # The do_offset flag indicates whether we need to construct
+            # the SQL needed to use limit/offset w/SQL Server.
+            do_offset = with_limits and (self.high_mark is not None or self.low_mark != 0)
 
             # If no offsets, just return the result of the base class
             # `as_sql`.
             if not do_offset:
-                return super(SqlServerQuery, self).as_sql(with_limits=False,
+                return super(PyOdbcSSQuery, self).as_sql(with_limits=False,
                                                           with_col_aliases=with_col_aliases)
+            # Shortcut for the corner case when high_mark value is 0:
+            if self.high_mark == 0:
+                return "", ()
 
             self.pre_sql_setup()
-            out_cols = self.get_columns(with_col_aliases)
-            ordering = self.get_ordering()
+            # XXX:
+            #meta = self.get_meta()
+            meta = self.model._meta
+            qn = self.quote_name_unless_alias
+            fallback_ordering = '%s.%s' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))
 
-            if self.connection.sqlserver_version >= 2005:
-                # Getting the "ORDER BY" SQL for the ROW_NUMBER() result.
-                if not self.high_mark:
-                    self.high_mark = self.connection.ops.no_limit_value()
-
-                if ordering:
-                    rn_orderby = ', '.join(ordering)
+            # SQL Server 2000, offset+limit case
+            if self.connection.ops.sql_server_ver < 2005 and self.high_mark is not None:
+                orig_sql, params = self._as_sql(USE_TOP_HMARK)
+                if self._ord:
+                    ord = ', '.join(['%s %s' % pair for pair in self._ord])
+                    rev_ord = ', '.join(['%s %s' % (col, REV_ODIR[odir]) for col, odir in self._ord])
                 else:
-                    # ROW_NUMBER() function always requires an
-                    # order-by clause.  So we need to define a default
-                    # order-by, since none was provided.
-                    qn = self.quote_name_unless_alias
-                    opts = self.model._meta
-                    rn_orderby = '%s.%s' % (qn(opts.db_table), qn(opts.fields[0].db_column or opts.fields[0].column))
+                    if not self.default_reverse_ordering:
+                        ord = '%s ASC' % fallback_ordering
+                        rev_ord = '%s DESC' % fallback_ordering
+                    else:
+                        ord = '%s DESC' % fallback_ordering
+                        rev_ord = '%s ASC' % fallback_ordering
+                sql = SQL_SERVER_8_LIMIT_QUERY % {
+                    'limit': self.high_mark - self.low_mark,
+                    'orig_sql': orig_sql,
+                    'ord': ord,
+                    'rev_ord': rev_ord,
+                    # XXX:
+                    'table': qn(meta.db_table),
+                }
+                return sql, params
 
-                # Getting the selection SQL and the params, which has the `rn`
-                # extra selection SQL.
-                sql, params= self.as_sql_internal(with_col_aliases=True, with_row_number=True, rn_orderby=rn_orderby)
+            # SQL Server 2005
+            if self.connection.ops.sql_server_ver >= 2005:
+                sql, params = self._as_sql(USE_ROW_NUMBER)
 
-                # Constructing the result SQL, using the initial select SQL
+                # Construct the final SQL clause, using the initial select SQL
                 # obtained above.
-                result = ['SELECT * FROM (%s) as X' % sql]
+                result = ['SELECT * FROM (%s) AS X' % sql]
 
                 # Place WHERE condition on `rn` for the desired range.
-                result.append('WHERE X.rn BETWEEN %d AND %d' % (self.low_mark+1, self.high_mark,))
+                if self.high_mark is None:
+                    self.high_mark = 9223372036854775807
+                result.append('WHERE X.rn BETWEEN %d AND %d' % (self.low_mark+1, self.high_mark))
 
-                # Returning the SQL w/params.
                 return ' '.join(result), params
 
-            # else SQL SERVER 2000 and below
-            # For example: limit,offset 10,20
-            # SQL as> select * from (select TOP 20 * from (select top 30 * from hello_page order by id ASC) as p order by p.id desc) as x order by id asc;
-            sql, params= self.as_sql_internal(with_col_aliases=True, with_top_n=True)
-            qn = self.quote_name_unless_alias
-            opts = self.model._meta
-            #
-            # We can have model's db_table as [dbname].[dbo].[tablename] (actually dbname].[dbo].[tablename ;-) ,
-            # so we need change:
-            #     as [dbname].[dbo].[tablename] order by [dbname].[dbo].[tablename].[field]
-            #  => as X order by [X].[field]
-            #
-            as_temp_table = 'X'
-            if not ordering: # if don't has ordering, we make a default ordering
-                ordering = '%s.%s' % (qn(opts.db_table), qn(opts.fields[0].db_column or opts.fields[0].column))
-                ordering_as = '%s.%s' % (as_temp_table, qn(opts.fields[0].db_column or opts.fields[0].column))
-                ordering_rev = '%s DESC' % ordering_as
+            # SQL Server 2000, offset without limit case
+            # get_columns needs to be called before get_ordering to populate
+            # select_alias.
+            self.get_columns(with_col_aliases)
+            ordering = self.get_ordering()
+            if ordering:
+                ord = ', '.join(ordering)
             else:
-                o_as = []
-                o_rev = []
-                for o in ordering:
-                    field, order = o.split(".")[-1].split(' ')
-                    o_as += ["%s.%s %s" % (as_temp_table, field, order)]
-                    if order=="DESC":
-                        order="ASC"
-                    else:
-                        order="DESC"
-                    o_rev += ["%s.%s %s" % (as_temp_table, field, order)]
-                ordering_as = ','.join(o_as)
-                ordering_rev = ','.join(o_rev)
-                ordering = ','.join(ordering)
-            if not self.high_mark:
-                fmt = """SELECT %(cols)s FROM %(table)s WHERE %(key)s NOT IN (%(sql)s ORDER BY %(ordering)s)"""
-                # get cols and replace by key
-                cols_begin = sql.find('${end_rows}')+len('${end_rows}')+1
-                cols_end = sql.find(' FROM ')
-                cols = sql[cols_begin:cols_end]
-                sql = sql[:cols_begin]+' ${key} ' + sql[cols_end:]
-                tmpl = string.Template(sql)
-                sqlp = tmpl.substitute({'end_rows':self.low_mark,'key':qn(opts.pk.db_column or opts.pk.column)})
-                result = fmt % {'sql':sqlp,
-                                'ordering':ordering,
-                                'table':qn(opts.db_table),
-                                'key':qn(opts.pk.db_column or opts.pk.column),
-                                'cols':cols,
-                                }
-            else:
-                fmt = """SELECT * FROM (SELECT TOP  %(limit)d * FROM (%(sql)s ORDER BY %(ordering)s ) as %(table)s ORDER BY %(ordering_rev)s ) AS %(table)s ORDER BY %(ordering_as)s"""
-                tmpl = string.Template(sql)
-                sqlp = tmpl.substitute({'end_rows':self.high_mark})
-                result = fmt % {'limit':self.high_mark-self.low_mark,
-                            'sql':sqlp,
-                            'ordering':ordering,
-                            'ordering_as':ordering_as,
-                            'ordering_rev':ordering_rev,
-                            'table':as_temp_table,
-                            }
-            return result, params
-
-        def _insert_as_sql(self, *args, **kwargs):
-            """Helper method for monkeypatching Django InsertQuery's as_sql."""
-            meta = self.get_meta()
-
-            quoted_table = self.connection.ops.quote_name(meta.db_table)
-            # Get (sql, params) from original InsertQuery.as_sql
-            sql, params = self._orig_as_sql(*args, **kwargs)
-
-            if meta.pk.attname in self.columns and meta.pk.__class__.__name__ == "AutoField":
-                # check if only have pk and default value
-                if len(self.columns) == 1 and not params:
-                    sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
-                else:
-                    sql = "SET IDENTITY_INSERT %s ON;%s;SET IDENTITY_INSERT %s OFF" %\
-                        (quoted_table, sql, quoted_table)
-
+                # We need to define an ordering clause since none was provided
+                ord = fallback_ordering
+            orig_sql, params = self._as_sql(USE_TOP_LMARK)
+            sql = SQL_SERVER_8_NO_LIMIT_QUERY % {
+                'orig_sql': orig_sql,
+                'ord': ord,
+                'table': qn(meta.db_table),
+                'key': qn(meta.pk.db_column or meta.pk.column),
+            }
             return sql, params
 
-    _classes[QueryClass] = SqlServerQuery
-    return SqlServerQuery
+
+    _classes[QueryClass] = PyOdbcSSQuery
+    return PyOdbcSSQuery
 
 def unpickle_query_class(QueryClass):
     """

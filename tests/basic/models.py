@@ -302,6 +302,12 @@ datetime.datetime(2005, 7, 28, 0, 0)
 >>> Article.objects.all()[5:]
 [<Article: Fourth article>, <Article: Article 7>, <Article: Updated article 8>]
 
+>>> Article.objects.all()[:500]
+[<Article: Area woman programs in Python>, <Article: Second article>, <Article: Third article>, <Article: Article 6>, <Article: Default headline>, <Article: Fourth article>, <Article: Article 7>, <Article: Updated article 8>]
+
+>>> Article.objects.all()[5:][:500]
+[<Article: Fourth article>, <Article: Article 7>, <Article: Updated article 8>]
+
 # Also, once you have sliced you can't filter, re-order or combine
 >>> Article.objects.all()[0:5].filter(id=1)
 Traceback (most recent call last):
