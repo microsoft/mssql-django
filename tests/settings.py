@@ -92,4 +92,5 @@ INSTALLED_APPS = (
     'aggregation_regress',
     'serializers_regress',
     'update',
+    'queries',
 )
