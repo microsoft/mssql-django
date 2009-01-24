@@ -199,7 +199,7 @@ def query_class(QueryClass):
             # get_columns needs to be called before get_ordering to populate
             # _select_alias.
             out_cols = self.get_columns(True)
-            ordering = self.get_ordering()
+            ordering, ordering_group_by = self.get_ordering()
             if strategy == USE_ROW_NUMBER:
                 if not ordering:
                     meta = self.get_meta()
@@ -254,6 +254,15 @@ def query_class(QueryClass):
 
             if self.group_by:
                 grouping = self.get_grouping()
+                if ordering:
+                    # If the backend can't group by PK (i.e., any database
+                    # other than MySQL), then any fields mentioned in the
+                    # ordering clause needs to be in the group by clause.
+                    if not self.connection.features.allows_group_by_pk:
+                        grouping.extend([col for col in ordering_group_by
+                            if col not in grouping])
+                else:
+                    ordering = self.connection.ops.force_no_ordering()
                 result.append('GROUP BY %s' % ', '.join(grouping))
 
             if having:
@@ -333,7 +342,7 @@ def query_class(QueryClass):
             # get_columns needs to be called before get_ordering to populate
             # select_alias.
             self.get_columns(with_col_aliases)
-            ordering = self.get_ordering()
+            ordering, ordering_group_by = self.get_ordering()
             if ordering:
                 ord = ', '.join(ordering)
             else:
