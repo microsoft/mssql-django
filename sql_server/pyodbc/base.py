@@ -176,14 +176,17 @@ class CursorWrapper(object):
         self.last_sql = ''
         self.last_params = ()
 
-    def format_sql(self, sql):
+    def format_sql(self, sql, n_params=None):
         if self.driver_needs_utf8 and isinstance(sql, unicode):
             # FreeTDS (and other ODBC drivers?) doesn't support Unicode
             # yet, so we need to encode the SQL clause itself in utf-8
             sql = sql.encode('utf-8')
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
-        if "%s" in sql:
-            sql = sql.replace('%s', '?')
+        if n_params is not None:
+            sql = sql % tuple('?' * n_params)
+        else:
+            if '%s' in sql:
+                sql = sql.replace('%s', '?')
         return sql
 
     def format_params(self, params):
@@ -213,7 +216,7 @@ class CursorWrapper(object):
 
     def execute(self, sql, params=()):
         self.last_sql = sql
-        sql = self.format_sql(sql)
+        sql = self.format_sql(sql, len(params))
         params = self.format_params(params)
         self.last_params = params
         return self.cursor.execute(sql, params)
