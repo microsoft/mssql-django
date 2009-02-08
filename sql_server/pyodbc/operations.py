@@ -33,7 +33,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         if lookup_type == 'week_day':
             return "DATEPART(dw, %s)" % field_name
         else:
-            return "DATEPART(%s, %s)" % (lookup_type, self.quote_name(field_name))
+            return "DATEPART(%s, %s)" % (lookup_type, field_name)
 
     def date_trunc_sql(self, lookup_type, field_name):
         """
@@ -41,7 +41,6 @@ class DatabaseOperations(BaseDatabaseOperations):
         truncates the given date field field_name to a DATE object with only
         the given specificity.
         """
-        field_name = self.quote_name(field_name)
         if lookup_type == 'year':
             return "Convert(datetime, Convert(varchar, DATEPART(year, %s)) + '/01/01')" % field_name
         if lookup_type == 'month':
