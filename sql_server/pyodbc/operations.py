@@ -27,10 +27,13 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def date_extract_sql(self, lookup_type, field_name):
         """
-        Given a lookup_type of 'year', 'month' or 'day', returns the SQL that
-        extracts a value from the given date field field_name.
+        Given a lookup_type of 'year', 'month', 'day' or 'week_day', returns
+        the SQL that extracts a value from the given date field field_name.
         """
-        return "DATEPART(%s, %s)" % (lookup_type, self.quote_name(field_name))
+        if lookup_type == 'week_day':
+            return "DATEPART(dw, %s)" % field_name
+        else:
+            return "DATEPART(%s, %s)" % (lookup_type, self.quote_name(field_name))
 
     def date_trunc_sql(self, lookup_type, field_name):
         """

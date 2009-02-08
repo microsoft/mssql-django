@@ -140,7 +140,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         cursor = self.connection.cursor()
         if new_conn:
-            cursor.execute("SET DATEFORMAT ymd")
+            # Set date format for the connection. Also, make sure Sunday is
+            # considered the first day of the week (to be consistent with the
+            # Django convention for the 'week_day' Django lookup)
+            cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST 7")
             if self.ops.sql_server_ver < 2005:
                 self.creation.data_types['TextField'] = 'ntext'
 
