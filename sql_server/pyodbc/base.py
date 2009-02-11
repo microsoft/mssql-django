@@ -41,6 +41,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     drv_name = None
     driver_needs_utf8 = None
     MARS_Connection = False
+    datefirst = 7
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
@@ -80,6 +81,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         if kwargs.get('MARS_Connection', False):
             self.MARS_Connection = True
+        self.datefirst = kwargs.get('datefirst', 7)
 
         self.features = DatabaseFeatures()
         self.ops = DatabaseOperations()
@@ -106,11 +108,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     driver = 'SQL Server'
                 else:
                     driver = 'FreeTDS'
-            cstr_parts.append('DRIVER={%s}' % driver)
 
             if hasattr(settings, 'DATABASE_ODBC_DSN'):
                 cstr_parts.append('DSN=%s' % settings.DATABASE_ODBC_DSN)
             else:
+                # Only append DRIVER if don't set DATABASE_ODBC_DSN  
+                cstr_parts.append('DRIVER={%s}' % driver)
                 if settings.DATABASE_HOST:
                     host_str = settings.DATABASE_HOST
                 else:
@@ -125,7 +128,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             if settings.DATABASE_USER:
                 cstr_parts.append('UID=%s;PWD=%s' % (settings.DATABASE_USER, settings.DATABASE_PASSWORD))
             else:
-                cstr_parts.append('Integrated Security=SSPI')
+                if driver in ('SQL Server', 'SQL Native Client'):
+                    cstr_parts.append('Trusted_Connection=yes')
+                else:
+                    cstr_parts.append('Integrated Security=SSPI')
 
             cstr_parts.append('DATABASE=%s' % settings.DATABASE_NAME)
 
@@ -143,7 +149,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # Set date format for the connection. Also, make sure Sunday is
             # considered the first day of the week (to be consistent with the
             # Django convention for the 'week_day' Django lookup)
-            cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST 7")
+            cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" %self.datefirst)
             if self.ops.sql_server_ver < 2005:
                 self.creation.data_types['TextField'] = 'ntext'
 
