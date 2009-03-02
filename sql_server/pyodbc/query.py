@@ -252,18 +252,21 @@ def query_class(QueryClass):
                     result.append('AND')
                 result.append(' AND '.join(self.extra_where))
 
-            grouping = self.get_grouping()
+            grouping, gb_params = self.get_grouping()
             if grouping:
                 if ordering:
                     # If the backend can't group by PK (i.e., any database
                     # other than MySQL), then any fields mentioned in the
                     # ordering clause needs to be in the group by clause.
                     if not self.connection.features.allows_group_by_pk:
-                        grouping.extend([str(col) for col in ordering_group_by
-                            if col not in grouping])
+                        for col, col_params in ordering_group_by:
+                            if col not in grouping:
+                                grouping.append(str(col))
+                                gb_params.extend(col_params)
                 else:
                     ordering = self.connection.ops.force_no_ordering()
                 result.append('GROUP BY %s' % ', '.join(grouping))
+                params.extend(gb_params)
 
             if having:
                 result.append('HAVING %s' % having)
