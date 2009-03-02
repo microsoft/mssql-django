@@ -252,8 +252,8 @@ def query_class(QueryClass):
                     result.append('AND')
                 result.append(' AND '.join(self.extra_where))
 
-            if self.group_by:
-                grouping = self.get_grouping()
+            grouping = self.get_grouping()
+            if grouping:
                 if ordering:
                     # If the backend can't group by PK (i.e., any database
                     # other than MySQL), then any fields mentioned in the
