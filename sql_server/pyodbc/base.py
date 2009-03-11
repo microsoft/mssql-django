@@ -24,9 +24,31 @@ from sql_server.pyodbc.client import DatabaseClient
 from sql_server.pyodbc.creation import DatabaseCreation
 from sql_server.pyodbc.introspection import DatabaseIntrospection
 import os
+import warnings
 
-if not hasattr(settings, "DATABASE_COLLATION"):
-    settings.DATABASE_COLLATION = 'Latin1_General_CI_AS'
+warnings.filterwarnings('error', 'The DATABASE_ODBC.+ is deprecated', DeprecationWarning, __name__, 0)
+
+collation = 'Latin1_General_CI_AS'
+if hasattr(settings, 'DATABASE_COLLATION'):
+    warnings.warn(
+        "The DATABASE_COLLATION setting is going to be deprecated, use DATABASE_OPTIONS['collation'] instead.",
+        DeprecationWarning
+    )
+    collation = settings.DATABASE_COLLATION
+elif 'collation' in settings.DATABASE_OPTIONS:
+    collation = settings.DATABASE_OPTIONS['collation']
+
+deprecated = (
+    ('DATABASE_ODBC_DRIVER', 'driver'),
+    ('DATABASE_ODBC_DSN', 'dsn'),
+    ('DATABASE_ODBC_EXTRA_PARAMS', 'extra_params'),
+)
+for old, new in deprecated:
+    if hasattr(settings, old):
+        warnings.warn(
+            "The %s setting is deprecated, use DATABASE_OPTIONS['%s'] instead." % (old, new),
+            DeprecationWarning
+        )
 
 DatabaseError = Database.DatabaseError
 IntegrityError = Database.IntegrityError
@@ -56,22 +78,22 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # database collation.
         'exact': '= %s',
         'iexact': "= UPPER(%s)",
-        'contains': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
-        'icontains': "LIKE UPPER(%s) ESCAPE '\\' COLLATE "+ settings.DATABASE_COLLATION,
+        'contains': "LIKE %s ESCAPE '\\' COLLATE " + collation,
+        'icontains': "LIKE UPPER(%s) ESCAPE '\\' COLLATE "+ collation,
         'gt': '> %s',
         'gte': '>= %s',
         'lt': '< %s',
         'lte': '<= %s',
-        'startswith': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
-        'endswith': "LIKE %s ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
-        'istartswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
-        'iendswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + settings.DATABASE_COLLATION,
+        'startswith': "LIKE %s ESCAPE '\\' COLLATE " + collation,
+        'endswith': "LIKE %s ESCAPE '\\' COLLATE " + collation,
+        'istartswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + collation,
+        'iendswith': "LIKE UPPER(%s) ESCAPE '\\' COLLATE " + collation,
 
         # TODO: remove, keep native T-SQL LIKE wildcards support
         # or use a "compatibility layer" and replace '*' with '%'
         # and '.' with '_'
-        'regex': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATION,
-        'iregex': 'LIKE %s COLLATE ' + settings.DATABASE_COLLATION,
+        'regex': 'LIKE %s COLLATE ' + collation,
+        'iregex': 'LIKE %s COLLATE ' + collation,
 
         # TODO: freetext, full-text contains...
     }
@@ -95,6 +117,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def _cursor(self):
         new_conn = False
         settings_dict = self.settings_dict
+        options = settings_dict['DATABASE_OPTIONS']
         if self.connection is None:
             new_conn = True
             if not settings_dict['DATABASE_NAME']:
@@ -102,16 +125,16 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 raise ImproperlyConfigured('You need to specify DATABASE_NAME in your Django settings file.')
 
             cstr_parts = []
-            if 'DATABASE_ODBC_DRIVER' in settings_dict:
-                driver = settings_dict['DATABASE_ODBC_DRIVER']
+            if 'driver' in options:
+                driver = options['driver']
             else:
                 if os.name == 'nt':
                     driver = 'SQL Server'
                 else:
                     driver = 'FreeTDS'
 
-            if 'DATABASE_ODBC_DSN' in settings_dict:
-                cstr_parts.append('DSN=%s' % settings_dict['DATABASE_ODBC_DSN'])
+            if 'dsn' in options:
+                cstr_parts.append('DSN=%s' % options['dsn'])
             else:
                 # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
                 cstr_parts.append('DRIVER={%s}' % driver)
@@ -120,7 +143,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 else:
                     host_str = 'localhost'
                 if os.name == 'nt' or driver == 'FreeTDS' and \
-                        settings_dict['DATABASE_OPTIONS'].get('host_is_server', False):
+                        options.get('host_is_server', False):
                     if settings_dict['DATABASE_PORT']:
                         host_str += ',%s' % settings_dict['DATABASE_PORT']
                     cstr_parts.append('SERVER=%s' % host_str)
@@ -140,12 +163,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             if self.MARS_Connection:
                 cstr_parts.append('MARS_Connection=yes')
 
-            if 'DATABASE_ODBC_EXTRA_PARAMS' in settings_dict:
-                cstr_parts.append(settings_dict['DATABASE_ODBC_EXTRA_PARAMS'])
+            if 'extra_params' in options:
+                cstr_parts.append(options['extra_params'])
 
             connstr = ';'.join(cstr_parts)
             self.connection = Database.connect(connstr, \
-                    autocommit=settings_dict['DATABASE_OPTIONS'].get('autocommit', False))
+                    autocommit=options.get('autocommit', False))
 
         cursor = self.connection.cursor()
         if new_conn:
