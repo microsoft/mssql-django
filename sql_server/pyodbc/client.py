@@ -1,5 +1,4 @@
 from django.db.backends import BaseDatabaseClient
-from django.conf import settings
 import os
 import sys
 
@@ -10,13 +9,14 @@ class DatabaseClient(BaseDatabaseClient):
         executable_name = 'isql'
 
     def runshell(self):
-        user = settings.DATABASE_OPTIONS.get('user', settings.DATABASE_USER)
-        password = settings.DATABASE_OPTIONS.get('passwd', settings.DATABASE_PASSWORD)
+        settings_dict = self.connection.settings_dict
+        user = settings_dict['DATABASE_OPTIONS'].get('user', settings_dict['DATABASE_USER'])
+        password = settings_dict['DATABASE_OPTIONS'].get('passwd', settings_dict['DATABASE_PASSWORD'])
         if os.name=='nt':
-            db = settings.DATABASE_OPTIONS.get('db', settings.DATABASE_NAME)
-            server = settings.DATABASE_OPTIONS.get('host', settings.DATABASE_HOST)
-            port = settings.DATABASE_OPTIONS.get('port', settings.DATABASE_PORT)
-            defaults_file = settings.DATABASE_OPTIONS.get('read_default_file')
+            db = settings_dict['DATABASE_OPTIONS'].get('db', settings_dict['DATABASE_NAME'])
+            server = settings_dict['DATABASE_OPTIONS'].get('host', settings_dict['DATABASE_HOST'])
+            port = settings_dict['DATABASE_OPTIONS'].get('port', settings_dict['DATABASE_PORT'])
+            defaults_file = settings_dict['DATABASE_OPTIONS'].get('read_default_file')
 
             args = [self.executable_name]
             if server:
@@ -32,9 +32,11 @@ class DatabaseClient(BaseDatabaseClient):
             if defaults_file:
                 args += ["-i", defaults_file]
         else:
-            dsn = settings.DATABASE_OPTIONS.get('dsn', settings.DATABASE_ODBC_DSN)
+            dsn = settings_dict['DATABASE_OPTIONS'].get('dsn', settings_dict['DATABASE_ODBC_DSN'])
             args = ['%s -v %s %s %s' % (self.executable_name, dsn, user, password)]
 
+        # XXX: This works only with Python >= 2.4 because subprocess was added
+        # in that release
         import subprocess
         try:
             subprocess.call(args, shell=True)

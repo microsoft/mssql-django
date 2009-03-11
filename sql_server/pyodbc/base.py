@@ -76,80 +76,84 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # TODO: freetext, full-text contains...
     }
 
-    def __init__(self, autocommit=False, **kwargs):
-        super(DatabaseWrapper, self).__init__(autocommit=autocommit, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super(DatabaseWrapper, self).__init__(*args, **kwargs)
 
-        if kwargs.get('MARS_Connection', False):
-            self.MARS_Connection = True
-        self.datefirst = kwargs.get('datefirst', 7)
+        if 'DATABASE_OPTIONS' in kwargs:
+            self.MARS_Connection = kwargs['DATABASE_OPTIONS'].get('MARS_Connection', False)
+            self.datefirst = kwargs['DATABASE_OPTIONS'].get('datefirst', 7)
 
         self.features = DatabaseFeatures()
         self.ops = DatabaseOperations()
-        self.client = DatabaseClient()
+        self.client = DatabaseClient(self)
         self.creation = DatabaseCreation(self)
         self.introspection = DatabaseIntrospection(self)
         self.validation = BaseDatabaseValidation()
 
         self.connection = None
 
-    def _cursor(self, settings):
+    def _cursor(self):
         new_conn = False
+        settings_dict = self.settings_dict
         if self.connection is None:
             new_conn = True
-            if not settings.DATABASE_NAME:
+            if not settings_dict['DATABASE_NAME']:
                 from django.core.exceptions import ImproperlyConfigured
                 raise ImproperlyConfigured('You need to specify DATABASE_NAME in your Django settings file.')
 
             cstr_parts = []
-            if hasattr(settings, 'DATABASE_ODBC_DRIVER'):
-                driver = settings.DATABASE_ODBC_DRIVER
+            if 'DATABASE_ODBC_DRIVER' in settings_dict:
+                driver = settings_dict['DATABASE_ODBC_DRIVER']
             else:
                 if os.name == 'nt':
                     driver = 'SQL Server'
                 else:
                     driver = 'FreeTDS'
 
-            if hasattr(settings, 'DATABASE_ODBC_DSN'):
-                cstr_parts.append('DSN=%s' % settings.DATABASE_ODBC_DSN)
+            if 'DATABASE_ODBC_DSN' in settings_dict:
+                cstr_parts.append('DSN=%s' % settings_dict['DATABASE_ODBC_DSN'])
             else:
-                # Only append DRIVER if don't set DATABASE_ODBC_DSN  
+                # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
                 cstr_parts.append('DRIVER={%s}' % driver)
-                if settings.DATABASE_HOST:
-                    host_str = settings.DATABASE_HOST
+                if settings_dict['DATABASE_HOST']:
+                    host_str = settings_dict['DATABASE_HOST']
                 else:
                     host_str = 'localhost'
-                if os.name == 'nt' or driver == 'FreeTDS' and self.options.get('host_is_server', False):
-                    if settings.DATABASE_PORT:
-                        host_str += ',%s' % settings.DATABASE_PORT
+                if os.name == 'nt' or driver == 'FreeTDS' and \
+                        settings_dict['DATABASE_OPTIONS'].get('host_is_server', False):
+                    if settings_dict['DATABASE_PORT']:
+                        host_str += ',%s' % settings_dict['DATABASE_PORT']
                     cstr_parts.append('SERVER=%s' % host_str)
                 else:
                     cstr_parts.append('SERVERNAME=%s' % host_str)
 
-            if settings.DATABASE_USER:
-                cstr_parts.append('UID=%s;PWD=%s' % (settings.DATABASE_USER, settings.DATABASE_PASSWORD))
+            if settings_dict['DATABASE_USER']:
+                cstr_parts.append('UID=%s;PWD=%s' % (settings_dict['DATABASE_USER'], settings_dict['DATABASE_PASSWORD']))
             else:
                 if driver in ('SQL Server', 'SQL Native Client'):
                     cstr_parts.append('Trusted_Connection=yes')
                 else:
                     cstr_parts.append('Integrated Security=SSPI')
 
-            cstr_parts.append('DATABASE=%s' % settings.DATABASE_NAME)
+            cstr_parts.append('DATABASE=%s' % settings_dict['DATABASE_NAME'])
 
             if self.MARS_Connection:
                 cstr_parts.append('MARS_Connection=yes')
 
-            if hasattr(settings, 'DATABASE_ODBC_EXTRA_PARAMS'):
-                cstr_parts.append(settings.DATABASE_ODBC_EXTRA_PARAMS)
+            if 'DATABASE_ODBC_EXTRA_PARAMS' in settings_dict:
+                cstr_parts.append(settings_dict['DATABASE_ODBC_EXTRA_PARAMS'])
 
             connstr = ';'.join(cstr_parts)
-            self.connection = Database.connect(connstr, autocommit=self.options['autocommit'])
+            self.connection = Database.connect(connstr, \
+                    autocommit=settings_dict['DATABASE_OPTIONS'].get('autocommit', False))
 
         cursor = self.connection.cursor()
         if new_conn:
             # Set date format for the connection. Also, make sure Sunday is
             # considered the first day of the week (to be consistent with the
-            # Django convention for the 'week_day' Django lookup)
-            cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" %self.datefirst)
+            # Django convention for the 'week_day' Django lookup) if the user
+            # hasn't told us otherwise
+            cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" % self.datefirst)
             if self.ops.sql_server_ver < 2005:
                 self.creation.data_types['TextField'] = 'ntext'
 
