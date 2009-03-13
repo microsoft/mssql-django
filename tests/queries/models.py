@@ -712,18 +712,9 @@ Bug #6180, #6203 -- dates with limits and/or counts
 >>> Item.objects.dates('created', 'day')[0]
 datetime.datetime(2007, 12, 19, 0, 0)
 
->>> from django.db import connection
->>> settings.DEBUG=True
-
 Bug #7087 -- dates with extra select columns
 >>> Item.objects.dates('created', 'day').extra(select={'a': 1})
 [datetime.datetime(2007, 12, 19, 0, 0), datetime.datetime(2007, 12, 20, 0, 0)]
-
->>> for le in connection.queries:
-...     print 10 * '-'
-...     print le['sql']
-
->>> settings.DEBUG=False
 
 Bug #7155 -- nullable dates
 >>> Item.objects.dates('modified', 'day')
