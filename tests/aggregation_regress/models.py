@@ -8,49 +8,59 @@ except NameError:
     from django.utils.itercompat import sorted      # For Python 2.3
 
 class Author(models.Model):
-   name = models.CharField(max_length=100)
-   age = models.IntegerField()
-   friends = models.ManyToManyField('self', blank=True)
+    name = models.CharField(max_length=100)
+    age = models.IntegerField()
+    friends = models.ManyToManyField('self', blank=True)
 
-   def __unicode__(self):
-      return self.name
+    def __unicode__(self):
+        return self.name
 
 class Publisher(models.Model):
-   name = models.CharField(max_length=300)
-   num_awards = models.IntegerField()
+    name = models.CharField(max_length=300)
+    num_awards = models.IntegerField()
 
-   def __unicode__(self):
-      return self.name
+    def __unicode__(self):
+        return self.name
 
 class Book(models.Model):
-   isbn = models.CharField(max_length=9)
-   name = models.CharField(max_length=300)
-   pages = models.IntegerField()
-   rating = models.FloatField()
-   price = models.DecimalField(decimal_places=2, max_digits=6)
-   authors = models.ManyToManyField(Author)
-   publisher = models.ForeignKey(Publisher)
-   pubdate = models.DateField()
+    isbn = models.CharField(max_length=9)
+    name = models.CharField(max_length=300)
+    pages = models.IntegerField()
+    rating = models.FloatField()
+    price = models.DecimalField(decimal_places=2, max_digits=6)
+    authors = models.ManyToManyField(Author)
+    contact = models.ForeignKey(Author, related_name='book_contact_set')
+    publisher = models.ForeignKey(Publisher)
+    pubdate = models.DateField()
 
-   class Meta:
-       ordering = ('name',)
+    class Meta:
+        ordering = ('name',)
 
-   def __unicode__(self):
-      return self.name
+    def __unicode__(self):
+        return self.name
 
 class Store(models.Model):
-   name = models.CharField(max_length=300)
-   books = models.ManyToManyField(Book)
-   original_opening = models.DateTimeField()
-   friday_night_closing = models.TimeField()
+    name = models.CharField(max_length=300)
+    books = models.ManyToManyField(Book)
+    original_opening = models.DateTimeField()
+    friday_night_closing = models.TimeField()
 
-   def __unicode__(self):
-      return self.name
+    def __unicode__(self):
+        return self.name
 
-#Extra does not play well with values. Modify the tests if/when this is fixed.
+class Entries(models.Model):
+    EntryID = models.AutoField(primary_key=True, db_column='Entry ID')
+    Entry = models.CharField(unique=True, max_length=50)
+    Exclude = models.BooleanField()
+
+class Clues(models.Model):
+    ID = models.AutoField(primary_key=True)
+    EntryID = models.ForeignKey(Entries, verbose_name='Entry', db_column = 'Entry ID')
+    Clue = models.CharField(max_length=150)
+
 __test__ = {'API_TESTS': """
 >>> from django.core import management
->>> from django.db.models import get_app
+>>> from django.db.models import get_app, F
 
 # Reset the database representation of this app.
 # This will return the database to a clean initial state.
@@ -80,23 +90,31 @@ __test__ = {'API_TESTS': """
 
 # Annotations get combined with extra select clauses
 >>> sorted(Book.objects.all().annotate(mean_auth_age=Avg('authors__age')).extra(select={'manufacture_cost' : 'price * .5'}).get(pk=2).__dict__.items())
-[('id', 2), ('isbn', u'067232959'), ('manufacture_cost', ...11.545...), ('mean_auth_age', 45.0), ('name', u'Sams Teach Yourself Django in 24 Hours'), ('pages', 528), ('price', Decimal("23.09")), ('pubdate', datetime.date(2008, 3, 3)), ('publisher_id', 2), ('rating', 3.0)]
+[('contact_id', 3), ('id', 2), ('isbn', u'067232959'), ('manufacture_cost', ...11.545...), ('mean_auth_age', 45.0), ('name', u'Sams Teach Yourself Django in 24 Hours'), ('pages', 528), ('price', Decimal("23.09")), ('pubdate', datetime.date(2008, 3, 3)), ('publisher_id', 2), ('rating', 3.0)]
 
 # Order of the annotate/extra in the query doesn't matter
 >>> sorted(Book.objects.all().extra(select={'manufacture_cost' : 'price * .5'}).annotate(mean_auth_age=Avg('authors__age')).get(pk=2).__dict__.items())
-[('id', 2), ('isbn', u'067232959'), ('manufacture_cost', ...11.545...), ('mean_auth_age', 45.0), ('name', u'Sams Teach Yourself Django in 24 Hours'), ('pages', 528), ('price', Decimal("23.09")), ('pubdate', datetime.date(2008, 3, 3)), ('publisher_id', 2), ('rating', 3.0)]
+[('contact_id', 3), ('id', 2), ('isbn', u'067232959'), ('manufacture_cost', ...11.545...), ('mean_auth_age', 45.0), ('name', u'Sams Teach Yourself Django in 24 Hours'), ('pages', 528), ('price', Decimal("23.09")), ('pubdate', datetime.date(2008, 3, 3)), ('publisher_id', 2), ('rating', 3.0)]
 
 # Values queries can be combined with annotate and extra
 >>> sorted(Book.objects.all().annotate(mean_auth_age=Avg('authors__age')).extra(select={'manufacture_cost' : 'price * .5'}).values().get(pk=2).items())
-[('id', 2), ('isbn', u'067232959'), ('manufacture_cost', ...11.545...), ('mean_auth_age', 45.0), ('name', u'Sams Teach Yourself Django in 24 Hours'), ('pages', 528), ('price', Decimal("23.09")), ('pubdate', datetime.date(2008, 3, 3)), ('publisher_id', 2), ('rating', 3.0)]
+[('contact_id', 3), ('id', 2), ('isbn', u'067232959'), ('manufacture_cost', ...11.545...), ('mean_auth_age', 45.0), ('name', u'Sams Teach Yourself Django in 24 Hours'), ('pages', 528), ('price', Decimal("23.09")), ('pubdate', datetime.date(2008, 3, 3)), ('publisher_id', 2), ('rating', 3.0)]
 
-# The order of the values, annotate and extra clauses doesn't matter
+# The order of the (empty) values, annotate and extra clauses doesn't matter
 >>> sorted(Book.objects.all().values().annotate(mean_auth_age=Avg('authors__age')).extra(select={'manufacture_cost' : 'price * .5'}).get(pk=2).items())
-[('id', 2), ('isbn', u'067232959'), ('manufacture_cost', ...11.545...), ('mean_auth_age', 45.0), ('name', u'Sams Teach Yourself Django in 24 Hours'), ('pages', 528), ('price', Decimal("23.09")), ('pubdate', datetime.date(2008, 3, 3)), ('publisher_id', 2), ('rating', 3.0)]
+[('contact_id', 3), ('id', 2), ('isbn', u'067232959'), ('manufacture_cost', ...11.545...), ('mean_auth_age', 45.0), ('name', u'Sams Teach Yourself Django in 24 Hours'), ('pages', 528), ('price', Decimal("23.09")), ('pubdate', datetime.date(2008, 3, 3)), ('publisher_id', 2), ('rating', 3.0)]
 
-# A values query that selects specific columns reduces the output
+# If the annotation precedes the values clause, it won't be included
+# unless it is explicitly named
 >>> sorted(Book.objects.all().annotate(mean_auth_age=Avg('authors__age')).extra(select={'price_per_page' : 'price / pages'}).values('name').get(pk=1).items())
+[('name', u'The Definitive Guide to Django: Web Development Done Right')]
+
+>>> sorted(Book.objects.all().annotate(mean_auth_age=Avg('authors__age')).extra(select={'price_per_page' : 'price / pages'}).values('name','mean_auth_age').get(pk=1).items())
 [('mean_auth_age', 34.5), ('name', u'The Definitive Guide to Django: Web Development Done Right')]
+
+# If an annotation isn't included in the values, it can still be used in a filter
+>>> Book.objects.annotate(n_authors=Count('authors')).values('name').filter(n_authors__gt=2)
+[{'name': u'Python Web Development with Django'}]
 
 # The annotations are added to values output if values() precedes annotate()
 >>> sorted(Book.objects.all().values('name').annotate(mean_auth_age=Avg('authors__age')).extra(select={'price_per_page' : 'price / pages'}).get(pk=1).items())
@@ -119,17 +137,17 @@ __test__ = {'API_TESTS': """
 >>> Book.objects.all().aggregate(num_authors=Count('foo'))
 Traceback (most recent call last):
 ...
-FieldError: Cannot resolve keyword 'foo' into field. Choices are: authors, id, isbn, name, pages, price, pubdate, publisher, rating, store
+FieldError: Cannot resolve keyword 'foo' into field. Choices are: authors, contact, id, isbn, name, pages, price, pubdate, publisher, rating, store
 
 >>> Book.objects.all().annotate(num_authors=Count('foo'))
 Traceback (most recent call last):
 ...
-FieldError: Cannot resolve keyword 'foo' into field. Choices are: authors, id, isbn, name, pages, price, pubdate, publisher, rating, store
+FieldError: Cannot resolve keyword 'foo' into field. Choices are: authors, contact, id, isbn, name, pages, price, pubdate, publisher, rating, store
 
 >>> Book.objects.all().annotate(num_authors=Count('authors__id')).aggregate(Max('foo'))
 Traceback (most recent call last):
 ...
-FieldError: Cannot resolve keyword 'foo' into field. Choices are: authors, id, isbn, name, pages, price, pubdate, publisher, rating, store, num_authors
+FieldError: Cannot resolve keyword 'foo' into field. Choices are: authors, contact, id, isbn, name, pages, price, pubdate, publisher, rating, store, num_authors
 
 # Old-style count aggregations can be mixed with new-style
 >>> Book.objects.annotate(num_authors=Count('authors')).count()
@@ -147,6 +165,92 @@ FieldError: Cannot resolve keyword 'foo' into field. Choices are: authors, id, i
 >>> Book.objects.aggregate(number=Max('pages'), select=Max('pages'))
 {'number': 1132, 'select': 1132}
 
+# Regression for #10064: select_related() plays nice with aggregates
+>>> Book.objects.select_related('publisher').annotate(num_authors=Count('authors')).values()[0]
+{'rating': 4.0, 'isbn': u'013790395', 'name': u'Artificial Intelligence: A Modern Approach', 'pubdate': datetime.date(1995, 1, 15), 'price': Decimal("82.8..."), 'contact_id': 8, 'id': 5, 'num_authors': 2, 'publisher_id': 3, 'pages': 1132}
+
+# Regression for #10010: exclude on an aggregate field is correctly negated
+>>> len(Book.objects.annotate(num_authors=Count('authors')))
+6
+>>> len(Book.objects.annotate(num_authors=Count('authors')).filter(num_authors__gt=2))
+1
+>>> len(Book.objects.annotate(num_authors=Count('authors')).exclude(num_authors__gt=2))
+5
+
+>>> len(Book.objects.annotate(num_authors=Count('authors')).filter(num_authors__lt=3).exclude(num_authors__lt=2))
+2
+>>> len(Book.objects.annotate(num_authors=Count('authors')).exclude(num_authors__lt=2).filter(num_authors__lt=3))
+2
+
+# Aggregates can be used with F() expressions
+# ... where the F() is pushed into the HAVING clause
+>>> Publisher.objects.annotate(num_books=Count('book')).filter(num_books__lt=F('num_awards')/2).order_by('name').values('name','num_books','num_awards')
+[{'num_books': 1, 'name': u'Morgan Kaufmann', 'num_awards': 9}, {'num_books': 2, 'name': u'Prentice Hall', 'num_awards': 7}]
+
+>>> Publisher.objects.annotate(num_books=Count('book')).exclude(num_books__lt=F('num_awards')/2).order_by('name').values('name','num_books','num_awards')
+[{'num_books': 2, 'name': u'Apress', 'num_awards': 3}, {'num_books': 0, 'name': u"Jonno's House of Books", 'num_awards': 0}, {'num_books': 1, 'name': u'Sams', 'num_awards': 1}]
+
+# ... and where the F() references an aggregate
+>>> Publisher.objects.annotate(num_books=Count('book')).filter(num_awards__gt=2*F('num_books')).order_by('name').values('name','num_books','num_awards')
+[{'num_books': 1, 'name': u'Morgan Kaufmann', 'num_awards': 9}, {'num_books': 2, 'name': u'Prentice Hall', 'num_awards': 7}]
+
+>>> Publisher.objects.annotate(num_books=Count('book')).exclude(num_books__lt=F('num_awards')/2).order_by('name').values('name','num_books','num_awards')
+[{'num_books': 2, 'name': u'Apress', 'num_awards': 3}, {'num_books': 0, 'name': u"Jonno's House of Books", 'num_awards': 0}, {'num_books': 1, 'name': u'Sams', 'num_awards': 1}]
+
+# Tests on fields with non-default table and column names.
+>>> Clues.objects.values('EntryID__Entry').annotate(Appearances=Count('EntryID'), Distinct_Clues=Count('Clue', distinct=True))
+[]
+
+>>> Entries.objects.annotate(clue_count=Count('clues__ID'))
+[]
+
+# Regression for #10089: Check handling of empty result sets with aggregates
+>>> Book.objects.filter(id__in=[]).count()
+0
+
+>>> Book.objects.filter(id__in=[]).aggregate(num_authors=Count('authors'), avg_authors=Avg('authors'), max_authors=Max('authors'), max_price=Max('price'), max_rating=Max('rating'))
+{'max_authors': None, 'max_rating': None, 'num_authors': 0, 'avg_authors': None, 'max_price': None}
+
+>>> Publisher.objects.filter(pk=5).annotate(num_authors=Count('book__authors'), avg_authors=Avg('book__authors'), max_authors=Max('book__authors'), max_price=Max('book__price'), max_rating=Max('book__rating')).values()
+[{'max_authors': None, 'name': u"Jonno's House of Books", 'num_awards': 0, 'max_price': None, 'num_authors': 0, 'max_rating': None, 'id': 5, 'avg_authors': None}]
+
+# Regression for #10113 - Fields mentioned in order_by() must be included in the GROUP BY.
+# This only becomes a problem when the order_by introduces a new join.
+>>> Book.objects.annotate(num_authors=Count('authors')).order_by('publisher__name', 'name')
+[<Book: Practical Django Projects>, <Book: The Definitive Guide to Django: Web Development Done Right>, <Book: Paradigms of Artificial Intelligence Programming: Case Studies in Common Lisp>, <Book: Artificial Intelligence: A Modern Approach>, <Book: Python Web Development with Django>, <Book: Sams Teach Yourself Django in 24 Hours>]
+
+# Regression for #10127 - Empty select_related() works with annotate
+>>> books = Book.objects.all().filter(rating__lt=4.5).select_related().annotate(Avg('authors__age'))
+>>> sorted([(b.name, b.authors__age__avg, b.publisher.name, b.contact.name) for b in books])
+[(u'Artificial Intelligence: A Modern Approach', 51.5, u'Prentice Hall', u'Peter Norvig'), (u'Practical Django Projects', 29.0, u'Apress', u'James Bennett'), (u'Python Web Development with Django', 30.3..., u'Prentice Hall', u'Jeffrey Forcier'), (u'Sams Teach Yourself Django in 24 Hours', 45.0, u'Sams', u'Brad Dayley')]
+
+# Regression for #10132 - If the values() clause only mentioned extra(select=) columns, those columns are used for grouping
+>>> Book.objects.extra(select={'pub':'publisher_id'}).values('pub').annotate(Count('id')).order_by('pub')
+[{'pub': 1, 'id__count': 2}, {'pub': 2, 'id__count': 1}, {'pub': 3, 'id__count': 2}, {'pub': 4, 'id__count': 1}]
+
+>>> Book.objects.extra(select={'pub':'publisher_id','foo':'pages'}).values('pub').annotate(Count('id')).order_by('pub')
+[{'pub': 1, 'id__count': 2}, {'pub': 2, 'id__count': 1}, {'pub': 3, 'id__count': 2}, {'pub': 4, 'id__count': 1}]
+
+# Regression for #10182 - Queries with aggregate calls are correctly realiased when used in a subquery
+>>> ids = Book.objects.filter(pages__gt=100).annotate(n_authors=Count('authors')).filter(n_authors__gt=2).order_by('n_authors')
+>>> Book.objects.filter(id__in=ids)
+[<Book: Python Web Development with Django>]
+
+# Regression for #10199 - Aggregate calls clone the original query so the original query can still be used
+>>> books = Book.objects.all()
+>>> _ = books.aggregate(Avg('authors__age'))
+>>> books.all()
+[<Book: Artificial Intelligence: A Modern Approach>, <Book: Paradigms of Artificial Intelligence Programming: Case Studies in Common Lisp>, <Book: Practical Django Projects>, <Book: Python Web Development with Django>, <Book: Sams Teach Yourself Django in 24 Hours>, <Book: The Definitive Guide to Django: Web Development Done Right>]
+
+# Regression for #10248 - Annotations work with DateQuerySets
+>>> Book.objects.annotate(num_authors=Count('authors')).filter(num_authors=2).dates('pubdate', 'day')
+[datetime.datetime(1995, 1, 15, 0, 0), datetime.datetime(2007, 12, 6, 0, 0)]
+
+# Regression for #10290 - extra selects with parameters can be used for
+# grouping.
+>>> qs = Book.objects.all().annotate(mean_auth_age=Avg('authors__age')).extra(select={'sheets' : '(pages + %s) / %s'}, select_params=[1, 2]).order_by('sheets').values('sheets')
+>>> [int(x['sheets']) for x in qs]
+[150, 175, 224, 264, 473, 566]
 
 """
 }

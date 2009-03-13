@@ -7,53 +7,44 @@ except NameError:
     from django.utils.itercompat import sorted      # For Python 2.3
 
 class Author(models.Model):
-   name = models.CharField(max_length=100)
-   age = models.IntegerField()
-   friends = models.ManyToManyField('self', blank=True)
+    name = models.CharField(max_length=100)
+    age = models.IntegerField()
+    friends = models.ManyToManyField('self', blank=True)
 
-   def __unicode__(self):
-      return self.name
+    def __unicode__(self):
+        return self.name
 
 class Publisher(models.Model):
-   name = models.CharField(max_length=300)
-   num_awards = models.IntegerField()
+    name = models.CharField(max_length=300)
+    num_awards = models.IntegerField()
 
-   def __unicode__(self):
-      return self.name
+    def __unicode__(self):
+        return self.name
 
 class Book(models.Model):
-   isbn = models.CharField(max_length=9)
-   name = models.CharField(max_length=300)
-   pages = models.IntegerField()
-   rating = models.FloatField()
-   price = models.DecimalField(decimal_places=2, max_digits=6)
-   authors = models.ManyToManyField(Author)
-   publisher = models.ForeignKey(Publisher)
-   pubdate = models.DateField()
+    isbn = models.CharField(max_length=9)
+    name = models.CharField(max_length=300)
+    pages = models.IntegerField()
+    rating = models.FloatField()
+    price = models.DecimalField(decimal_places=2, max_digits=6)
+    authors = models.ManyToManyField(Author)
+    contact = models.ForeignKey(Author, related_name='book_contact_set')
+    publisher = models.ForeignKey(Publisher)
+    pubdate = models.DateField()
 
-   def __unicode__(self):
-      return self.name
+    def __unicode__(self):
+        return self.name
 
 class Store(models.Model):
-   name = models.CharField(max_length=300)
-   books = models.ManyToManyField(Book)
-   original_opening = models.DateTimeField()
-   friday_night_closing = models.TimeField()
+    name = models.CharField(max_length=300)
+    books = models.ManyToManyField(Book)
+    original_opening = models.DateTimeField()
+    friday_night_closing = models.TimeField()
 
-   def __unicode__(self):
-      return self.name
+    def __unicode__(self):
+        return self.name
 
-class Entries(models.Model):
-   EntryID = models.AutoField(primary_key=True, db_column='Entry ID')
-   Entry = models.CharField(unique=True, max_length=50)
-   Exclude = models.BooleanField()
-
-class Clues(models.Model):
-   ID = models.AutoField(primary_key=True)
-   EntryID = models.ForeignKey(Entries, verbose_name='Entry', db_column = 'Entry ID')
-   Clue = models.CharField(max_length=150)
-
-# Tests on 'aggergate'
+# Tests on 'aggregate'
 # Different backends and numbers.
 __test__ = {'API_TESTS': """
 >>> from django.core import management
@@ -180,7 +171,7 @@ u'The Definitive Guide to Django: Web Development Done Right'
 # Count the number of books written by each author
 >>> authors = Author.objects.annotate(num_books=Count('book'))
 >>> sorted([(a.name, a.num_books) for a in authors])
-[(u'Adrian Holovaty', 1), (u'Brad Dayley', 1), (u'Jacob Kaplan-Moss', 1), (u'James Bennett', 1), (u'Jeffrey Forcier ', 1), (u'Paul Bissex', 1), (u'Peter Norvig', 2), (u'Stuart Russell', 1), (u'Wesley J. Chun', 1)]
+[(u'Adrian Holovaty', 1), (u'Brad Dayley', 1), (u'Jacob Kaplan-Moss', 1), (u'James Bennett', 1), (u'Jeffrey Forcier', 1), (u'Paul Bissex', 1), (u'Peter Norvig', 2), (u'Stuart Russell', 1), (u'Wesley J. Chun', 1)]
 
 # On OneToMany Relationships
 
@@ -194,27 +185,26 @@ u'The Definitive Guide to Django: Web Development Done Right'
 # Annotate each publisher with the sum of the price of all books sold
 >>> publishers = Publisher.objects.all().annotate(Sum('book__price'))
 >>> sorted([(p.name, p.book__price__sum) for p in publishers])
-[(u'Apress', Decimal("59.69")), (u'Morgan Kaufmann', Decimal("75.00")), (u'Prentice Hall', Decimal("112.49")), (u'Sams', Decimal("23.09"))]
+[(u'Apress', Decimal("59.69")), (u"Jonno's House of Books", None), (u'Morgan Kaufmann', Decimal("75.00")), (u'Prentice Hall', Decimal("112.49")), (u'Sams', Decimal("23.09"))]
 
 # Calls to values() are not commutative over annotate().
 
 # Calling values on a queryset that has annotations returns the output
 # as a dictionary
 >>> Book.objects.filter(pk=1).annotate(mean_age=Avg('authors__age')).values()
-[{'rating': 4.5, 'isbn': u'159059725', 'name': u'The Definitive Guide to Django: Web Development Done Right', 'pubdate': datetime.date(2007, 12, 6), 'price': Decimal("30..."), 'id': 1, 'publisher_id': 1, 'pages': 447, 'mean_age': 34.5}]
+[{'rating': 4.5, 'isbn': u'159059725', 'name': u'The Definitive Guide to Django: Web Development Done Right', 'pubdate': datetime.date(2007, 12, 6), 'price': Decimal("30..."), 'contact_id': 1, 'id': 1, 'publisher_id': 1, 'pages': 447, 'mean_age': 34.5}]
 
 >>> Book.objects.filter(pk=1).annotate(mean_age=Avg('authors__age')).values('pk', 'isbn', 'mean_age')
 [{'pk': 1, 'isbn': u'159059725', 'mean_age': 34.5}]
 
-# Calling it with paramters reduces the output but does not remove the
-# annotation.
+# Calling values() with parameters reduces the output
 >>> Book.objects.filter(pk=1).annotate(mean_age=Avg('authors__age')).values('name')
-[{'name': u'The Definitive Guide to Django: Web Development Done Right', 'mean_age': 34.5}]
+[{'name': u'The Definitive Guide to Django: Web Development Done Right'}]
 
 # An empty values() call before annotating has the same effect as an
 # empty values() call after annotating
 >>> Book.objects.filter(pk=1).values().annotate(mean_age=Avg('authors__age'))
-[{'rating': 4.5, 'isbn': u'159059725', 'name': u'The Definitive Guide to Django: Web Development Done Right', 'pubdate': datetime.date(2007, 12, 6), 'price': Decimal("30..."), 'id': 1, 'publisher_id': 1, 'pages': 447, 'mean_age': 34.5}]
+[{'rating': 4.5, 'isbn': u'159059725', 'name': u'The Definitive Guide to Django: Web Development Done Right', 'pubdate': datetime.date(2007, 12, 6), 'price': Decimal("30..."), 'contact_id': 1, 'id': 1, 'publisher_id': 1, 'pages': 447, 'mean_age': 34.5}]
 
 # Calling annotate() on a ValuesQuerySet annotates over the groups of
 # fields to be selected by the ValuesQuerySet.
@@ -231,7 +221,7 @@ u'The Definitive Guide to Django: Web Development Done Right'
 >>> len(authors)
 9
 >>> sorted([(a.name, a.friends__age__avg) for a in authors])
-[(u'Adrian Holovaty', 32.0), (u'Brad Dayley', None), (u'Jacob Kaplan-Moss', 29.5), (u'James Bennett', 34.0), (u'Jeffrey Forcier ', 27.0), (u'Paul Bissex', 31.0), (u'Peter Norvig', 46.0), (u'Stuart Russell', 57.0), (u'Wesley J. Chun', 33.6...)]
+[(u'Adrian Holovaty', 32.0), (u'Brad Dayley', None), (u'Jacob Kaplan-Moss', 29.5), (u'James Bennett', 34.0), (u'Jeffrey Forcier', 27.0), (u'Paul Bissex', 31.0), (u'Peter Norvig', 46.0), (u'Stuart Russell', 57.0), (u'Wesley J. Chun', 33.6...)]
 
 
 # The Count aggregation function allows an extra parameter: distinct.
@@ -268,9 +258,9 @@ True
 # Lets add a publisher to test the different possibilities for filtering
 >>> p = Publisher(name='Expensive Publisher', num_awards=0)
 >>> p.save()
->>> Book(name='ExpensiveBook1', pages=1, isbn='111', rating=3.5, price=Decimal("1000"), publisher=p, pubdate=date(2008,12,1)).save()
->>> Book(name='ExpensiveBook2', pages=1, isbn='222', rating=4.0, price=Decimal("1000"), publisher=p, pubdate=date(2008,12,2)).save()
->>> Book(name='ExpensiveBook3', pages=1, isbn='333', rating=4.5, price=Decimal("35"), publisher=p, pubdate=date(2008,12,3)).save()
+>>> Book(name='ExpensiveBook1', pages=1, isbn='111', rating=3.5, price=Decimal("1000"), publisher=p, contact_id=1, pubdate=date(2008,12,1)).save()
+>>> Book(name='ExpensiveBook2', pages=1, isbn='222', rating=4.0, price=Decimal("1000"), publisher=p, contact_id=1, pubdate=date(2008,12,2)).save()
+>>> Book(name='ExpensiveBook3', pages=1, isbn='333', rating=4.5, price=Decimal("35"), publisher=p, contact_id=1, pubdate=date(2008,12,3)).save()
 
 # Publishers that have:
 
@@ -351,12 +341,8 @@ True
 # Cheating: [a for a in Author.objects.all().annotate(num_coleagues=Count('book__authors__id'), num_books=Count('book__id', distinct=True)) if a.num_coleagues - a.num_books > 0]
 # F-Syntax is required. Will be fixed after F objects are available
 
-# Tests on fields with non-default table and column names.
->>> Clues.objects.values('EntryID__Entry').annotate(Appearances=Count('EntryID'), Distinct_Clues=Count('Clue', distinct=True))
-[]
-
 # Aggregates also work on dates, times and datetimes
->>> Publisher.objects.annotate(earliest_book=Min('book__pubdate')).order_by('earliest_book').values()
+>>> Publisher.objects.annotate(earliest_book=Min('book__pubdate')).exclude(earliest_book=None).order_by('earliest_book').values()
 [{'earliest_book': datetime.date(1991, 10, 15), 'num_awards': 9, 'id': 4, 'name': u'Morgan Kaufmann'}, {'earliest_book': datetime.date(1995, 1, 15), 'num_awards': 7, 'id': 3, 'name': u'Prentice Hall'}, {'earliest_book': datetime.date(2007, 12, 6), 'num_awards': 3, 'id': 1, 'name': u'Apress'}, {'earliest_book': datetime.date(2008, 3, 3), 'num_awards': 1, 'id': 2, 'name': u'Sams'}]
 
 >>> Store.objects.aggregate(Max('friday_night_closing'), Min("original_opening"))
