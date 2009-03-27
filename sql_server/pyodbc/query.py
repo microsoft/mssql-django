@@ -127,8 +127,9 @@ def query_class(QueryClass):
             return value
 
         def resolve_columns(self, row, fields=()):
-            values = []
-            for value, field in map(None, row, fields):
+            index_start = len(self.extra_select.keys())
+            values = [self.convert_values(v, None) for v in row[:index_start]]
+            for value, field in map(None, row[index_start:], fields):
                 values.append(self.convert_values(value, field))
             return values
 

@@ -46,7 +46,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         if lookup_type == 'month':
             return "Convert(datetime, Convert(varchar, DATEPART(year, %s)) + '/' + Convert(varchar, DATEPART(month, %s)) + '/01')" % (field_name, field_name)
         if lookup_type == 'day':
-            return "Convert(datetime, Convert(varchar(12), %s))" % field_name
+            return "Convert(datetime, Convert(varchar(12), %s, 112))" % field_name
 
     def field_cast_sql(self, db_type):
         """
@@ -282,3 +282,12 @@ class DatabaseOperations(BaseDatabaseOperations):
         # SQL Server doesn't support microseconds
         last = '%s-12-31 23:59:59'
         return [first % value, last % value]
+
+    def value_to_db_decimal(self, value, max_digits, decimal_places):
+        """
+        Transform a decimal.Decimal value to an object compatible with what is
+        expected by the backend driver for decimal (numeric) columns.
+        """
+        if value is None:
+            return None
+        return util.format_number(value, max_digits, decimal_places)
