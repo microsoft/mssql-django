@@ -18,6 +18,7 @@ if pyodbc_ver < (2, 0, 38, 9999):
     raise ImproperlyConfigured("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
 
 from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, BaseDatabaseValidation
+from django.db.backends.signals import connection_created
 from django.conf import settings
 from sql_server.pyodbc.operations import DatabaseOperations
 from sql_server.pyodbc.client import DatabaseClient
@@ -169,6 +170,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             connstr = ';'.join(cstr_parts)
             self.connection = Database.connect(connstr, \
                     autocommit=options.get('autocommit', False))
+            connection_created.send(sender=self.__class__)
 
         cursor = self.connection.cursor()
         if new_conn:
