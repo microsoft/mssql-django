@@ -180,6 +180,8 @@ def query_class(QueryClass):
                     else:
                         self._ord.append((col, odir))
 
+            if strategy == USE_ROW_NUMBER and not self._ord and 'RAND()' in ordering:
+                self._ord.append(('RAND()',''))
             if strategy == USE_TOP_HMARK and not self._ord:
                 # XXX:
                 #meta = self.get_meta()
