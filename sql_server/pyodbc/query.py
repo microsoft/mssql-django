@@ -109,7 +109,7 @@ def query_class(QueryClass):
                 return value
             elif field and field.get_internal_type() == 'DateField':
                 value = value.date() # extract date
-            elif field and field.get_internal_type() == 'TimeField':
+            elif field and field.get_internal_type() == 'TimeField' or (isinstance(value, datetime) and value.year == 1900 and value.month == value.day == 1):
                 value = value.time() # extract time
             # Some cases (for example when select_related() is used) aren't
             # caught by the DateField case above and date fields arrive from
