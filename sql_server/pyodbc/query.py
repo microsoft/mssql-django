@@ -131,7 +131,7 @@ def query_class(QueryClass):
             values = [self.convert_values(v, None) for v in row[:index_start]]
             for value, field in map(None, row[index_start:], fields):
                 values.append(self.convert_values(value, field))
-            return values
+            return tuple(values)
 
         def modify_query(self, strategy, ordering, out_cols):
             """
