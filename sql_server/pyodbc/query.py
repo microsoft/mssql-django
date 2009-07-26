@@ -207,7 +207,15 @@ def query_class(QueryClass):
                 if not ordering:
                     meta = self.get_meta()
                     qn = self.quote_name_unless_alias
-                    ordering = ['%s.%s ASC' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))]
+                    # Special case: pk not in out_cols, use random ordering. 
+                    #
+                    if '%s.%s' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column)) not in self.get_columns():
+                        ordering = ['RAND()']
+                        # XXX: Maybe use group_by field for ordering?
+                        #if self.group_by:
+                            #ordering = ['%s.%s ASC' % (qn(self.group_by[0][0]),qn(self.group_by[0][1]))]
+                    else:
+                        ordering = ['%s.%s ASC' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))]
 
             if strategy in (USE_TOP_HMARK, USE_ROW_NUMBER):
                 self.modify_query(strategy, ordering, out_cols)
