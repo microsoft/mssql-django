@@ -20,6 +20,23 @@ if pyodbc_ver < (2, 0, 38, 9999):
 from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, BaseDatabaseValidation
 from django.db.backends.signals import connection_created
 from django.conf import settings
+from django import VERSION as DjangoVersion
+if DjangoVersion[:2] == (1,2) :
+    from django import get_version
+    version_str = get_version()
+    if 'SVN' in version_str and int(version_str.split('SVN-')[-1]) < 11952: # django trunk revision 11952 Added multiple database support.
+        _DJANGO_VERSION = 11
+    else:
+        _DJANGO_VERSION = 12
+elif DjangoVersion[:2] == (1,1):
+    _DJANGO_VERSION = 11
+elif DjangoVersion[:2] == (1,0):
+    _DJANGO_VERSION = 10
+elif DjangoVersion[0] == 1:
+    _DJANGO_VERSION = 13
+else:
+    _DJANGO_VERSION = 9
+    
 from sql_server.pyodbc.operations import DatabaseOperations
 from sql_server.pyodbc.client import DatabaseClient
 from sql_server.pyodbc.creation import DatabaseCreation
@@ -111,19 +128,50 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         self.client = DatabaseClient(self)
         self.creation = DatabaseCreation(self)
         self.introspection = DatabaseIntrospection(self)
-        self.validation = BaseDatabaseValidation()
+        if _DJANGO_VERSION >= 12:
+            self.validation = BaseDatabaseValidation(self)
+        else:
+            self.validation = BaseDatabaseValidation()
 
         self.connection = None
 
     def _cursor(self):
         new_conn = False
         settings_dict = self.settings_dict
-        options = settings_dict['DATABASE_OPTIONS']
+        db_str, user_str, passwd_str, port_str = None, None, None, None
+        if _DJANGO_VERSION >= 12:
+            options = settings_dict['OPTIONS']
+            if settings_dict['NAME']:
+                db_str = settings_dict['NAME']
+            if settings_dict['HOST']:
+                host_str = settings_dict['HOST']
+            else:
+                host_str = 'localhost'
+            if settings_dict['USER']:
+                user_str = settings_dict['USER']
+            if settings_dict['PASSWORD']:
+                passwd_str = settings_dict['PASSWORD']
+            if settings_dict['PORT']:
+                port_str = settings_dict['PORT']
+        else:
+            options = settings_dict['DATABASE_OPTIONS']
+            if settings_dict['DATABASE_NAME']:
+                db_str = settings_dict['DATABASE_NAME']
+            if settings_dict['DATABASE_HOST']:
+                host_str = settings_dict['DATABASE_HOST']
+            else:
+                host_str = 'localhost'
+            if settings_dict['DATABASE_USER']:
+                user_str = settings_dict['DATABASE_USER']
+            if settings_dict['DATABASE_PASSWORD']:
+                passwd_str = settings_dict['DATABASE_PASSWORD']
+            if settings_dict['DATABASE_PORT']:
+                port_str = settings_dict['DATABASE_PORT']
         if self.connection is None:
             new_conn = True
-            if not settings_dict['DATABASE_NAME']:
+            if not db_str:
                 from django.core.exceptions import ImproperlyConfigured
-                raise ImproperlyConfigured('You need to specify DATABASE_NAME in your Django settings file.')
+                raise ImproperlyConfigured('You need to specify NAME in your Django settings file.')
 
             cstr_parts = []
             if 'driver' in options:
@@ -139,27 +187,24 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             else:
                 # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
                 cstr_parts.append('DRIVER={%s}' % driver)
-                if settings_dict['DATABASE_HOST']:
-                    host_str = settings_dict['DATABASE_HOST']
-                else:
-                    host_str = 'localhost'
+                
                 if os.name == 'nt' or driver == 'FreeTDS' and \
                         options.get('host_is_server', False):
-                    if settings_dict['DATABASE_PORT']:
-                        host_str += ',%s' % settings_dict['DATABASE_PORT']
+                    if port_str:
+                        host_str += ',%s' % port_str
                     cstr_parts.append('SERVER=%s' % host_str)
                 else:
                     cstr_parts.append('SERVERNAME=%s' % host_str)
 
-            if settings_dict['DATABASE_USER']:
-                cstr_parts.append('UID=%s;PWD=%s' % (settings_dict['DATABASE_USER'], settings_dict['DATABASE_PASSWORD']))
+            if user_str:
+                cstr_parts.append('UID=%s;PWD=%s' % (user_str, passwd_str))
             else:
                 if driver in ('SQL Server', 'SQL Native Client'):
                     cstr_parts.append('Trusted_Connection=yes')
                 else:
                     cstr_parts.append('Integrated Security=SSPI')
 
-            cstr_parts.append('DATABASE=%s' % settings_dict['DATABASE_NAME'])
+            cstr_parts.append('DATABASE=%s' % db_str)
 
             if self.MARS_Connection:
                 cstr_parts.append('MARS_Connection=yes')

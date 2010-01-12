@@ -2,9 +2,12 @@ from django.db.backends import BaseDatabaseOperations
 from sql_server.pyodbc import query
 import datetime
 import time
+import decimal
 
 class DatabaseOperations(BaseDatabaseOperations):
+    compiler_module = "sql_server.pyodbc.compiler"
     def __init__(self):
+        super(DatabaseOperations, self).__init__()
         self._ss_ver = None
 
     def _get_sql_server_ver(self):
@@ -282,3 +285,16 @@ class DatabaseOperations(BaseDatabaseOperations):
         # SQL Server doesn't support microseconds
         last = '%s-12-31 23:59:59'
         return [first % value, last % value]
+    def value_to_db_decimal(self, value, max_digits, decimal_places):
+        """
+        Transform a decimal.Decimal value to an object compatible with what is
+        expected by the backend driver for decimal (numeric) columns.
+        """
+        if value is None:
+            return None
+        if isinstance(value, decimal.Decimal):
+            context = decimal.getcontext().copy()
+            context.prec = max_digits
+            return u"%.*f" % (decimal_places, value.quantize(decimal.Decimal(".1") ** decimal_places, context=context))
+        else:
+            return u"%.*f" % (decimal_places, value)
