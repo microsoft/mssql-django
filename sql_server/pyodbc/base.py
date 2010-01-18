@@ -81,6 +81,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     drv_name = None
     driver_needs_utf8 = None
     MARS_Connection = False
+    unicode_results = False
     datefirst = 7
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
@@ -119,9 +120,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
 
-        if 'DATABASE_OPTIONS' in kwargs:
-            self.MARS_Connection = kwargs['DATABASE_OPTIONS'].get('MARS_Connection', False)
-            self.datefirst = kwargs['DATABASE_OPTIONS'].get('datefirst', 7)
+        if 'OPTIONS' in self.settings_dict:
+            self.MARS_Connection = self.settings_dict['OPTIONS'].get('MARS_Connection', False)
+            self.datefirst = self.settings_dict['OPTIONS'].get('datefirst', 7)
+            self.unicode_results = self.settings_dict['OPTIONS'].get('unicode_results', False)
 
         self.features = DatabaseFeatures()
         self.ops = DatabaseOperations()
@@ -208,13 +210,19 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
             if self.MARS_Connection:
                 cstr_parts.append('MARS_Connection=yes')
-
+                
             if 'extra_params' in options:
                 cstr_parts.append(options['extra_params'])
 
             connstr = ';'.join(cstr_parts)
-            self.connection = Database.connect(connstr, \
-                    autocommit=options.get('autocommit', False))
+            autocommit = options.get('autocommit', False)
+            if self.unicode_results:
+                self.connection = Database.connect(connstr, \
+                        autocommit=autocommit, \
+                        unicode_results='True')
+            else:
+                self.connection = Database.connect(connstr, \
+                        autocommit=autocommit)
             connection_created.send(sender=self.__class__)
 
         cursor = self.connection.cursor()
