@@ -10,18 +10,23 @@ class DatabaseOperations(BaseDatabaseOperations):
         super(DatabaseOperations, self).__init__()
         self._ss_ver = None
 
-    def _get_sql_server_ver(self):
+    def _get_sql_server_ver(self, connection=None):
         """
         Returns the version of the SQL Server in use:
         """
         if self._ss_ver is not None:
             return self._ss_ver
         else:
-            from django.db import connection
-            cur = connection.cursor()
+            if connection:
+                cur = connection.cursor()
+            else:
+                from django.db import connection
+                cur = connection.cursor()
             cur.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') as varchar)")
             ver_code = int(cur.fetchone()[0].split('.')[0])
-            if ver_code >= 9:
+            if ver_code >= 10:
+                self._ss_ver = 2008
+            elif ver_code == 9:
                 self._ss_ver = 2005
             else:
                 self._ss_ver = 2000
