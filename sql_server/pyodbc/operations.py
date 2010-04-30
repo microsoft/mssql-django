@@ -190,7 +190,7 @@ class DatabaseOperations(BaseDatabaseOperations):
                     elem['start_id'] = 1
                 elem.update(seq)
                 seqs.append(elem)
-            cursor.execute("SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS")
+            cursor.execute("SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')")
             fks = cursor.fetchall()
             sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' % \
                     (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
