@@ -196,12 +196,6 @@ class SQLCompiler(compiler.SQLCompiler):
         if where:
             result.append('WHERE %s' % where)
             params.extend(w_params)
-        if self.query.extra_where:
-            if not where:
-                result.append('WHERE')
-            else:
-                result.append('AND')
-            result.append(' AND '.join(self.query.extra_where))
 
         grouping, gb_params = self.get_grouping()
         if grouping:
@@ -223,7 +217,6 @@ class SQLCompiler(compiler.SQLCompiler):
             result.append('HAVING %s' % having)
             params.extend(h_params)
 
-        params.extend(self.query.extra_params)
         return ' '.join(result), tuple(params)
 
     def as_sql(self, with_limits=True, with_col_aliases=False):

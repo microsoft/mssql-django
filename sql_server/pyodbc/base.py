@@ -344,7 +344,7 @@ class CursorWrapper(object):
         row = self.cursor.fetchone()
         if row is not None:
             return self.format_results(row)
-        return row if row else []
+        return []
 
     def fetchmany(self, chunk):
         return [self.format_results(row) for row in self.cursor.fetchmany(chunk)]
