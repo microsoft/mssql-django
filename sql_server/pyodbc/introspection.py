@@ -159,7 +159,7 @@ AND ix.is_primary_key = 0
 AND ix.is_unique_constraint = 0
 AND t.name = %s"""
 
-        if self.connection.ops.sql_server_ver >= 2005:
+        if self.connection.ops._get_sql_server_ver(self.connection) >= 2005:
             cursor.execute(ix_sql, (table_name,))
             for column in [r[0] for r in cursor.fetchall()]:
                 if column not in results:
