@@ -34,43 +34,11 @@ USE_TOP_LMARK = 2 # For SQL Server 2000 when offset but no limit is provided
 
 class SQLCompiler(compiler.SQLCompiler):
     
-    def convert_values(self, value, field):
-        """
-        Coerce the value returned by the database backend into a consistent
-        type that is compatible with the field type.
-
-        In our case, cater for the fact that SQL Server < 2008 has no
-        separate Date and Time data types.
-        TODO: See how we'll handle this for SQL Server >= 2008
-        """
-        if value is None:
-            return None
-        if field and field.get_internal_type() == 'DateTimeField':
-            return value
-        elif field and field.get_internal_type() == 'DateField':
-            value = value.date() # extract date
-        elif field and field.get_internal_type() == 'TimeField' or (isinstance(value, datetime) and value.year == 1900 and value.month == value.day == 1):
-            value = value.time() # extract time
-        # Some cases (for example when select_related() is used) aren't
-        # caught by the DateField case above and date fields arrive from
-        # the DB as datetime instances.
-        # Implement a workaround stealing the idea from the Oracle
-        # backend. It's not perfect so the same warning applies (i.e. if a
-        # query results in valid date+time values with the time part set
-        # to midnight, this workaround can surprise us by converting them
-        # to the datetime.date Python type).
-        elif isinstance(value, datetime) and value.hour == value.minute == value.second == value.microsecond == 0:
-            value = value.date()
-        # Force floats to the correct type
-        elif value is not None and field and field.get_internal_type() == 'FloatField':
-            value = float(value)
-        return value
-        
     def resolve_columns(self, row, fields=()):
         index_start = len(self.query.extra_select.keys())
-        values = [self.convert_values(v, None) for v in row[:index_start]]
+        values = [self.query.convert_values(v, None, connection=self.connection) for v in row[:index_start]]
         for value, field in map(None, row[index_start:], fields):
-            values.append(self.convert_values(value, field))
+            values.append(self.query.convert_values(value, field, connection=self.connection))
         return tuple(values)
 
     def modify_query(self, strategy, ordering, out_cols):

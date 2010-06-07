@@ -303,3 +303,36 @@ class DatabaseOperations(BaseDatabaseOperations):
             return u"%.*f" % (decimal_places, value.quantize(decimal.Decimal(".1") ** decimal_places, context=context))
         else:
             return u"%.*f" % (decimal_places, value)
+
+    def convert_values(self, value, field):
+        """
+        Coerce the value returned by the database backend into a consistent
+        type that is compatible with the field type.
+
+        In our case, cater for the fact that SQL Server < 2008 has no
+        separate Date and Time data types.
+        TODO: See how we'll handle this for SQL Server >= 2008
+        """
+        if value is None:
+            return None
+        if field and field.get_internal_type() == 'DateTimeField':
+            return value
+        elif field and field.get_internal_type() == 'DateField':
+            value = value.date() # extract date
+        elif field and field.get_internal_type() == 'TimeField' or (isinstance(value, datetime.datetime) and value.year == 1900 and value.month == value.day == 1):
+            value = value.time() # extract time
+        # Some cases (for example when select_related() is used) aren't
+        # caught by the DateField case above and date fields arrive from
+        # the DB as datetime instances.
+        # Implement a workaround stealing the idea from the Oracle
+        # backend. It's not perfect so the same warning applies (i.e. if a
+        # query results in valid date+time values with the time part set
+        # to midnight, this workaround can surprise us by converting them
+        # to the datetime.date Python type).
+        elif isinstance(value, datetime.datetime) and value.hour == value.minute == value.second == value.microsecond == 0:
+            value = value.date()
+        # Force floats to the correct type
+        elif value is not None and field and field.get_internal_type() == 'FloatField':
+            value = float(value)
+        return value
+        
