@@ -278,7 +278,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         sql, params = super(SQLInsertCompiler, self).as_sql()
         meta = self.query.get_meta()
         quoted_table = self.connection.ops.quote_name(meta.db_table)
-        if meta.pk.attname in self.query.columns and meta.pk.__class__.__name__ == "AutoField":
+        if meta.pk.db_column in self.query.columns and meta.pk.__class__.__name__ == "AutoField":
             if len(self.query.columns) == 1 and not params:
                 sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
             else:
