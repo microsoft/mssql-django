@@ -125,7 +125,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.datefirst = self.settings_dict['OPTIONS'].get('datefirst', 7)
             self.unicode_results = self.settings_dict['OPTIONS'].get('unicode_results', False)
 
-        self.features = DatabaseFeatures()
+        if _DJANGO_VERSION >= 13:
+            self.features = DatabaseFeatures(self)
+        else
+            self.features = DatabaseFeatures()
         self.ops = DatabaseOperations()
         self.client = DatabaseClient(self)
         self.creation = DatabaseCreation(self)
