@@ -127,7 +127,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         if _DJANGO_VERSION >= 13:
             self.features = DatabaseFeatures(self)
-        else
+        else:
             self.features = DatabaseFeatures()
         self.ops = DatabaseOperations()
         self.client = DatabaseClient(self)
