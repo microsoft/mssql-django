@@ -74,6 +74,7 @@ IntegrityError = Database.IntegrityError
 class DatabaseFeatures(BaseDatabaseFeatures):
     uses_custom_query_class = True
     can_use_chunked_reads = False
+    can_return_id_from_insert = True
     #uses_savepoints = True
 
 
@@ -237,6 +238,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" % self.datefirst)
             if self.ops.sql_server_ver < 2005:
                 self.creation.data_types['TextField'] = 'ntext'
+                self.features.can_return_id_from_insert = False
 
             if self.driver_needs_utf8 is None:
                 self.driver_needs_utf8 = True

@@ -98,6 +98,14 @@ class DatabaseOperations(BaseDatabaseOperations):
         cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as bigint)", [table_name])
         return cursor.fetchone()[0]
 
+    def fetch_returned_insert_id(self, cursor):
+        """
+        Given a cursor object that has just performed an INSERT/OUTPUT statement
+        into a table that has an auto-incrementing ID, returns the newly created
+        ID.
+        """
+        return cursor.fetchone()[0]
+
     def lookup_cast(self, lookup_type):
         if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
             return "UPPER(%s)"
