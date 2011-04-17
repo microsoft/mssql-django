@@ -144,7 +144,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def _cursor(self):
         new_conn = False
         settings_dict = self.settings_dict
-        db_str, user_str, passwd_str, port_str = None, None, None, None
+        db_str, user_str, passwd_str, port_str = None, None, "", None
         if _DJANGO_VERSION >= 12:
             options = settings_dict['OPTIONS']
             if settings_dict['NAME']:
