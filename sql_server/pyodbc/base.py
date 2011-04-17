@@ -196,7 +196,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 if os.name == 'nt' or driver == 'FreeTDS' and \
                         options.get('host_is_server', False):
                     if port_str:
-                        host_str += ',%s' % port_str
+                        host_str += ';PORT=%s' % port_str
                     cstr_parts.append('SERVER=%s' % host_str)
                 else:
                     cstr_parts.append('SERVERNAME=%s' % host_str)
