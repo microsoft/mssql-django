@@ -216,7 +216,7 @@ class SQLCompiler(compiler.SQLCompiler):
         fallback_ordering = '%s.%s' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))
 
         # SQL Server 2000, offset+limit case
-        if self.connection.ops._get_sql_server_ver(self.connection) < 2005 and self.query.high_mark is not None:
+        if self.connection.ops.sql_server_ver < 2005 and self.query.high_mark is not None:
             orig_sql, params = self._as_sql(USE_TOP_HMARK)
             if self._ord:
                 ord = ', '.join(['%s %s' % pair for pair in self._ord])
@@ -239,7 +239,7 @@ class SQLCompiler(compiler.SQLCompiler):
             return sql, params
 
         # SQL Server 2005
-        if self.connection.ops._get_sql_server_ver(self.connection) >= 2005:
+        if self.connection.ops.sql_server_ver >= 2005:
             sql, params = self._as_sql(USE_ROW_NUMBER)
             
             # Construct the final SQL clause, using the initial select SQL

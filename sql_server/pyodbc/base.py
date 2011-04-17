@@ -129,7 +129,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.features = DatabaseFeatures(self)
         else:
             self.features = DatabaseFeatures()
-        self.ops = DatabaseOperations()
+        self.ops = DatabaseOperations(self)
         self.client = DatabaseClient(self)
         self.creation = DatabaseCreation(self)
         self.introspection = DatabaseIntrospection(self)
@@ -235,7 +235,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # Django convention for the 'week_day' Django lookup) if the user
             # hasn't told us otherwise
             cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" % self.datefirst)
-            if self.ops._get_sql_server_ver(self.connection) < 2005:
+            if self.ops.sql_server_ver < 2005:
                 self.creation.data_types['TextField'] = 'ntext'
 
             if self.driver_needs_utf8 is None:
@@ -245,7 +245,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     self.driver_needs_utf8 = False
 
                 # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-                if self.ops._get_sql_server_ver(self.connection) >= 2005 and self.drv_name in ('SQLNCLI.DLL', 'SQLNCLI10.DLL') and self.MARS_Connection:
+                if self.ops.sql_server_ver >= 2005 and self.drv_name in ('SQLNCLI.DLL', 'SQLNCLI10.DLL') and self.MARS_Connection:
                     # How to to activate it: Add 'MARS_Connection': True
                     # to the DATABASE_OPTIONS dictionary setting
                     self.features.can_use_chunked_reads = True

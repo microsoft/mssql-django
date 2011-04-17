@@ -6,31 +6,27 @@ import decimal
 
 class DatabaseOperations(BaseDatabaseOperations):
     compiler_module = "sql_server.pyodbc.compiler"
-    def __init__(self):
+    def __init__(self, connection):
         super(DatabaseOperations, self).__init__()
+        self.connection = connection
         self._ss_ver = None
 
-    def _get_sql_server_ver(self, connection=None):
+    def _get_sql_server_ver(self):
         """
         Returns the version of the SQL Server in use:
         """
         if self._ss_ver is not None:
             return self._ss_ver
+        cur = self.connection.cursor()
+        cur.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') as varchar)")
+        ver_code = int(cur.fetchone()[0].split('.')[0])
+        if ver_code >= 10:
+            self._ss_ver = 2008
+        elif ver_code == 9:
+            self._ss_ver = 2005
         else:
-            if connection:
-                cur = connection.cursor()
-            else:
-                from django.db import connection
-                cur = connection.cursor()
-            cur.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') as varchar)")
-            ver_code = int(cur.fetchone()[0].split('.')[0])
-            if ver_code >= 10:
-                self._ss_ver = 2008
-            elif ver_code == 9:
-                self._ss_ver = 2005
-            else:
-                self._ss_ver = 2000
-            return self._ss_ver
+            self._ss_ver = 2000
+        return self._ss_ver
     sql_server_ver = property(_get_sql_server_ver)
 
     def date_extract_sql(self, lookup_type, field_name):
