@@ -277,14 +277,17 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
     def as_sql(self):
         sql, params = super(SQLInsertCompiler, self).as_sql()
         meta = self.query.get_meta()
-        quoted_table = self.connection.ops.quote_name(meta.db_table)
-        if meta.pk.db_column in self.query.columns and meta.pk.__class__.__name__ == "AutoField":
-            if len(self.query.columns) == 1 and not params:
-                sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
-            else:
-                sql = "SET IDENTITY_INSERT %s ON;\n%s;\nSET IDENTITY_INSERT %s OFF" % \
-                    (quoted_table, sql, quoted_table)
+        if meta.has_auto_field:
+            # db_column is None if not explicitly specified by model field
+            auto_field_column = meta.auto_field.db_column or meta.auto_field.column
 
+            if auto_field_column in self.query.columns:
+                quoted_table = self.connection.ops.quote_name(meta.db_table)
+                if len(self.query.columns) == 1 and not params:
+                    sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
+                else:
+                    sql = "SET IDENTITY_INSERT %s ON;\n%s;\nSET IDENTITY_INSERT %s OFF" % \
+                        (quoted_table, sql, quoted_table)
         return sql, params
 
 
