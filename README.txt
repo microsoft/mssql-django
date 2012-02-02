@@ -135,3 +135,4 @@ Credits
 * Filip Wasilewski (http://code.djangoproject.com/ticket/5246)
 * Wei guangjing `<http://djangopeople.net/vcc/>`_
 * mamcx (http://code.djangoproject.com/ticket/5062)
+* Alex Vidal `<http://github.com/avidal/>`_
