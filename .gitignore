@@ -1,0 +1,10 @@
+*.py[co]
+*.sw[a-z]
+*.orig
+*~
+.DS_Store
+Thumbs.db
+
+*.egg-info
+
+tests/local_settings.py
