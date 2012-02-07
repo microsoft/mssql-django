@@ -345,7 +345,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
             result.append("VALUES (%s)" % ", ".join(placeholders[0]))
             return [(" ".join(result), tuple(params))]
 
-        sql, params = [
+        items = [
             (" ".join(result + ["VALUES (%s)" % ", ".join(p)]), vals)
             for p, vals in zip(placeholders, params)
         ]
@@ -357,15 +357,19 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
             # db_column is None if not explicitly specified by model field
             auto_field_column = meta.auto_field.db_column or meta.auto_field.column
 
-            if auto_field_column in columns:
-                quoted_table = self.connection.ops.quote_name(meta.db_table)
-                # If there are no fields specified in the insert..
-                if not has_fields:
-                    sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
-                else:
-                    sql = "SET IDENTITY_INSERT %s ON;\n%s;\nSET IDENTITY_INSERT %s OFF" % \
-                        (quoted_table, sql, quoted_table)
-        return sql, params
+            for item in items:
+                sql, params = item
+                if auto_field_column in columns:
+                    quoted_table = self.connection.ops.quote_name(meta.db_table)
+                    # If there are no fields specified in the insert..
+                    if not has_fields:
+                        sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
+                    else:
+                        sql = "SET IDENTITY_INSERT %s ON;\n%s;\nSET IDENTITY_INSERT %s OFF" % \
+                            (quoted_table, sql, quoted_table)
+                item = [sql, params]
+
+        return items
 
 
 class SQLDeleteCompiler(compiler.SQLDeleteCompiler, SQLCompiler):
