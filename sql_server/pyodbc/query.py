@@ -73,7 +73,7 @@ def query_class(QueryClass):
             quoted_table = self.connection.ops.quote_name(meta.db_table)
             # Get (sql, params) from original InsertQuery.as_sql
             sql, params = self._orig_as_sql(*args, **kwargs)
-            if meta.pk.db_column in self.columns and meta.pk.__class__.__name__ == "AutoField":
+            if meta.has_auto_field and meta.auto_field.column in self.columns:
                 if len(self.columns) == 1 and not params:
                     sql = "INSERT INTO %s DEFAULT VALUES" % quoted_table
                 else:

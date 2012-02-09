@@ -357,6 +357,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
             # db_column is None if not explicitly specified by model field
             auto_field_column = meta.auto_field.db_column or meta.auto_field.column
 
+            out = []
             for item in items:
                 sql, params = item
                 if auto_field_column in columns:
@@ -367,7 +368,8 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                     else:
                         sql = "SET IDENTITY_INSERT %s ON;\n%s;\nSET IDENTITY_INSERT %s OFF" % \
                             (quoted_table, sql, quoted_table)
-                item = [sql, params]
+                out.append([sql, params])
+            items = out
 
         return items
 
