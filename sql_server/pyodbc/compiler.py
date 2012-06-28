@@ -291,11 +291,12 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         result.append('INSERT INTO %s' % qn(opts.db_table))
         result.append('(%s)' % ', '.join([qn(c) for c in self.query.columns]))
 
+        values = [self.placeholder(*v) for v in self.query.values]
+        result.append('VALUES (%s)' % ', '.join(values))
+
         if returns_id:
             result.append(';\nSELECT SCOPE_IDENTITY()')
 
-        values = [self.placeholder(*v) for v in self.query.values]
-        result.append('VALUES (%s)' % ', '.join(values))
         params = self.query.params
         sql = ' '.join(result)
 
