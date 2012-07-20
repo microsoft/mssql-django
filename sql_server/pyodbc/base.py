@@ -127,10 +127,21 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
 
-        if 'OPTIONS' in self.settings_dict:
-            self.MARS_Connection = self.settings_dict['OPTIONS'].get('MARS_Connection', False)
-            self.datefirst = self.settings_dict['OPTIONS'].get('datefirst', 7)
-            self.unicode_results = self.settings_dict['OPTIONS'].get('unicode_results', False)
+        options = self.settings_dict.get('OPTIONS', None)
+
+        if options:
+            self.MARS_Connection = options.get('MARS_Connection', False)
+            self.datefirst = options.get('datefirst', 7)
+            self.unicode_results = options.get('unicode_results', False)
+
+            # Some drivers need unicode encoded as UTF8. If this is left as
+            # None, it will be determined based on the driver, namely it'll be
+            # False if the driver is a windows driver and True otherwise.
+            #
+            # However, recent versions of FreeTDS and pyodbc (0.91 and 3.0.6 as
+            # of writing) are perfectly okay being fed unicode, which is why
+            # this option is configurable.
+            self.driver_needs_utf8 = options.get('driver_needs_utf8', None)
 
         if _DJANGO_VERSION >= 13:
             self.features = DatabaseFeatures(self)
@@ -247,17 +258,18 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 self.creation.data_types['TextField'] = 'ntext'
                 self.features.can_return_id_from_insert = False
 
+            self.drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
+
             if self.driver_needs_utf8 is None:
-                self.driver_needs_utf8 = True
-                self.drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
+                self.driver_needs_utf8 = False
                 if self.drv_name in ('SQLSRV32.DLL', 'SQLNCLI.DLL', 'SQLNCLI10.DLL'):
                     self.driver_needs_utf8 = False
 
-                # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-                if self.ops.sql_server_ver >= 2005 and self.drv_name in ('SQLNCLI.DLL', 'SQLNCLI10.DLL') and self.MARS_Connection:
-                    # How to to activate it: Add 'MARS_Connection': True
-                    # to the DATABASE_OPTIONS dictionary setting
-                    self.features.can_use_chunked_reads = True
+            # http://msdn.microsoft.com/en-us/library/ms131686.aspx
+            if self.ops.sql_server_ver >= 2005 and self.drv_name in ('SQLNCLI.DLL', 'SQLNCLI10.DLL') and self.MARS_Connection:
+                # How to to activate it: Add 'MARS_Connection': True
+                # to the DATABASE_OPTIONS dictionary setting
+                self.features.can_use_chunked_reads = True
 
             # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
             # in multi-statement, so we need to commit the above SQL sentence(s)
@@ -284,6 +296,7 @@ class CursorWrapper(object):
             # FreeTDS (and other ODBC drivers?) doesn't support Unicode
             # yet, so we need to encode the SQL clause itself in utf-8
             sql = sql.encode('utf-8')
+
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
         if n_params is not None:
             sql = sql % tuple('?' * n_params)
@@ -302,19 +315,19 @@ class CursorWrapper(object):
                     fp.append(p.encode('utf-8'))
                 else:
                     fp.append(p)
+
             elif isinstance(p, str):
-                if self.driver_needs_utf8:
-                    # TODO: use system encoding when calling decode()?
-                    fp.append(p.decode('utf-8').encode('utf-8'))
-                else:
-                    fp.append(p)
+                fp.append(p)
+
             elif isinstance(p, type(True)):
                 if p:
                     fp.append(1)
                 else:
                     fp.append(0)
+
             else:
                 fp.append(p)
+
         return tuple(fp)
 
     def execute(self, sql, params=()):
@@ -322,6 +335,7 @@ class CursorWrapper(object):
         sql = self.format_sql(sql, len(params))
         params = self.format_params(params)
         self.last_params = params
+
         return self.cursor.execute(sql, params)
 
     def executemany(self, sql, params_list):
