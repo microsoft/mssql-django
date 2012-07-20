@@ -335,34 +335,40 @@ class CursorWrapper(object):
             params_list = [self.format_params(p) for p in raw_pll]
         return self.cursor.executemany(sql, params_list)
 
-    def format_results(self, rows):
+    def format_rows(self, rows):
+        return map(self.format_row, rows)
+
+    def format_row(self, row):
         """
         Decode data coming from the database if needed and convert rows to tuples
         (pyodbc Rows are not sliceable).
         """
+
         if not self.driver_needs_utf8:
-            return tuple(rows)
+            return tuple(row)
+
         # FreeTDS (and other ODBC drivers?) doesn't support Unicode
         # yet, so we need to decode utf-8 data coming from the DB
-        fr = []
-        for row in rows:
-            if isinstance(row, str):
-                fr.append(row.decode('utf-8'))
+        out = []
+        for f in row:
+            if isinstance(f, str):
+                out.append(f.decode('utf-8'))
             else:
-                fr.append(row)
-        return tuple(fr)
+                out.append(f)
+
+        return tuple(out)
 
     def fetchone(self):
         row = self.cursor.fetchone()
         if row is not None:
-            return self.format_results(row)
+            return self.format_row(row)
         return []
 
     def fetchmany(self, chunk):
-        return [self.format_results(row) for row in self.cursor.fetchmany(chunk)]
+        return self.format_rows(self.cursor.fetchmany(chunk))
 
     def fetchall(self):
-        return [self.format_results(row) for row in self.cursor.fetchall()]
+        return self.format_rows(self.cursor.fetchall())
 
     def __getattr__(self, attr):
         if attr in self.__dict__:
