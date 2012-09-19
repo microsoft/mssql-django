@@ -24,7 +24,9 @@ class DatabaseOperations(BaseDatabaseOperations):
         cur = self.connection.cursor()
         cur.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') as varchar)")
         ver_code = int(cur.fetchone()[0].split('.')[0])
-        if ver_code >= 10:
+        if ver_code >= 11:
+            self._ss_ver = 2012
+        elif ver_code == 10:
             self._ss_ver = 2008
         elif ver_code == 9:
             self._ss_ver = 2005

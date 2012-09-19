@@ -212,7 +212,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
                 cstr_parts.append('DRIVER={%s}' % driver)
                 
-                if os.name == 'nt' or driver == 'FreeTDS' and \
+                if driver.startswith('SQL Server') or driver == 'FreeTDS' and \
                         options.get('host_is_server', False):
                     if port_str:
                         host_str += ';PORT=%s' % port_str
@@ -262,11 +262,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
             if self.driver_needs_utf8 is None:
                 self.driver_needs_utf8 = False
-                if self.drv_name in ('SQLSRV32.DLL', 'SQLNCLI.DLL', 'SQLNCLI10.DLL'):
+                if self.drv_name == 'SQLSRV32.DLL' or self.drv_name.find('SQLNCLI') >= 0:
                     self.driver_needs_utf8 = False
 
             # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-            if self.ops.sql_server_ver >= 2005 and self.drv_name in ('SQLNCLI.DLL', 'SQLNCLI10.DLL') and self.MARS_Connection:
+            if self.ops.sql_server_ver >= 2005 and self.drv_name.find('SQLNCLI') >= 0 and self.MARS_Connection:
                 # How to to activate it: Add 'MARS_Connection': True
                 # to the DATABASE_OPTIONS dictionary setting
                 self.features.can_use_chunked_reads = True
