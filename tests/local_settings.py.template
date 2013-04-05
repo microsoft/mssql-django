@@ -1,9 +1,0 @@
-DATABASE_ENGINE = 'sql_server.pyodbc'
-
-# Define these settings according to your SQL Server setup:
-
-DATABASE_NAME = 'django_pyodbc'
-DATABASE_USER = ''
-DATABASE_PASSWORD = ''
-DATABASE_HOST = 'ss2000' # The dataserver definition from freetds.conf
-DATABASE_PORT = ''
