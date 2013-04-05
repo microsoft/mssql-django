@@ -7,7 +7,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
     # Map type codes to Django Field types.
     data_types_reverse = {
         SQL_AUTOFIELD:                  'AutoField',
-        Database.SQL_BIGINT:            'IntegerField',
+        Database.SQL_BIGINT:            'BigIntegerField',
         #Database.SQL_BINARY:            ,
         Database.SQL_BIT:               'BooleanField',
         Database.SQL_CHAR:              'CharField',
@@ -120,8 +120,7 @@ WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         Returns a dictionary of fieldname -> infodict for the given table,
         where each infodict is in the format:
             {'primary_key': boolean representing whether it's the primary key,
-             'unique': boolean representing whether it's a unique index,
-             'db_index': boolean representing whether it's a non-unique index}
+             'unique': boolean representing whether it's a unique index}
         """
         # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
         # TABLE_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms181757.aspx
@@ -159,15 +158,14 @@ AND ix.is_primary_key = 0
 AND ix.is_unique_constraint = 0
 AND t.name = %s"""
 
-        if self.connection.ops.sql_server_ver >= 2005:
-            cursor.execute(ix_sql, (table_name,))
-            for column in [r[0] for r in cursor.fetchall()]:
-                if column not in results:
-                    results[column] = 'IX'
+        cursor.execute(ix_sql, (table_name,))
+        for column in [r[0] for r in cursor.fetchall()]:
+            if column not in results:
+                results[column] = 'IX'
 
         for field in field_names:
             val = results.get(field, None)
-            indexes[field] = dict(primary_key=(val=='PRIMARY KEY'), unique=(val=='UNIQUE'), db_index=(val=='IX'))
+            indexes[field] = dict(primary_key=(val=='PRIMARY KEY'), unique=(val=='UNIQUE'))
 
         return indexes
 
