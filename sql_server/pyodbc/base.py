@@ -244,6 +244,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
             if self.ops.sql_server_ver < 2008:
                 self.use_legacy_datetime = True
+                self.features.has_bulk_insert = False
             if self.use_legacy_datetime:
                 types = self.creation.data_types
                 types['DateField'] = types['DateTimeField'] = types['TimeField'] = 'datetime'
