@@ -216,11 +216,12 @@ class Command(BaseCommand):
                                     label_found = True
                                 except Exception:
                                     fixture.close()
-                                    e = sys.exc_info()[1]
+                                    exc_info = sys.exc_info()
+                                    e = exc_info[1]
                                     if not isinstance(e, CommandError):
                                         e.args = ("Problem installing fixture '%s': %s\n" %
-                                             (full_path, ''.join(traceback.format_exception(sys.exc_type,
-                                                 sys.exc_value, sys.exc_traceback))))
+                                             (full_path, ''.join(traceback.format_exception(exc_info[0],
+                                                 exc_info[1], exc_info[2]))))
                                     raise
                                 fixture.close()
 
