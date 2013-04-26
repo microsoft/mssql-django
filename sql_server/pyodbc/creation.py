@@ -25,8 +25,7 @@ class DatabaseCreation(BaseDatabaseCreation):
     # Any format strings starting with "qn_" are quoted before being used in the
     # output (the "qn_" prefix is stripped before the lookup is performed.
 
-    data_types = DataTypesWrapper({
-    #data_types = {
+    data_types = {
         'AutoField':         'int IDENTITY (1, 1)',
         'BigIntegerField':   'bigint',
         'BooleanField':      'bit',
@@ -49,8 +48,11 @@ class DatabaseCreation(BaseDatabaseCreation):
         'SmallIntegerField': 'smallint',
         'TextField':         'nvarchar(max)',
         'TimeField':         'time',
-    #}
-    })
+    }
+
+    def __init__(self, connection):
+        super(DatabaseCreation, self).__init__(connection)
+        self.data_types = DataTypesWrapper(self.__class__.data_types)
 
     def _create_test_db(self, verbosity, autoclobber):
         settings_dict = self.connection.settings_dict

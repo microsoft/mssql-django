@@ -138,7 +138,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # make lookup operators to be collation-sensitive if needed
             self.collation = options.get('collation', None)
             if self.collation:
-                self.operators = self.__class__.operators.copy()
+                self.operators = dict(self.__class__.operators)
                 ops = {}
                 for op in self.operators:
                     sql = self.operators[op]
@@ -242,16 +242,21 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # hasn't told us otherwise
             cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" % self.datefirst)
 
+            self.drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
+
+            freetds = self.drv_name.startswith('LIBTDSODBC')
+            if freetds:
+                self.use_legacy_datetime = True
+
             if self.ops.sql_server_ver < 2008:
                 self.use_legacy_datetime = True
                 self.features.has_bulk_insert = False
+
             if self.use_legacy_datetime:
                 types = self.creation.data_types
                 types['DateField'] = types['DateTimeField'] = types['TimeField'] = 'datetime'
                 self.features.supports_microsecond_precision = False
                 self.features.supports_mixed_date_datetime_comparisons = True
-
-            self.drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
 
             ms_drv_names = re.compile('^((LIB)?SQLN?CLI|LIBMSODBCSQL)')
             if self.driver_needs_utf8 is None:
@@ -262,13 +267,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # http://msdn.microsoft.com/en-us/library/ms131686.aspx
             if self.MARS_Connection and ms_drv_names.match(self.drv_name):
                 # How to to activate it: Add 'MARS_Connection': True
-                # to the DATABASE_OPTIONS dictionary setting
+                # to the OPTIONS dictionary setting
                 self.features.can_use_chunked_reads = True
 
             # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
             # in multi-statement, so we need to commit the above SQL sentence(s)
             # to avoid this
-            if self.drv_name.startswith('LIBTDSODBC') and not self.connection.autocommit:
+            if freetds and not self.connection.autocommit:
                 self.connection.commit()
 
         return CursorWrapper(cursor, self.driver_needs_utf8, self.use_legacy_datetime)

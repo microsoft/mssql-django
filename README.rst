@@ -17,8 +17,7 @@ Features
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
 -  Passes most of the tests of the Django test suite.
 -  Compatible with SQL Server and SQL Server Native Client (Windows),
-   Microsoft ODBC Driver for SQL Server and FreeTDS ODBC drivers
-   (Linux).
+   Microsoft ODBC Driver for SQL Server and FreeTDS ODBC drivers (Linux).
 
 Dependencies
 ------------
@@ -138,8 +137,9 @@ Dictionary. Current available keys are:
    Boolean. DateField, TimeField and DateTimeField of models are mapped
    to SQL Server's legacy ``datetime`` type if the value is ``True``
    (it's the same behavior as the old django-pyodbc). Otherwise, they
-   are mapped to new dedicated data types (``date``, ``time``,
-   ``datetime2``). Default value is ``False``.
+   are mapped to new dedicated data types (``date``, ``time``, ``datetime2``).
+   Default value is ``False``. Note that it is always treated as ``True``
+   regardless of its value when you work with SQL Server 2005 or FreeTDS.
 
 Example
 ~~~~~~~
