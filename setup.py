@@ -14,12 +14,13 @@ CLASSIFIERS=[
     'Programming Language :: Python :: 2.7',
     'Programming Language :: Python :: 3',
     'Programming Language :: Python :: 3.2',
+    'Programming Language :: Python :: 3.3',
     'Topic :: Internet :: WWW/HTTP',
 ]
 
 setup(
     name='django-pyodbc-azure',
-    version='1.0.2',
+    version='1.0.3',
     description='Django backends for MS SQL Server and Windows Azure SQL Database using pyodbc',
     long_description=open('README.rst').read(),
     author='Michiya Takahashi',
