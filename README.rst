@@ -117,7 +117,7 @@ Dictionary. Current available keys are:
    But if this option is present and it's value is ``True``, this
    special behavior is turned off.
 
-   See http://freetds.org/userguide/dsnless.htm for more information.
+   See http://www.freetds.org/userguide/dsnless.htm for more information.
 
 -  extra_params
 
