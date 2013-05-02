@@ -11,13 +11,13 @@ SQL Server and Windows Azure SQL Database.
 Features
 --------
 
--  Supports Django 1.2, 1.3, 1.4, and 1.5
+-  Supports Django 1.2, 1.3, 1.4, 1.5
 -  Supports MS SQL Server 2005, 2008/2008R2, 2012, and Windows Azure SQL
    Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
 -  Passes most of the tests of the Django test suite.
--  Compatible with SQL Server and SQL Server Native Client (Windows),
-   Microsoft ODBC Driver for SQL Server and FreeTDS ODBC drivers (Linux).
+-  Compatible with *SQL Server* and *SQL Server Native Client* (Windows),
+   *Micosoft ODBC Driver for SQL Server* and *FreeTDS* (Linux) ODBC drivers.
 
 Dependencies
 ------------
@@ -43,8 +43,7 @@ Installation
 Configuration
 -------------
 
-The following settings in ``DATABASES['alias']`` control the behavior of
-the backend:
+The following database-level settings control the behavior of the backend:
 
 Standard Django settings
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -60,8 +59,7 @@ Standard Django settings
 -  HOST
 
    String. SQL Server instance in ``"server\instance"`` (on-premise) or
-   ``"server.database.windows.net"`` (Windows Azure SQL Database)
-   format.
+   ``"server.database.windows.net"`` (Windows Azure SQL Database) format.
 
 -  PORT
 
@@ -84,13 +82,14 @@ Dictionary. Current available keys are:
 
 -  autocommit
 
-   Boolean. Indicates if pyodbc should direct the the ODBC driver to
+   Boolean. Indicates if pyodbc should direct the ODBC driver to
    activate the autocommit feature. Default value is ``False``.
 
 -  MARS_Connection
 
-   Boolean. Only relevant when using MS *SQL Server Native Client*
-   driver. Default value is ``False``.
+   Boolean. Only relevant when using Microsoft's SQL Server drivers
+   (SQL Server Native Client or ODBC Driver for SQL Server).
+   Default value is ``False``.
 
 -  driver
 
@@ -136,15 +135,25 @@ Dictionary. Current available keys are:
 
    Boolean. DateField, TimeField and DateTimeField of models are mapped
    to SQL Server's legacy ``datetime`` type if the value is ``True``
-   (it's the same behavior as the old django-pyodbc). Otherwise, they
+   (the same behavior as the original ``django-pyodbc``). Otherwise, they
    are mapped to new dedicated data types (``date``, ``time``, ``datetime2``).
-   Default value is ``False``. Note that it is always treated as ``True``
-   regardless of its value when you work with SQL Server 2005 or FreeTDS.
+   Default value is ``False``, and note that the feature is always activated
+   when you use SQL Server 2005 or FreeTDS.
+
+``django-pyodbc-azure``-specific settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following project-level settings also control the behavior of the backend:
+
+-  DATABASE_CONNECTION_POOLING
+
+   Boolean. Indicates if pyodbc should activate its connection pooling feature.
+   Default value is ``True``.
 
 Example
 ~~~~~~~
 
-Here is an example of ``'default'`` database settings:
+Here is an example of the database settings:
 
 ::
 
@@ -163,6 +172,18 @@ Here is an example of ``'default'`` database settings:
             },
         },
     }
+    
+    # set this to False if you want to turn off pyodbc's connection pooling
+    DATABASE_CONNECTION_POOLING = False
+
+Limitation
+----------
+
+You can work with Windows Azure SQL Database only with Microsoft's
+new SQL Server drivers (SQL Server Native Client on Windows,
+or ODBC Driver for SQL Server on Linux).
+For now FreeTDS doesn't support the new version of TDS protocol
+that is required to interact with Windows Azure SQL Database.
 
 License
 =======
@@ -178,4 +199,3 @@ Credits
 -  `mamcx <http://code.djangoproject.com/ticket/5062>`__
 -  `Alex Vidal <http://github.com/avidal/>`__
 -  `Michiya Takahashi <http://github.com/michiya/>`__
-

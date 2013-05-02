@@ -36,6 +36,10 @@ elif DjangoVersion[:2] == (1,2):
 else:
     raise ImproperlyConfigured("Django %d.%d is not supported." % DjangoVersion[:2])
 
+if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
+    if not settings.DATABASE_CONNECTION_POOLING:
+        Database.pooling = False
+
 from sql_server.pyodbc.operations import DatabaseOperations
 from sql_server.pyodbc.client import DatabaseClient
 from sql_server.pyodbc.compat import binary_type, text_type, timezone
@@ -75,6 +79,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     datefirst = 7
     use_legacy_datetime = False
     create_new_test_db = True
+    connection_recovery_interval_msec = 0.0
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
@@ -109,6 +114,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # TODO: freetext, full-text contains...
     }
 
+    codes_for_stale_connection = (
+        '08S01',
+        '08S02',
+    )
+
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
 
@@ -132,8 +142,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.use_legacy_datetime = options.get('use_legacy_datetime', False)
 
             # this is mainly for running tests on Windows Azure SQL Database
-            # to avoid too much charge for createing new databases in every test
+            # not to be charged too much for createing new databases in every test
             self.create_new_test_db = options.get('create_new_test_db', True)
+
+            # interval to wait for recovery from network error
+            interval = options.get('connection_recovery_interval_msec', 0.0)
+            self.connection_recovery_interval_msec = float(interval) / 1000
 
             # make lookup operators to be collation-sensitive if needed
             self.collation = options.get('collation', None)
@@ -276,7 +290,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             if freetds and not self.connection.autocommit:
                 self.connection.commit()
 
-        return CursorWrapper(cursor, self.driver_needs_utf8, self.use_legacy_datetime)
+        return CursorWrapper(cursor, self)
 
     def _execute_on_tables(self, sql, table_names=None):
         cursor = self.cursor()
@@ -284,6 +298,18 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             table_names = self.introspection.get_table_list(cursor)
         for table_name in table_names:
             cursor.execute(sql % self.ops.quote_name(table_name))
+
+    def _on_error(self, e):
+        if e.args[0] in self.codes_for_stale_connection:
+            # close the connection and try to open a new one next time
+            try:
+                self.close()
+            except:
+                pass
+            self.connection = None
+            # wait a moment for recovery from network error
+            import time
+            time.sleep(self.connection_recovery_interval_msec)
 
     def check_constraints(self, table_names=None):
         self._execute_on_tables('ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL', table_names)
@@ -304,12 +330,13 @@ class CursorWrapper(object):
     A wrapper around the pyodbc's cursor that takes in account a) some pyodbc
     DB-API 2.0 implementation and b) some common ODBC driver particularities.
     """
-    def __init__(self, cursor, driver_needs_utf8, use_legacy_datetime):
+    def __init__(self, cursor, connection):
         self.cursor = cursor
-        self.driver_needs_utf8 = driver_needs_utf8
+        self.connection = connection
+        self.driver_needs_utf8 = connection.driver_needs_utf8
         self.last_sql = ''
         self.last_params = ()
-        self.use_legacy_datetime = use_legacy_datetime
+        self.use_legacy_datetime = connection.use_legacy_datetime
 
     def format_sql(self, sql, n_params=None):
         if self.driver_needs_utf8 and isinstance(sql, text_type):
@@ -363,6 +390,7 @@ class CursorWrapper(object):
             raise utils.IntegrityError(*e.args)
         except DatabaseError:
             e = sys.exc_info()[1]
+            self.connection._on_error(e)
             raise utils.DatabaseError(*e.args)
 
     def executemany(self, sql, params_list):
@@ -382,6 +410,7 @@ class CursorWrapper(object):
             raise utils.IntegrityError(*e.args)
         except DatabaseError:
             e = sys.exc_info()[1]
+            self.connection._on_error(e)
             raise utils.DatabaseError(*e.args)
 
     def format_rows(self, rows):
@@ -425,6 +454,6 @@ class CursorWrapper(object):
         if attr in self.__dict__:
             return self.__dict__[attr]
         return getattr(self.cursor, attr)
-    
+
     def __iter__(self):
         return iter(self.cursor)
