@@ -93,7 +93,7 @@ class DatabaseCreation(BaseDatabaseCreation):
 
         if self.connection.ops.on_azure_sql_db:
             self.connection.close()
-            self.connection.settings_dict["NAME"] = 'master'
+            settings_dict["NAME"] = 'master'
             
         return super(DatabaseCreation, self)._create_test_db(verbosity, autoclobber)
 

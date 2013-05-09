@@ -52,7 +52,7 @@ Standard Django settings
 
    String. It must be ``"sql_server.pyodbc"``.
 
--  DATABASE_NAME
+-  NAME
 
    String. Database name. Required.
 
@@ -64,16 +64,47 @@ Standard Django settings
 -  PORT
 
    String. Server instance port.
+   An empty string means the default port.
 
 -  USER
 
    String. Database user name in ``"user"`` (on-premise) or
-   ``"user@server"`` (Windows Azure SQL Database) format. If not given
-   then MS Integrated Security will be used.
+   ``"user@server"`` (Windows Azure SQL Database) format.
+   If not given then MS Integrated Security will be used.
 
 -  PASSWORD
 
    String. Database user password.
+
+-  TEST_NAME
+
+   String. The name of database to use when running the test suite.
+   If the default value (``None``) is used, the test database will use
+   the name "test\_" + ``NAME``.
+
+-  TEST_COLLATION
+
+   String. The collation order to use when creating the test database.
+   If the default value (``None``) is used, the test database is assigned
+   the default collation of the instance of SQL Server.
+
+-  TEST_CREATE
+
+   String. If it is set to ``False``, the test database won’t be
+   automatically created at the beginning of the tests and dropped at the end.
+   This is useful not to be charged too much for creating new databases
+   in every test when you run tests with Windows Azure SQL Database.
+
+-  TEST_DEPENDENCIES
+
+   String. The creation-order dependencies of the database.
+   See the official Django documentation for more details.
+
+-  TEST_MIRROR
+
+   String. The alias of the database that this database should
+   mirror during testing. Default value is ``None``.
+   See the official Django documentation for more details.
 
 OPTIONS
 ~~~~~~~
@@ -133,22 +164,21 @@ Dictionary. Current available keys are:
 
 -  use_legacy_datetime
 
-   Boolean. DateField, TimeField and DateTimeField of models are mapped
-   to SQL Server's legacy ``datetime`` type if the value is ``True``
+   Boolean. ``DateField``, ``TimeField`` and ``DateTimeField`` of models
+   are mapped to SQL Server's legacy ``datetime`` type if the value is ``True``
    (the same behavior as the original ``django-pyodbc``). Otherwise, they
    are mapped to new dedicated data types (``date``, ``time``, ``datetime2``).
    Default value is ``False``, and note that the feature is always activated
    when you use SQL Server 2005 or FreeTDS.
 
-``django-pyodbc-azure``-specific settings
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+django-pyodbc-azure specific settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The following project-level settings also control the behavior of the backend:
 
 -  DATABASE_CONNECTION_POOLING
 
    Boolean. Indicates if pyodbc should activate its connection pooling feature.
-   Default value is ``True``.
+   Default value is ``None`` (means the connection pooling is activated).
 
 Example
 ~~~~~~~

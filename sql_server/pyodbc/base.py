@@ -141,10 +141,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # data type compatibility to databases created by old django-pyodbc
             self.use_legacy_datetime = options.get('use_legacy_datetime', False)
 
-            # this is mainly for running tests on Windows Azure SQL Database
-            # not to be charged too much for createing new databases in every test
-            self.create_new_test_db = options.get('create_new_test_db', True)
-
             # interval to wait for recovery from network error
             interval = options.get('connection_recovery_interval_msec', 0.0)
             self.connection_recovery_interval_msec = float(interval) / 1000
@@ -159,6 +155,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     if sql.startswith('LIKE '):
                         ops[op] = sql + ' COLLATE ' + self.collation
                 self.operators.update(ops)
+
+        # setting mainly for running tests with Windows Azure SQL Database
+        # not to be charged too much for creating new databases in every test
+        self.create_new_test_db = self.settings_dict.get('TEST_CREATE', True)
 
         if _DJANGO_VERSION >= 13:
             self.features = DatabaseFeatures(self)
