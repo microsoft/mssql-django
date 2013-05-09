@@ -177,8 +177,8 @@ The following project-level settings also control the behavior of the backend:
 
 -  DATABASE_CONNECTION_POOLING
 
-   Boolean. Indicates if pyodbc should activate its connection pooling feature.
-   Default value is ``None`` (means the connection pooling is activated).
+   Boolean. If it is set to ``False``, pyodbc's connection pooling feature
+   won't be activated.
 
 Example
 ~~~~~~~
