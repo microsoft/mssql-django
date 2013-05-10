@@ -20,8 +20,8 @@ CLASSIFIERS=[
 
 setup(
     name='django-pyodbc-azure',
-    version='1.0.5',
-    description='Django backends for MS SQL Server and Windows Azure SQL Database using pyodbc',
+    version='1.0.6',
+    description='Django backend for MS SQL Server and Windows Azure SQL Database using pyodbc',
     long_description=open('README.rst').read(),
     author='Michiya Takahashi',
     url='https://github.com/michiya/django-pyodbc-azure',
