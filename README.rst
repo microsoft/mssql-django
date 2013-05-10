@@ -171,8 +171,8 @@ Dictionary. Current available keys are:
    Default value is ``False``, and note that the feature is always activated
    when you use SQL Server 2005 or FreeTDS.
 
-django-pyodbc-azure specific settings
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+backend-specific settings
+~~~~~~~~~~~~~~~~~~~~~~~~~
 The following project-level settings also control the behavior of the backend:
 
 -  DATABASE_CONNECTION_POOLING
@@ -205,6 +205,21 @@ Here is an example of the database settings:
     
     # set this to False if you want to turn off pyodbc's connection pooling
     DATABASE_CONNECTION_POOLING = False
+
+Utilities
+---------
+
+backend-specific aggregation classes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A couple of aggregation classes specific to SQL Server
+(``Avg``, ``StdDev``, ``Variance``) are bundled with the backend.
+Instead of Django's standard ones, you can use them like this: ::
+
+   from sql_server.pyodbc.aggregates import Avg
+
+   vals = Book.objects.aggregate(Avg('price'))
+
+And you can use Django's standard classes for other aggregating operations.
 
 Limitation
 ----------
