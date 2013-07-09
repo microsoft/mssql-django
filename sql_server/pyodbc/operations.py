@@ -1,11 +1,13 @@
+import datetime
+import decimal
+import time
+
 from django.conf import settings
 from django.db.backends import BaseDatabaseOperations
 
 from sql_server.pyodbc.compat import smart_text, string_types, timezone
-import datetime
-import time
-import decimal
-import warnings
+
+EDITION_AZURE_SQL_DB = 5
 
 class DatabaseOperations(BaseDatabaseOperations):
     _aggregate_functions = (
@@ -24,10 +26,8 @@ class DatabaseOperations(BaseDatabaseOperations):
     def __init__(self, connection):
         if connection._DJANGO_VERSION >= 14:
             super(DatabaseOperations, self).__init__(connection)
-            self.supports_tz = True
         else:
             super(DatabaseOperations, self).__init__()
-            self.supports_tz = False
 
         self.connection = connection
         self._ss_ver = None
@@ -55,13 +55,12 @@ class DatabaseOperations(BaseDatabaseOperations):
     sql_server_ver = property(_get_sql_server_ver)
 
     def _on_azure_sql_db(self):
-        edition_azure_sql_db = 5
         if self._ss_edition is not None:
-            return self._ss_edition == edition_azure_sql_db
+            return self._ss_edition == EDITION_AZURE_SQL_DB
         cur = self.connection.cursor()
         cur.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') as integer)")
         self._ss_edition = cur.fetchone()[0]
-        return self._ss_edition == edition_azure_sql_db
+        return self._ss_edition == EDITION_AZURE_SQL_DB
     on_azure_sql_db = property(_on_azure_sql_db)
 
     def bulk_batch_size(self, fields, objs):
@@ -289,9 +288,9 @@ class DatabaseOperations(BaseDatabaseOperations):
                              style.SQL_FIELD(self.quote_name(table)) ) for table in tables])
 
             if self.on_azure_sql_db:
-                warnings.warn("SQL for identity reset is not available " \
-                              "on Windows Azure SQL Database " \
-                              "(it doesn't support DBCC CHECKIDENT).",
+                import warnings
+                warnings.warn("The identity columns will never be reset " \
+                              "on Windows Azure SQL Database.",
                               RuntimeWarning)
             else:
                 # Then reset the counters on each table.
@@ -362,9 +361,9 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         if value is None:
             return None
-        if self.supports_tz and settings.USE_TZ:
+        if self.connection._DJANGO_VERSION >= 14 and settings.USE_TZ:
             if timezone.is_aware(value):
-                # pyodbc donesn't support tz-aware datetimes
+                # pyodbc donesn't support datetimeoffset
                 value = value.astimezone(timezone.utc)
         if not self.connection.features.supports_microsecond_precision:
             value = value.replace(microsecond=0)

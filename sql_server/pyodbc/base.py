@@ -1,10 +1,10 @@
 """
 MS SQL Server database backend for Django.
 """
-import sys
+import datetime
 import os
 import re
-import datetime
+import sys
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -26,8 +26,6 @@ from django import VERSION as DjangoVersion
 if DjangoVersion[:2] >= (1,5):
     _DJANGO_VERSION = 15
 elif DjangoVersion[:2] == (1,4):
-    # Django version 1.4 adds a backwards incompatible change to
-    # DatabaseOperations
     _DJANGO_VERSION = 14
 elif DjangoVersion[:2] == (1,3):
     _DJANGO_VERSION = 13
@@ -66,8 +64,8 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     #uses_savepoints = True
 
     def _supports_transactions(self):
-        # for Django 1.3/1.4 compatibility
-        return True
+        # keep it compatible with Django 1.3 and 1.4
+        return self.supports_transactions
 
 class DatabaseWrapper(BaseDatabaseWrapper):
     _DJANGO_VERSION = _DJANGO_VERSION
@@ -78,7 +76,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     unicode_results = False
     datefirst = 7
     use_legacy_datetime = False
-    create_new_test_db = True
     connection_recovery_interval_msec = 0.0
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
@@ -153,12 +150,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 for op in self.operators:
                     sql = self.operators[op]
                     if sql.startswith('LIKE '):
-                        ops[op] = sql + ' COLLATE ' + self.collation
+                        ops[op] = '%s COLLATE %s' % (sql, self.collation)
                 self.operators.update(ops)
 
-        # setting mainly for running tests with Windows Azure SQL Database
-        # not to be charged too much for creating new databases in every test
-        self.create_new_test_db = self.settings_dict.get('TEST_CREATE', True)
+        self.test_create = self.settings_dict.get('TEST_CREATE', True)
 
         if _DJANGO_VERSION >= 13:
             self.features = DatabaseFeatures(self)
@@ -206,6 +201,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 else:
                     driver = 'FreeTDS'
 
+            # Microsoft driver names assumed here are:
+            # * SQL Server
+            # * SQL Native Client
+            # * SQL Server Native Client 10.0/11.0
+            # * ODBC Driver 11 for SQL Server
             ms_drivers = re.compile('.*SQL (Server$|(Server )?Native Client)')
             if 'dsn' in options:
                 cstr_parts.append('DSN=%s' % options['dsn'])
@@ -213,8 +213,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
                 cstr_parts.append('DRIVER={%s}' % driver)
                 
-                if ms_drivers.match(driver) or driver == 'FreeTDS' \
-                        and options.get('host_is_server', False):
+                if ms_drivers.match(driver) or driver == 'FreeTDS' and \
+                        options.get('host_is_server', False):
                     if port_str:
                         host_str += ';PORT=%s' % port_str
                     cstr_parts.append('SERVER=%s' % host_str)
@@ -292,7 +292,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         return CursorWrapper(cursor, self)
 
-    def _execute_on_tables(self, sql, table_names=None):
+    def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
         if not table_names:
             table_names = self.introspection.get_table_list(cursor)
@@ -312,12 +312,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             time.sleep(self.connection_recovery_interval_msec)
 
     def check_constraints(self, table_names=None):
-        self._execute_on_tables('ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL', table_names)
+        self._execute_foreach('ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL', table_names)
 
     def disable_constraint_checking(self):
         # Windows Azure SQL Database doesn't support sp_msforeachtable
         #cursor.execute('EXEC sp_msforeachtable "ALTER TABLE ? NOCHECK CONSTRAINT ALL"')
-        self._execute_on_tables('ALTER TABLE %s NOCHECK CONSTRAINT ALL')
+        self._execute_foreach('ALTER TABLE %s NOCHECK CONSTRAINT ALL')
         return True
 
     def enable_constraint_checking(self):

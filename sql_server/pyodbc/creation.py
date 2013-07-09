@@ -1,7 +1,7 @@
 import base64
 import random
 
-from django.db.backends.creation import BaseDatabaseCreation, TEST_DATABASE_PREFIX
+from django.db.backends.creation import BaseDatabaseCreation
 
 from sql_server.pyodbc.compat import b, md5_constructor
 
@@ -63,18 +63,15 @@ class DatabaseCreation(BaseDatabaseCreation):
             if settings_dict['TEST_NAME']:
                 test_name = settings_dict['TEST_NAME']
             else:
+                from django.db.backends.creation import TEST_DATABASE_PREFIX
                 test_name = TEST_DATABASE_PREFIX + settings_dict['NAME']
         if not settings_dict['TEST_NAME']:
             settings_dict['TEST_NAME'] = test_name
 
-        if not self.connection.create_new_test_db:
-            # clean an existing database for reuse in a test
+        if not self.connection.test_create:
+            # use the existing database instead of creating a new one
             if verbosity >= 1:
-                test_db_repr = ''
-                if verbosity >= 2:
-                    test_db_repr = " ('%s')" % test_name
-                print("Cleaning the existing database%s " \
-                      "instead of creating a new one..." % test_db_repr)
+                print("Dropping tables ... ")
 
             self.connection.close()
             settings_dict["NAME"] = test_name
@@ -87,6 +84,8 @@ class DatabaseCreation(BaseDatabaseCreation):
                 objs = (qn(row[0]), qn(row[1]))
                 cursor.execute("ALTER TABLE %s DROP CONSTRAINT %s" % objs)
             for table in self.connection.introspection.get_table_list(cursor):
+                if verbosity >= 1:
+                    print("Dropping table %s" % table)
                 cursor.execute('DROP TABLE %s' % qn(table))
             self.connection.connection.commit()
             return test_name
@@ -99,7 +98,7 @@ class DatabaseCreation(BaseDatabaseCreation):
 
     def _destroy_test_db(self, test_database_name, verbosity):
         "Internal implementation - remove the test db tables."
-        if self.connection.create_new_test_db:
+        if self.connection.test_create:
             if self.connection.ops.on_azure_sql_db:
                 self.connection.close()
                 self.connection.settings_dict["NAME"] = 'master'
@@ -117,7 +116,7 @@ class DatabaseCreation(BaseDatabaseCreation):
                 test_db_repr = ''
                 if verbosity >= 2:
                     test_db_repr = " ('%s')" % test_database_name
-                print("skipped the destruction of the database%s." % test_db_repr)
+                print("The database is left undestroyed%s." % test_db_repr)
 
         self.connection.close()
 
@@ -126,7 +125,7 @@ class DatabaseCreation(BaseDatabaseCreation):
         self.connection.connection.autocommit = True
 
     def _rollback_works(self):
-        # for Django 1.2 compatibility
+        # keep it compatible with Django 1.2
         return self.connection.features.supports_transactions
 
     def sql_table_creation_suffix(self):
