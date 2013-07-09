@@ -363,7 +363,7 @@ class CursorWrapper(object):
                 else:
                     fp.append(p)
 
-            elif isinstance(p, str):
+            elif isinstance(p, binary_type):
                 fp.append(p)
 
             elif isinstance(p, type(True)):
