@@ -221,15 +221,6 @@ Instead of Django's standard ones, you can use them like this: ::
 
 And you can use Django's standard classes for other aggregating operations.
 
-Limitation
-----------
-
-You can work with Windows Azure SQL Database only with Microsoft's
-new SQL Server drivers (SQL Server Native Client on Windows,
-or ODBC Driver for SQL Server on Linux).
-For now FreeTDS doesn't support the new version of TDS protocol
-that is required to interact with Windows Azure SQL Database.
-
 License
 =======
 
