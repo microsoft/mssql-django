@@ -1,5 +1,4 @@
 from django.db.models.sql import compiler
-from django.db.models.sql.constants import SINGLE, MULTI
                                             
 from sql_server.pyodbc.compat import zip_longest
 
