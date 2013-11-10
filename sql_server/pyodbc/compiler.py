@@ -92,6 +92,12 @@ class SQLCompiler(compiler.SQLCompiler):
         result.extend(from_)
         params.extend(f_params)
 
+        if self.query.select_for_update and self.connection.features.has_select_for_update:
+            # If we've been asked for a NOWAIT query but the backend does not support it,
+            # raise a DatabaseError otherwise we could get an unexpected deadlock.
+            nowait = self.query.select_for_update_nowait
+            result.append(self.connection.ops.for_update_sql(nowait=nowait))
+
         if where:
             result.append('WHERE %s' % where)
             params.extend(w_params)

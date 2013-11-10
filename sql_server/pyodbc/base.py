@@ -52,6 +52,8 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     can_return_id_from_insert = True
     can_use_chunked_reads = False
     has_bulk_insert = True
+    has_select_for_update = _DJANGO_VERSION >= 14
+    has_select_for_update_nowait = _DJANGO_VERSION >= 14
     ignores_nulls_in_unique_constraints = False
     supports_1000_query_parameters = False
     supports_microsecond_precision = True

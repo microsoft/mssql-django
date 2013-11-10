@@ -144,6 +144,15 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         return '%s'
 
+    def for_update_sql(self, nowait=False):
+        """
+        Returns the FOR UPDATE SQL clause to lock rows for an update operation.
+        """
+        if nowait:
+            return 'WITH (NOWAIT, ROWLOCK, UPDLOCK)'
+        else:
+            return 'WITH (ROWLOCK, UPDLOCK)'
+
     def fulltext_search_sql(self, field_name):
         """
         Returns the SQL WHERE clause to use in order to perform a full-text
