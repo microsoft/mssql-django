@@ -39,8 +39,6 @@ class DatabaseClient(BaseDatabaseClient):
             dsn = options.get('dsn', '')
             args = ['%s -v %s %s %s' % (self.executable_name, dsn, user, password)]
 
-        # XXX: This works only with Python >= 2.4 because subprocess was added
-        # in that release
         import subprocess
         try:
             subprocess.call(args, shell=True)

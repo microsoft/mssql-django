@@ -11,7 +11,7 @@ SQL Server and Windows Azure SQL Database.
 Features
 --------
 
--  Supports Django 1.2, 1.3, 1.4, 1.5
+-  Supports Django 1.6
 -  Supports MS SQL Server 2005, 2008/2008R2, 2012, and Windows Azure SQL
    Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
@@ -22,8 +22,8 @@ Features
 Dependencies
 ------------
 
--  Django 1.2 or newer
--  pyodbc 2.1 or newer
+-  Django 1.6
+-  pyodbc 3.0 or newer
 
 Installation
 ------------
@@ -76,6 +76,11 @@ Standard Django settings
 
    String. Database user password.
 
+-  AUTOCOMMIT
+
+   Boolean. Set this to False if you want to disable
+   Django's transaction management and implement your own.
+
 -  TEST_NAME
 
    String. The name of database to use when running the test suite.
@@ -110,11 +115,6 @@ OPTIONS
 ~~~~~~~
 
 Dictionary. Current available keys are:
-
--  autocommit
-
-   Boolean. Indicates if pyodbc should direct the ODBC driver to
-   activate the autocommit feature. Default value is ``False``.
 
 -  MARS_Connection
 
@@ -220,6 +220,15 @@ Instead of Django's standard ones, you can use them like this: ::
    vals = Book.objects.aggregate(Avg('price'))
 
 And you can use Django's standard classes for other aggregating operations.
+
+Notice
+------
+
+This version of *django-pyodbc-azure* only supports Django 1.6.
+Specify the old version (1.0.x) at installation if you want to use it
+on Django 1.5 or earlier: ::
+
+    pip install "django-pyodbc-azure<1.1"
 
 License
 =======

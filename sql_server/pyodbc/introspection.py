@@ -25,7 +25,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Database.SQL_TYPE_DATE:         'DateField',
         Database.SQL_TYPE_TIME:         'TimeField',
         Database.SQL_TYPE_TIMESTAMP:    'DateTimeField',
-        #Database.SQL_VARBINARY:         ,
+        Database.SQL_VARBINARY:         'BinaryField',
         Database.SQL_VARCHAR:           'TextField',
         Database.SQL_WCHAR:             'CharField',
         Database.SQL_WLONGVARCHAR:      'TextField',
@@ -169,12 +169,19 @@ AND t.name = %s"""
 
         return indexes
 
-    #def get_collations_list(self, cursor):
-    #    """
-    #    Returns list of available collations and theirs descriptions.
-    #    """
-    #    # http://msdn2.microsoft.com/en-us/library/ms184391.aspx
-    #    # http://msdn2.microsoft.com/en-us/library/ms179886.aspx
-    #
-    #    cursor.execute("SELECT name, description FROM ::fn_helpcollations()")
-    #    return [tuple(row) for row in cursor.fetchall()]
+    def get_key_columns(self, cursor, table_name):
+        key_columns = []
+        cursor.execute("""
+            SELECT kcu.column_name, ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
+            FROM information_schema.constraint_column_usage ccu
+            LEFT JOIN information_schema.key_column_usage kcu
+                ON ccu.constraint_catalog = kcu.constraint_catalog
+                    AND ccu.constraint_schema = kcu.constraint_schema
+                    AND ccu.constraint_name = kcu.constraint_name
+            LEFT JOIN information_schema.table_constraints tc
+                ON ccu.constraint_catalog = tc.constraint_catalog
+                    AND ccu.constraint_schema = tc.constraint_schema
+                    AND ccu.constraint_name = tc.constraint_name
+            WHERE kcu.table_name = %s AND tc.constraint_type = 'FOREIGN KEY'""" , [table_name])
+        key_columns.extend(cursor.fetchall())
+        return key_columns
