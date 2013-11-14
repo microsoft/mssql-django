@@ -24,6 +24,6 @@ setup(
     author='Michiya Takahashi',
     url='https://github.com/michiya/django-pyodbc-azure',
     license='BSD',
-    packages=['sql_server', 'sql_server.pyodbc', 'sql_server.extra'],
+    packages=['sql_server', 'sql_server.pyodbc'],
     classifiers=CLASSIFIERS,
 )
