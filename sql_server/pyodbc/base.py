@@ -429,7 +429,6 @@ class CursorWrapper(object):
         sql = self.format_sql(sql, len(params))
         self.last_params = params
         try:
-            print(sql)
             return self.cursor.execute(sql, params)
         except Database.Error as e:
             self.connection._on_error(e)
