@@ -222,12 +222,12 @@ Instead of Django's standard ones, you can use them like this: ::
 And you can use Django's standard classes for other aggregating operations.
 
 License
-=======
+-------
 
 New BSD LICENSE
 
 Credits
-=======
+-------
 
 -  `Ramiro Morales <https://people.djangoproject.com/ramiro/>`__
 -  `Filip Wasilewski <http://code.djangoproject.com/ticket/5246>`__
