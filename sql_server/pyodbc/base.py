@@ -201,7 +201,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
             cstr_parts.append('DRIVER={%s}' % driver)
             if ms_drivers.match(driver) or driver == 'FreeTDS' and \
-                conn_params.get('host_is_server', False):
+                options.get('host_is_server', False):
                 if port:
                     host += ';PORT=%s' % port
                 cstr_parts.append('SERVER=%s' % host)
