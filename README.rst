@@ -231,12 +231,12 @@ on Django 1.5 or earlier: ::
     pip install "django-pyodbc-azure<1.1"
 
 License
-=======
+-------
 
 New BSD LICENSE
 
 Credits
-=======
+-------
 
 -  `Ramiro Morales <https://people.djangoproject.com/ramiro/>`__
 -  `Filip Wasilewski <http://code.djangoproject.com/ticket/5246>`__
