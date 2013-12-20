@@ -6,6 +6,11 @@ from django.db.backends import BaseDatabaseOperations
 from django.utils import timezone
 from django.utils.six import string_types
 
+try:
+    import pytz
+except ImportError:
+    pytz = None
+
 
 class DatabaseOperations(BaseDatabaseOperations):
     _aggregate_functions = (
@@ -23,6 +28,22 @@ class DatabaseOperations(BaseDatabaseOperations):
     compiler_module = 'sql_server.pyodbc.compiler'
     def __init__(self, connection):
         super(DatabaseOperations, self).__init__(connection)
+
+    def _get_utcoffset(self, tzname):
+        """
+        Returns UTC offset for given time zone in seconds
+        """
+        # SQL Server has no built-in support for tz database
+        # see http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
+        if pytz is None:
+            from django.core.exceptions import ImproperlyConfigured
+            raise ImproperlyConfigured("This query requires pytz, "
+                                       "but it isn't installed.")
+        zone = pytz.timezone(tzname)
+        # no way to take DST into account at this point
+        now = datetime.datetime.now()
+        delta = zone.localize(now, is_dst=False).utcoffset()
+        return delta.days * 86400 + delta.seconds
 
     def bulk_batch_size(self, fields, objs):
         """
@@ -97,17 +118,17 @@ class DatabaseOperations(BaseDatabaseOperations):
             return "CONVERT(datetime, CONVERT(varchar(12), %s, 112))" % field_name
 
     def datetime_extract_sql(self, lookup_type, field_name, tzname):
-        if settings.USE_TZ:
-            # see http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
-            raise NotImplementedError('SQL Server has no built-in support for tz database.')
+        if settings.USE_TZ and not tzname == 'UTC':
+            offset = self._get_utcoffset(tzname)
+            field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
         params = []
         sql = self.date_extract_sql(lookup_type, field_name)
         return sql, params
 
     def datetime_trunc_sql(self, lookup_type, field_name, tzname):
-        if settings.USE_TZ:
-            # see http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
-            raise NotImplementedError('SQL Server has no built-in support for tz database.')
+        if settings.USE_TZ and not tzname == 'UTC':
+            offset = self._get_utcoffset(tzname)
+            field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
         params = []
         sql = ''
         if lookup_type in ('year', 'month', 'day'):
