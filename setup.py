@@ -31,4 +31,5 @@ setup(
         'pyodbc>=3.0',
     ],
     classifiers=CLASSIFIERS,
+    keywords='azure django',
 )
