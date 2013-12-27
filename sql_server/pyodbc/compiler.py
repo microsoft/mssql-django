@@ -215,8 +215,9 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
             params = self.connection.ops.modify_insert_params(placeholders, params)
 
         if self.return_id and self.connection.features.can_return_id_from_insert:
-            result.append("OUTPUT INSERTED.%s" % qn(opts.pk.column))
-            result.append(values_format % ", ".join(placeholders[0]))
+            result.insert(0, 'SET NOCOUNT ON')
+            result.append((values_format + ';') % ', '.join(placeholders[0]))
+            result.append('SELECT CAST(SCOPE_IDENTITY() AS BIGINT)')
             return [(" ".join(result), tuple(params[0]))]
 
         if can_bulk:
