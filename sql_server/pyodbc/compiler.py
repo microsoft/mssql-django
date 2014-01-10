@@ -39,6 +39,7 @@ class SQLCompiler(compiler.SQLCompiler):
         do_offset = with_limits and low_mark != 0
         # SQL Server 2012 or newer supports OFFSET/FETCH clause
         supports_offset_clause = self.connection.sql_server_version >= 2012
+        do_offset_emulation = do_offset and not supports_offset_clause
 
         # After executing the query, we must get rid of any joins the query
         # setup created. So, take note of alias counts before the query ran.
@@ -46,10 +47,10 @@ class SQLCompiler(compiler.SQLCompiler):
         # as the pre_sql_setup will modify query state in a way that forbids
         # another run of it.
         self.refcounts_before = self.query.alias_refcount.copy()
-        out_cols, s_params = self.get_columns(with_col_aliases)
+        out_cols, s_params = self.get_columns(with_col_aliases or do_offset_emulation)
         #ordering, o_params, ordering_group_by = self.get_ordering()
         ordering, o_params, ordering_group_by, offset_params = \
-            self._get_ordering(out_cols, supports_offset_clause or not do_offset)
+            self._get_ordering(out_cols, not do_offset_emulation)
 
         distinct_fields = self.get_distinct()
 
@@ -85,7 +86,7 @@ class SQLCompiler(compiler.SQLCompiler):
                     #ordering = ['%s.%s ASC' % (qn(self.group_by[0][0]),qn(self.group_by[0][1]))]
                 else:
                     ordering = ['%s ASC' % pk]
-            if not supports_offset_clause:
+            if do_offset_emulation:
                 order = ', '.join(ordering)
                 self.ordering_aliases.append('(ROW_NUMBER() OVER (ORDER BY %s)) AS [rn]' % order)
                 ordering = self.connection.ops.force_no_ordering()
@@ -128,12 +129,12 @@ class SQLCompiler(compiler.SQLCompiler):
 
         if ordering and not with_col_aliases:
             result.append('ORDER BY %s' % ', '.join(ordering))
-            if do_offset and supports_offset_clause:
+            if do_offset and not do_offset_emulation:
                 result.append('OFFSET %d ROWS' % low_mark)
                 if do_limit:
                     result.append('FETCH FIRST %d ROWS ONLY' % (high_mark - low_mark))
 
-        if do_offset and not supports_offset_clause:
+        if do_offset_emulation:
             # Construct the final SQL clause, using the initial select SQL
             # obtained above.
             result = ['SELECT * FROM (%s) AS X WHERE X.rn' % ' '.join(result)]
