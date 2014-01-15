@@ -247,7 +247,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                 if auto_field_column in columns:
                     id_insert_sql = []
                     table = qn(opts.db_table)
-                    sql_format = 'SET IDENTITY_INSERT %s ON;\n%s;\nSET IDENTITY_INSERT %s OFF'
+                    sql_format = 'SET IDENTITY_INSERT %s ON; %s; SET IDENTITY_INSERT %s OFF'
                     for q, p in sql:
                         id_insert_sql.append((sql_format % (table, q, table), p))
                     sql = id_insert_sql
