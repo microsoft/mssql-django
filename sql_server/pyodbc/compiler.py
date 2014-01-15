@@ -29,6 +29,8 @@ class SQLCompiler(compiler.SQLCompiler):
         if with_limits and self.query.low_mark == self.query.high_mark:
             return '', ()
 
+        self._wrap_aggregates()
+
         self.pre_sql_setup()
 
         # The do_offset flag indicates whether we need to construct
@@ -175,6 +177,11 @@ class SQLCompiler(compiler.SQLCompiler):
                     offset_params.extend(ex[1])
         return ordering, o_params, grouping, offset_params
 
+    def _wrap_aggregates(self):
+        for alias, aggregate in self.query.aggregate_select.items():
+            self.query.aggregate_select[alias] = AggregateWrapper(aggregate)
+
+
 class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
     def as_sql(self):
@@ -256,7 +263,9 @@ class SQLUpdateCompiler(compiler.SQLUpdateCompiler, SQLCompiler):
         return sql, params
 
 class SQLAggregateCompiler(compiler.SQLAggregateCompiler, SQLCompiler):
-    pass
+    def as_sql(self, qn=None):
+        self._wrap_aggregates()
+        return super(SQLAggregateCompiler, self).as_sql(qn=qn)
 
 class SQLDateCompiler(compiler.SQLDateCompiler, SQLCompiler):
     pass
