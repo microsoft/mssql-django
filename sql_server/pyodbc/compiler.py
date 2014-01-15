@@ -221,11 +221,11 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                         sql = 'SET NOCOUNT ON '
                     sql += "INSERT INTO %s DEFAULT VALUES" % quoted_table
                 else:
-                    sql = "SET IDENTITY_INSERT %s ON;\n%s;\nSET IDENTITY_INSERT %s OFF" % \
+                    sql = "SET IDENTITY_INSERT %s ON; %s; SET IDENTITY_INSERT %s OFF" % \
                         (quoted_table, sql, quoted_table)
 
         if returns_id:
-            sql += ';\nSELECT CAST(SCOPE_IDENTITY() AS BIGINT)'
+            sql += '; SELECT CAST(SCOPE_IDENTITY() AS BIGINT)'
 
         return sql, params
 
@@ -272,13 +272,13 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                             sql = 'SET NOCOUNT ON '
                         sql += "INSERT INTO %s DEFAULT VALUES" % quoted_table
                     else:
-                        sql = "SET IDENTITY_INSERT %s ON;\n%s;\nSET IDENTITY_INSERT %s OFF"% \
+                        sql = "SET IDENTITY_INSERT %s ON; %s; SET IDENTITY_INSERT %s OFF"% \
                             (quoted_table, sql, quoted_table)
                 out.append([sql, params])
             items = out
 
         if returns_id:
-            items = [[x[0] + ';\nSELECT CAST(SCOPE_IDENTITY() AS BIGINT)', x[1]] for x in items]
+            items = [[x[0] + '; SELECT CAST(SCOPE_IDENTITY() AS BIGINT)', x[1]] for x in items]
 
         return items
 
