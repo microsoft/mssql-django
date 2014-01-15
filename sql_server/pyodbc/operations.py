@@ -10,19 +10,8 @@ from sql_server.pyodbc.compat import smart_text, string_types, timezone
 EDITION_AZURE_SQL_DB = 5
 
 class DatabaseOperations(BaseDatabaseOperations):
-    _aggregate_functions = (
-        'AVG',
-        'COUNT',
-        'COUNT_BIG',
-        'MAX',
-        'MIN',
-        'STDEV',
-        'STDEVP',
-        'SUM',
-        'VAR',
-        'VARP',
-    )
     compiler_module = "sql_server.pyodbc.compiler"
+
     def __init__(self, connection):
         if connection._DJANGO_VERSION >= 14:
             super(DatabaseOperations, self).__init__(connection)
@@ -79,11 +68,6 @@ class DatabaseOperations(BaseDatabaseOperations):
     def bulk_insert_sql(self, fields, num_values):
         items_sql = "(%s)" % ", ".join(["%s"] * len(fields))
         return "VALUES " + ", ".join([items_sql] * num_values)
-
-    def check_aggregate_support(self, aggregate):
-        if not aggregate.sql_function.upper() in self._aggregate_functions:
-            raise NotImplementedError('SQL Server has no support for the function %s.'
-                                      % aggregate.sql_function)
 
     def cache_key_culling_sql(self):
         """

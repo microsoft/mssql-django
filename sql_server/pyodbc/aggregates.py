@@ -35,3 +35,28 @@ class Avg(_Aggregate):
     is_computed = True
     sql_function = 'AVG'
     sql_template = '%(function)s(Convert(FLOAT, %(field)s))'
+
+class AggregateWrapper(object):
+    _aggregate = None
+    _sql_functions = {
+        'STDDEV_SAMP': 'STDEV',
+        'STDDEV_POP': 'STDEVP',
+        'VAR_SAMP': 'VAR',
+        'VAR_POP': 'VARP',
+    }
+    _sql_templates = {
+        'AVG': Avg.sql_template,
+    }
+
+    def __init__(self, aggregate):
+        sql_function = aggregate.sql_function
+        if sql_function in self._sql_functions.keys():
+            aggregate.sql_function = self._sql_functions[sql_function]
+        if sql_function in self._sql_templates.keys():
+            aggregate.sql_template = self._sql_templates[sql_function]
+        self._aggregate = aggregate
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return self.__dict__[attr]
+        return getattr(self._aggregate, attr)

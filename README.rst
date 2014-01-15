@@ -206,21 +206,6 @@ Here is an example of the database settings:
     # set this to False if you want to turn off pyodbc's connection pooling
     DATABASE_CONNECTION_POOLING = False
 
-Utilities
----------
-
-backend-specific aggregation classes
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-A couple of aggregation classes specific to SQL Server
-(``Avg``, ``StdDev``, ``Variance``) are bundled with the backend.
-Instead of Django's standard ones, you can use them like this: ::
-
-   from sql_server.pyodbc.aggregates import Avg
-
-   vals = Book.objects.aggregate(Avg('price'))
-
-And you can use Django's standard classes for other aggregating operations.
-
 License
 -------
 
