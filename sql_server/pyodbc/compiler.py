@@ -6,6 +6,8 @@ except ImportError:
 from django.db.models.sql import compiler
 from django.utils import six
 
+from sql_server.pyodbc.aggregates import AggregateWrapper
+
 
 class SQLCompiler(compiler.SQLCompiler):
 
