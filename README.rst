@@ -28,7 +28,7 @@ Dependencies
 Installation
 ------------
 
-1. Install pyodbc
+1. Install pyodbc and Django
 
 2. Install django-pyodbc-azure ::
 
