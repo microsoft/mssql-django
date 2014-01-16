@@ -22,17 +22,17 @@ Features
 Dependencies
 ------------
 
--  Django 1.2 or newer
+-  Django 1.2/1.3/1.4/1.5
 -  pyodbc 2.1 or newer
 
 Installation
 ------------
 
-1. Install pyodbc
+1. Install pyodbc and Django
 
 2. Install django-pyodbc-azure ::
 
-    pip install django-pyodbc-azure
+    pip install "django-pyodbc-azure<1.1"
 
 3. Now you can point the ``ENGINE`` setting in the settings file used by
    your Django application or project to the ``'sql_server.pyodbc'``
