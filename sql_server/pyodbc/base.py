@@ -20,6 +20,7 @@ if pyodbc_ver < (3, 0):
 
 from django.conf import settings
 from django.db.backends import *
+from django.utils.encoding import smart_str
 from django.utils.functional import cached_property
 from django.utils.six import binary_type, text_type
 from django.utils.timezone import utc
@@ -390,7 +391,7 @@ class CursorWrapper(object):
         if self.driver_needs_utf8 and isinstance(sql, text_type):
             # FreeTDS (and other ODBC drivers?) doesn't support Unicode
             # yet, so we need to encode the SQL clause itself in utf-8
-            sql = sql.encode('utf-8')
+            sql = smart_str(sql, 'utf-8')
 
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
         if n_params > 0:
@@ -405,7 +406,7 @@ class CursorWrapper(object):
                 if self.driver_needs_utf8:
                     # FreeTDS (and other ODBC drivers?) doesn't support Unicode
                     # yet, so we need to encode parameters in utf-8
-                    fp.append(p.encode('utf-8'))
+                    fp.append(smart_str(p, 'utf-8'))
                 else:
                     fp.append(p)
 
