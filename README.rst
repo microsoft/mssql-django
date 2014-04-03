@@ -12,7 +12,7 @@ Features
 --------
 
 -  Supports Django 1.2, 1.3, 1.4, 1.5
--  Supports MS SQL Server 2005, 2008/2008R2, 2012, and Windows Azure SQL
+-  Supports MS SQL Server 2005, 2008/2008R2, 2012, 2014 and Windows Azure SQL
    Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
 -  Passes most of the tests of the Django test suite.
