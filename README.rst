@@ -3,21 +3,21 @@ django-pyodbc-azure
 
 *django-pyodbc-azure* is a refined fork of
 `django-pyodbc <https://github.com/avidal/django-pyodbc>`__, a
-`Django <http://djangoproject.com/>`__ MS SQL Server external DB backend
-that uses ODBC by employing the
-`pyodbc <https://code.google.com/p/pyodbc/>`__ library. It supports MS
-SQL Server and Windows Azure SQL Database.
+`Django <http://djangoproject.com/>`__ Microsoft SQL Server external
+DB backend that uses ODBC by employing the
+`pyodbc <https://code.google.com/p/pyodbc/>`__ library. It supports
+Microsoft SQL Server and Azure SQL Database.
 
 Features
 --------
 
 -  Supports Django 1.2, 1.3, 1.4, 1.5
--  Supports MS SQL Server 2005, 2008/2008R2, 2012, 2014 and Windows Azure SQL
-   Database
+-  Supports Microsoft SQL Server 2005, 2008/2008R2, 2012, 2014 and
+   Azure SQL Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
 -  Passes most of the tests of the Django test suite.
--  Compatible with *SQL Server* and *SQL Server Native Client* (Windows),
-   *Micosoft ODBC Driver for SQL Server* and *FreeTDS* (Linux) ODBC drivers.
+-  Compatible with *SQL Server* , *SQL Server Native Client* ,
+   *Micosoft ODBC Driver 11 for SQL Server* and *FreeTDS* ODBC drivers.
 
 Dependencies
 ------------
@@ -59,7 +59,7 @@ Standard Django settings
 -  HOST
 
    String. SQL Server instance in ``"server\instance"`` (on-premise) or
-   ``"server.database.windows.net"`` (Windows Azure SQL Database) format.
+   ``"server.database.windows.net"`` (Azure SQL Database) format.
 
 -  PORT
 
@@ -69,7 +69,7 @@ Standard Django settings
 -  USER
 
    String. Database user name in ``"user"`` (on-premise) or
-   ``"user@server"`` (Windows Azure SQL Database) format.
+   ``"user@server"`` (Azure SQL Database) format.
    If not given then MS Integrated Security will be used.
 
 -  PASSWORD
@@ -93,7 +93,7 @@ Standard Django settings
    Boolean. If it is set to ``False``, the test database won’t be
    automatically created at the beginning of the tests and dropped at the end.
    This is useful not to be charged too much for creating new databases
-   in every test when you run tests with Windows Azure SQL Database.
+   in every test when you run tests with Azure SQL Database.
 
 -  TEST_DEPENDENCIES
 
