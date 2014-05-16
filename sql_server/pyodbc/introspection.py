@@ -1,4 +1,4 @@
-from django.db.backends import BaseDatabaseIntrospection
+from django.db.backends import BaseDatabaseIntrospection, FieldInfo
 import pyodbc as Database
 
 SQL_AUTOFIELD = -777555
@@ -76,7 +76,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                 column[1] = SQL_AUTOFIELD
             if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
                 column[1] = Database.SQL_WCHAR
-            items.append(column)
+            items.append(FieldInfo(*column))
         return items
 
     def _name_to_index(self, cursor, table_name):
