@@ -30,6 +30,11 @@ if DjangoVersion[:2] == (1,6):
 else:
     raise ImproperlyConfigured("Django %d.%d is not supported." % DjangoVersion[:2])
 
+try:
+    import pytz
+except ImportError:
+    pytz = None
+
 if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
     if not settings.DATABASE_CONNECTION_POOLING:
         Database.pooling = False
@@ -52,7 +57,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     has_real_datatype = True
     has_select_for_update = True
     has_select_for_update_nowait = True
-    has_zoneinfo_database = False
+    has_zoneinfo_database = pytz is not None
     ignores_nulls_in_unique_constraints = False
     needs_datetime_string_cast = False
     supports_1000_query_parameters = False
