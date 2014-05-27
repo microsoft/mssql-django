@@ -275,7 +275,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 self.features.supports_microsecond_precision = False
                 self.features.supports_mixed_date_datetime_comparisons = True
 
-            ms_drv_names = re.compile('^((LIB)?SQLN?CLI|LIBMSODBCSQL)')
+            ms_drv_names = re.compile('^(LIB)?(SQLN?CLI|MSODBCSQL)')
             if self.driver_needs_utf8 is None:
                 self.driver_needs_utf8 = False
                 if self.drv_name == 'SQLSRV32.DLL' or ms_drv_names.match(self.drv_name):
