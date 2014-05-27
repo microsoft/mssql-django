@@ -238,7 +238,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.use_legacy_datetime = True
             self.supports_mars = False
 
-        ms_drv_names = re.compile('^((LIB)?SQLN?CLI|LIBMSODBCSQL)')
+        ms_drv_names = re.compile('^(LIB)?(SQLN?CLI|MSODBCSQL)')
 
         if drv_name == 'SQLSRV32.DLL' or ms_drv_names.match(drv_name):
             self.driver_needs_utf8 = False
