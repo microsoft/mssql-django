@@ -4,6 +4,7 @@ except ImportError:
     from itertools import izip_longest as zip_longest
 
 from django.db.models.sql import compiler
+from django.db.transaction import TransactionManagementError
 from django.utils import six
 
 from sql_server.pyodbc.aggregates import AggregateWrapper
@@ -108,6 +109,9 @@ class SQLCompiler(compiler.SQLCompiler):
         params.extend(f_params)
 
         if self.query.select_for_update and self.connection.features.has_select_for_update:
+            if self.connection.get_autocommit():
+                raise TransactionManagementError("select_for_update cannot be used outside of a transaction.")
+
             # If we've been asked for a NOWAIT query but the backend does not support it,
             # raise a DatabaseError otherwise we could get an unexpected deadlock.
             nowait = self.query.select_for_update_nowait
