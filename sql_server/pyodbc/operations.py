@@ -285,7 +285,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             if self.on_azure_sql_db:
                 import warnings
                 warnings.warn("The identity columns will never be reset " \
-                              "on Windows Azure SQL Database.",
+                              "on Azure SQL Database.",
                               RuntimeWarning)
             else:
                 # Then reset the counters on each table.
