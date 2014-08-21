@@ -169,7 +169,8 @@ Dictionary. Current available keys are:
    (the same behavior as the original ``django-pyodbc``). Otherwise, they
    are mapped to new dedicated data types (``date``, ``time``, ``datetime2``).
    Default value is ``False``, and note that the feature is always activated
-   when you use SQL Server 2005 or FreeTDS.
+   when you use SQL Server 2005, or the outdated ODBC drivers
+   (``"FreeTDS"``/``"SQL Server"``/``"SQL Native Client"``).
 
 backend-specific settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~

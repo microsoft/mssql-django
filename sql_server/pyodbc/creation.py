@@ -133,3 +133,7 @@ class DatabaseCreation(BaseDatabaseCreation):
         if self.connection.settings_dict['TEST_COLLATION']:
             suffix.append('COLLATE %s' % self.connection.settings_dict['TEST_COLLATION'])
         return ' '.join(suffix)
+
+    def use_legacy_datetime(self):
+        for field in ('DateField', 'DateTimeField', 'TimeField'):
+            self.data_types[field] = 'datetime'

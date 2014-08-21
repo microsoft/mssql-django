@@ -261,24 +261,26 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
             self.drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
 
-            freetds = self.drv_name.startswith('LIBTDSODBC')
-            if freetds:
-                self.use_legacy_datetime = True
+            driver_is_freetds = self.drv_name.startswith('LIBTDSODBC')
+            driver_is_sqlsrv32 = self.drv_name == 'SQLSRV32.DLL'
+            driver_is_snac9 = self.drv_name == "SQLNCLI.DLL"
+
+            self.use_legacy_datetime = \
+                driver_is_freetds or driver_is_sqlsrv32 or driver_is_snac9
 
             if self.ops.sql_server_ver < 2008:
                 self.use_legacy_datetime = True
                 self.features.has_bulk_insert = False
 
             if self.use_legacy_datetime:
-                types = self.creation.data_types
-                types['DateField'] = types['DateTimeField'] = types['TimeField'] = 'datetime'
+                self.creation.use_legacy_datetime()
                 self.features.supports_microsecond_precision = False
                 self.features.supports_mixed_date_datetime_comparisons = True
 
             ms_drv_names = re.compile('^(LIB)?(SQLN?CLI|MSODBCSQL)')
             if self.driver_needs_utf8 is None:
                 self.driver_needs_utf8 = False
-                if self.drv_name == 'SQLSRV32.DLL' or ms_drv_names.match(self.drv_name):
+                if driver_is_sqlsrv32 or ms_drv_names.match(self.drv_name):
                     self.driver_needs_utf8 = False
 
             # http://msdn.microsoft.com/en-us/library/ms131686.aspx
@@ -290,7 +292,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
             # in multi-statement, so we need to commit the above SQL sentence(s)
             # to avoid this
-            if freetds and not self.connection.autocommit:
+            if driver_is_freetds and not self.connection.autocommit:
                 self.connection.commit()
 
         return CursorWrapper(cursor, self)
