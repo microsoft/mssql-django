@@ -116,12 +116,6 @@ Dictionary. Current available keys are:
    Boolean. Indicates if pyodbc should direct the ODBC driver to
    activate the autocommit feature. Default value is ``False``.
 
--  MARS_Connection
-
-   Boolean. Only relevant when using Microsoft's SQL Server drivers
-   (SQL Server Native Client or ODBC Driver for SQL Server).
-   Default value is ``False``.
-
 -  driver
 
    String. ODBC Driver to use (``"SQL Server Native Client 11.0"`` etc).
@@ -199,7 +193,6 @@ Here is an example of the database settings:
 
             'OPTIONS': {
                 'driver': 'SQL Server Native Client 11.0',
-                'MARS_Connection': True,
             },
         },
     }

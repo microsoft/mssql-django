@@ -75,7 +75,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     drv_name = None
     driver_needs_utf8 = None
-    MARS_Connection = False
+    supports_mars = False
     unicode_results = False
     datefirst = 7
     use_legacy_datetime = False
@@ -125,7 +125,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         options = self.settings_dict.get('OPTIONS', None)
 
         if options:
-            self.MARS_Connection = options.get('MARS_Connection', False)
             self.datefirst = options.get('datefirst', 7)
             self.unicode_results = options.get('unicode_results', False)
             
@@ -234,7 +233,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
             cstr_parts.append('DATABASE=%s' % db_str)
 
-            if self.MARS_Connection:
+            if ms_drivers.match(driver) and not driver == 'SQL Server':
+                self.supports_mars = True
+            if self.supports_mars:
                 cstr_parts.append('MARS_Connection=yes')
                 
             if 'extra_params' in options:
@@ -284,9 +285,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     self.driver_needs_utf8 = False
 
             # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-            if self.MARS_Connection and ms_drv_names.match(self.drv_name):
-                # How to to activate it: Add 'MARS_Connection': True
-                # to the OPTIONS dictionary setting
+            if self.supports_mars and ms_drv_names.match(self.drv_name):
                 self.features.can_use_chunked_reads = True
 
             # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
