@@ -125,12 +125,25 @@ WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
         # TABLE_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms181757.aspx
 
-        pk_uk_sql = """
+        if self.connection._DJANGO_VERSION < 14:
+            pk_uk_sql = """
 SELECT b.COLUMN_NAME, a.CONSTRAINT_TYPE
 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS a
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS b
   ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME AND a.TABLE_NAME = b.TABLE_NAME
 WHERE a.TABLE_NAME = %s AND (CONSTRAINT_TYPE = 'PRIMARY KEY' OR CONSTRAINT_TYPE = 'UNIQUE')"""
+        else:
+            pk_uk_sql = """
+SELECT d.COLUMN_NAME, c.CONSTRAINT_TYPE FROM (
+SELECT a.CONSTRAINT_NAME, a.CONSTRAINT_TYPE
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS a
+INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS b
+  ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME AND a.TABLE_NAME = b.TABLE_NAME
+WHERE a.TABLE_NAME = %s AND (CONSTRAINT_TYPE = 'PRIMARY KEY' OR CONSTRAINT_TYPE = 'UNIQUE')
+GROUP BY a.CONSTRAINT_TYPE, a.CONSTRAINT_NAME
+HAVING(COUNT(a.CONSTRAINT_NAME)) = 1) AS c
+INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
+  ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME"""
 
         field_names = [item[0] for item in self.get_table_description(cursor, table_name, identity_check=False)]
         indexes, results = {}, {}
@@ -165,7 +178,8 @@ AND t.name = %s"""
 
         for field in field_names:
             val = results.get(field, None)
-            indexes[field] = dict(primary_key=(val=='PRIMARY KEY'), unique=(val=='UNIQUE'))
+            if self.connection._DJANGO_VERSION < 14 or val:
+                indexes[field] = dict(primary_key=(val=='PRIMARY KEY'), unique=(val=='UNIQUE'))
 
         return indexes
 
