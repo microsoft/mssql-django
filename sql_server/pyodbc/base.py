@@ -108,7 +108,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         opts = self.settings_dict["OPTIONS"]
 
         # capability for multiple result sets or cursors
-        self.supports_mars = opts.get('MARS_Connection', False)
+        self.supports_mars = False
         self.open_cursor = None
 
         # Some drivers need unicode encoded as UTF8. If this is left as
@@ -225,6 +225,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         cstr_parts.append('DATABASE=%s' % database)
 
+        if ms_drivers.match(driver) and not driver == "SQL Server":
+            self.supports_mars = True
         if self.supports_mars:
             cstr_parts.append('MARS_Connection=yes')
                 
@@ -242,11 +244,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         driver_is_sqlsrv32 = drv_name == 'SQLSRV32.DLL'
         driver_is_snac9 = drv_name == 'SQLNCLI.DLL'
 
-        if driver_is_freetds or driver_is_sqlsrv32:
-            self.use_legacy_datetime = True
-            self.supports_mars = False
-        elif driver_is_snac9:
-            self.use_legacy_datetime = True
+        self.use_legacy_datetime = \
+            driver_is_freetds or driver_is_sqlsrv32 or driver_is_snac9
 
         ms_drv_names = re.compile('^(LIB)?(SQLN?CLI|MSODBCSQL)')
 
@@ -255,8 +254,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         # http://msdn.microsoft.com/en-us/library/ms131686.aspx
         if self.supports_mars and ms_drv_names.match(drv_name):
-            # How to to activate it: Add 'MARS_Connection': True
-            # to the OPTIONS dictionary setting
             self.features.can_use_chunked_reads = True
 
         # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
