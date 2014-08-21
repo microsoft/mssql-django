@@ -239,13 +239,18 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         drv_name = conn.getinfo(Database.SQL_DRIVER_NAME).upper()
 
         driver_is_freetds = drv_name.startswith('LIBTDSODBC')
-        if driver_is_freetds:
+        driver_is_sqlsrv32 = drv_name == 'SQLSRV32.DLL'
+        driver_is_snac9 = drv_name == 'SQLNCLI.DLL'
+
+        if driver_is_freetds or driver_is_sqlsrv32:
             self.use_legacy_datetime = True
             self.supports_mars = False
+        elif driver_is_snac9:
+            self.use_legacy_datetime = True
 
         ms_drv_names = re.compile('^(LIB)?(SQLN?CLI|MSODBCSQL)')
 
-        if drv_name == 'SQLSRV32.DLL' or ms_drv_names.match(drv_name):
+        if driver_is_sqlsrv32 or ms_drv_names.match(drv_name):
             self.driver_needs_utf8 = False
 
         # http://msdn.microsoft.com/en-us/library/ms131686.aspx
