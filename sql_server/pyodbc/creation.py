@@ -1,22 +1,7 @@
-import base64
-import hashlib
-import random
-
 from django.db.backends.creation import BaseDatabaseCreation
 from django.db.backends.util import truncate_name
 from django.utils.six import b
 
-
-class DataTypesWrapper(dict):
-    def __getitem__(self, item):
-        if item in ('PositiveIntegerField', 'PositiveSmallIntegerField'):
-            # The check name must be unique for the database. Add a random
-            # component so the regresion tests don't complain about duplicate names
-            fldtype = {'PositiveIntegerField': 'int', 'PositiveSmallIntegerField': 'smallint'}[item]
-            rnd_hash = hashlib.md5(b(str(random.random()))).hexdigest()
-            unique = base64.b64encode(b(rnd_hash), b('__'))[:6]
-            return '%(fldtype)s CONSTRAINT [CK_%(fldtype)s_pos_%(unique)s_%%(column)s] CHECK ([%%(column)s] >= 0)' % locals()
-        return super(DataTypesWrapper, self).__getitem__(item)
 
 class DatabaseCreation(BaseDatabaseCreation):
     # This dictionary maps Field objects to their associated MS SQL column
@@ -41,31 +26,31 @@ class DatabaseCreation(BaseDatabaseCreation):
         'GenericIPAddressField': 'nvarchar(39)',
         'NullBooleanField':  'bit',
         'OneToOneField':     'int',
-        #'PositiveIntegerField': 'integer CONSTRAINT [CK_int_pos_%(column)s] CHECK ([%(column)s] >= 0)',
-        #'PositiveSmallIntegerField': 'smallint CONSTRAINT [CK_smallint_pos_%(column)s] CHECK ([%(column)s] >= 0)',
+        'PositiveIntegerField': 'int',
+        'PositiveSmallIntegerField': 'smallint',
         'SlugField':         'nvarchar(%(max_length)s)',
         'SmallIntegerField': 'smallint',
         'TextField':         'nvarchar(max)',
         'TimeField':         'time',
     }
 
+    data_type_check_constraints = {
+        'PositiveIntegerField': '[%(column)s] >= 0',
+        'PositiveSmallIntegerField': '[%(column)s] >= 0',
+    }
+
     def __init__(self, connection):
         super(DatabaseCreation, self).__init__(connection)
-        self.data_types = DataTypesWrapper(self.__class__.data_types)
 
     def _create_test_db(self, verbosity, autoclobber):
         settings_dict = self.connection.settings_dict
-        test_name = self._get_test_db_name()
-        if not settings_dict['TEST_NAME']:
-            settings_dict['TEST_NAME'] = test_name
-
-        if not settings_dict.get('TEST_CREATE', True):
+        if not settings_dict['TEST'].get('CREATE_DB', True):
             # use the existing database instead of creating a new one
             if verbosity >= 1:
                 print("Dropping tables ... ")
-
             self.connection.close()
-            settings_dict["NAME"] = test_name
+            test_db_name = self._get_test_db_name()
+            settings_dict["NAME"] = test_db_name
             cursor = self.connection.cursor()
             qn = self.connection.ops.quote_name
             sql = "SELECT TABLE_NAME, CONSTRAINT_NAME " \
@@ -79,20 +64,15 @@ class DatabaseCreation(BaseDatabaseCreation):
                     print("Dropping table %s" % table)
                 cursor.execute('DROP TABLE %s' % qn(table))
             self.connection.connection.commit()
-            return test_name
+            return test_db_name
 
-        if self.connection.to_azure_sql_db:
-            self.connection.close()
-            settings_dict["NAME"] = 'master'
-            
         return super(DatabaseCreation, self)._create_test_db(verbosity, autoclobber)
 
     def _destroy_test_db(self, test_database_name, verbosity):
         "Internal implementation - remove the test db tables."
-        if self.connection.settings_dict.get('TEST_CREATE', True):
-            if self.connection.to_azure_sql_db:
-                self.connection.close()
-                self.connection.settings_dict["NAME"] = 'master'
+        settings_dict = self.connection.settings_dict
+        if settings_dict['TEST'].get('CREATE_DB', True):
+            settings_dict['NAME'] = None
             cursor = self.connection.cursor()
             self.connection.set_autocommit(True)
             #time.sleep(1) # To avoid "database is being accessed by other users" errors.
@@ -112,8 +92,9 @@ class DatabaseCreation(BaseDatabaseCreation):
 
     def sql_table_creation_suffix(self):
         suffix = []
-        if self.connection.settings_dict['TEST_COLLATION']:
-            suffix.append('COLLATE %s' % self.connection.settings_dict['TEST_COLLATION'])
+        collation = self.connection.settings_dict['TEST'].get('COLLATION', None)
+        if collation:
+            suffix.append('COLLATE %s' % collation)
         return ' '.join(suffix)
 
     def use_legacy_datetime(self):

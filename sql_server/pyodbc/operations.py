@@ -63,6 +63,14 @@ class DatabaseOperations(BaseDatabaseOperations):
                "ROW_NUMBER() OVER (ORDER BY cache_key) AS rn FROM %s" \
                ") cache WHERE rn = %%s + 1"
 
+    def combine_expression(self, connector, sub_expressions):
+        """
+        SQL Server requires special cases for some operators in query expressions
+        """
+        if connector == '^':
+            return 'POWER(%s)' % ','.join(sub_expressions)
+        return super(DatabaseOperations, self).combine_expression(connector, sub_expressions)
+
     def date_extract_sql(self, lookup_type, field_name):
         """
         Given a lookup_type of 'year', 'month', 'day' or 'week_day', returns
@@ -179,6 +187,9 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def no_limit_value(self):
         return None
+
+    def prepare_sql_script(self, sql, _allow_fallback=False):
+        return [sql]
 
     def quote_name(self, name):
         """

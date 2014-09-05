@@ -23,8 +23,8 @@ from django.utils.functional import cached_property
 from django.utils.six import binary_type, text_type
 from django.utils.timezone import utc
 from django import VERSION as DjangoVersion
-if DjangoVersion[:2] == (1,6):
-    _DJANGO_VERSION = 16
+if DjangoVersion[:2] == (1,7):
+    _DJANGO_VERSION = 17
 else:
     raise ImproperlyConfigured("Django %d.%d is not supported." % DjangoVersion[:2])
 
@@ -41,12 +41,15 @@ from sql_server.pyodbc.operations import DatabaseOperations
 from sql_server.pyodbc.client import DatabaseClient
 from sql_server.pyodbc.creation import DatabaseCreation
 from sql_server.pyodbc.introspection import DatabaseIntrospection
+from sql_server.pyodbc.schema import DatabaseSchemaEditor
 
 EDITION_AZURE_SQL_DB = 5
 
 
 class DatabaseFeatures(BaseDatabaseFeatures):
     allow_sliced_subqueries = False
+    can_introspect_autofield = True
+    can_introspect_small_integer_field = True
     can_return_id_from_insert = True
     can_use_chunked_reads = False
     has_bulk_insert = True
@@ -54,10 +57,13 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     has_select_for_update = True
     has_select_for_update_nowait = True
     has_zoneinfo_database = pytz is not None
-    ignores_nulls_in_unique_constraints = False
     needs_datetime_string_cast = False
+    requires_literal_defaults = True
+    requires_sqlparse_for_splitting = False
     supports_1000_query_parameters = False
+    supports_nullable_unique_constraints = False
     supports_paramstyle_pyformat = 'pyformat' in Database.paramstyle
+    supports_partially_nullable_unique_constraints = False
     supports_regex_backreferencing = False
     supports_sequence_reset = False
     supports_subqueries_in_group_by = False
@@ -152,12 +158,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def get_connection_params(self):
         settings_dict = self.settings_dict
-        if not settings_dict['NAME']:
+        if settings_dict['NAME'] == '':
             from django.core.exceptions import ImproperlyConfigured
             raise ImproperlyConfigured(
                 "settings.DATABASES is improperly configured. "
                 "Please supply the NAME value.")
-        return settings_dict
+        conn_params = settings_dict.copy()
+        if conn_params['NAME'] is None:
+            conn_params['NAME'] = 'master'
+        return conn_params
 
     def get_new_connection(self, conn_params):
         database = conn_params['NAME']
@@ -202,7 +211,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         cstr_parts.append('DATABASE=%s' % database)
 
-        if ms_drivers.match(driver) and not driver == "SQL Server":
+        if ms_drivers.match(driver) and not driver == 'SQL Server':
             self.supports_mars = True
         if self.supports_mars:
             cstr_parts.append('MARS_Connection=yes')
@@ -221,8 +230,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         driver_is_sqlsrv32 = drv_name == 'SQLSRV32.DLL'
         driver_is_snac9 = drv_name == 'SQLNCLI.DLL'
 
-        self.use_legacy_datetime = \
-            driver_is_freetds or driver_is_sqlsrv32 or driver_is_snac9
+        if driver_is_freetds or driver_is_sqlsrv32:
+            self.use_legacy_datetime = True
+            self.supports_mars = False
+        elif driver_is_snac9:
+            self.use_legacy_datetime = True
 
         ms_drv_names = re.compile('^(LIB)?(SQLN?CLI|MSODBCSQL)')
 
@@ -268,6 +280,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             return False
         else:
             return True
+
+    def schema_editor(self, *args, **kwargs):
+        "Returns a new instance of this backend's SchemaEditor"
+        return DatabaseSchemaEditor(self, *args, **kwargs)
 
     @cached_property
     def sql_server_version(self):

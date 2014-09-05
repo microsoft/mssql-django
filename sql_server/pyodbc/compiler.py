@@ -63,11 +63,9 @@ class SQLCompiler(compiler.SQLCompiler):
         # docstring of get_from_clause() for details.
         from_, f_params = self.get_from_clause()
 
-        qn = self.quote_name_unless_alias
-
-        where, w_params = self.query.where.as_sql(qn=qn, connection=self.connection)
-        having, h_params = self.query.having.as_sql(qn=qn, connection=self.connection)
-        having_group_by = self.query.having.get_cols()
+        where, w_params = self.compile(self.query.where)
+        having, h_params = self.compile(self.query.having)
+        having_group_by = self.query.having.get_group_by_cols()
         params = []
         for val in six.itervalues(self.query.extra_select):
             params.extend(val[1])

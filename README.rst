@@ -11,7 +11,7 @@ Microsoft SQL Server and Azure SQL Database.
 Features
 --------
 
--  Supports Django 1.6
+-  Supports Django 1.7
 -  Supports Microsoft SQL Server 2005, 2008/2008R2, 2012, 2014 and
    Azure SQL Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
@@ -22,7 +22,7 @@ Features
 Dependencies
 ------------
 
--  Django 1.6
+-  Django 1.7
 -  pyodbc 3.0 or newer
 
 Installation
@@ -43,10 +43,11 @@ Installation
 Configuration
 -------------
 
-The following database-level settings control the behavior of the backend:
-
 Standard Django settings
 ~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following entries in a database-level settings dictionary
+in DATABASES control the behavior of the backend:
 
 -  ENGINE
 
@@ -81,31 +82,34 @@ Standard Django settings
    Boolean. Set this to False if you want to disable
    Django's transaction management and implement your own.
 
--  TEST_NAME
+and the following entries are also available in the TEST dictionary
+for any given database-level settings dictionary:
+
+-  NAME
 
    String. The name of database to use when running the test suite.
    If the default value (``None``) is used, the test database will use
    the name "test\_" + ``NAME``.
 
--  TEST_COLLATION
+-  COLLATION
 
    String. The collation order to use when creating the test database.
    If the default value (``None``) is used, the test database is assigned
    the default collation of the instance of SQL Server.
 
--  TEST_CREATE
+-  CREATE_DB
 
    Boolean. If it is set to ``False``, the test database won’t be
    automatically created at the beginning of the tests and dropped at the end.
    This is useful not to be charged too much for creating new databases
    in every test when you run tests with Azure SQL Database.
 
--  TEST_DEPENDENCIES
+-  DEPENDENCIES
 
    String. The creation-order dependencies of the database.
    See the official Django documentation for more details.
 
--  TEST_MIRROR
+-  MIRROR
 
    String. The alias of the database that this database should
    mirror during testing. Default value is ``None``.
@@ -168,6 +172,7 @@ Dictionary. Current available keys are:
 
 backend-specific settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~
+
 The following project-level settings also control the behavior of the backend:
 
 -  DATABASE_CONNECTION_POOLING
@@ -200,14 +205,22 @@ Here is an example of the database settings:
     # set this to False if you want to turn off pyodbc's connection pooling
     DATABASE_CONNECTION_POOLING = False
 
+Limitations
+-----------
+
+The following migration features are currently not supported:
+
+- Altering a model field from or to AutoField
+
 Notice
 ------
 
-This version of *django-pyodbc-azure* only supports Django 1.6.
-Specify the old version (1.0.x) at installation if you want to use it
-on Django 1.5 or earlier: ::
+This version of *django-pyodbc-azure* only supports Django 1.7.
+If you want to use it on older versions of Django,
+specify an appropriate version (1.1.x for Django 1.6,
+or 1.0.x for Django 1.5 and earlier) at installation like this: ::
 
-    pip install "django-pyodbc-azure<1.1"
+    pip install "django-pyodbc-azure<1.2"
 
 License
 -------

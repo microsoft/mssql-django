@@ -191,3 +191,143 @@ AND t.name = %s"""
             WHERE kcu.table_name = %s AND tc.constraint_type = 'FOREIGN KEY'""" , [table_name])
         key_columns.extend(cursor.fetchall())
         return key_columns
+
+    def get_constraints(self, cursor, table_name):
+        """
+        Retrieves any constraints or keys (unique, pk, fk, check, index)
+        across one or more columns.
+
+        Returns a dict mapping constraint names to their attributes,
+        where attributes is a dict with keys:
+         * columns: List of columns this covers
+         * primary_key: True if primary key, False otherwise
+         * unique: True if this is a unique constraint, False otherwise
+         * foreign_key: (table, column) of target, or None
+         * check: True if check constraint, False otherwise
+         * index: True if index, False otherwise.
+        """
+        constraints = {}
+        # Loop over the key table, collecting things as constraints
+        # This will get PKs, FKs, and uniques, but not CHECK
+        cursor.execute("""
+            SELECT
+                kc.constraint_name,
+                kc.column_name,
+                tc.constraint_type,
+                fk.referenced_table_name,
+                fk.referenced_column_name
+            FROM information_schema.key_column_usage AS kc
+            INNER JOIN information_schema.table_constraints AS tc ON
+                kc.table_schema = tc.table_schema AND
+                kc.table_name = tc.table_name AND
+                kc.constraint_name = tc.constraint_name
+            LEFT OUTER JOIN (
+                SELECT
+                    ps.name AS table_schema,
+                    pt.name AS table_name,
+                    pc.name AS column_name,
+                    rt.name AS referenced_table_name,
+                    rc.name AS referenced_column_name
+                FROM
+                    sys.foreign_key_columns fkc
+                INNER JOIN sys.tables pt ON
+                    fkc.parent_object_id = pt.object_id
+                INNER JOIN sys.schemas ps ON
+                    pt.schema_id = ps.schema_id
+                INNER JOIN sys.columns pc ON
+                    fkc.parent_object_id = pc.object_id AND
+                    fkc.parent_column_id = pc.column_id
+                INNER JOIN sys.tables rt ON
+                    fkc.referenced_object_id = rt.object_id
+                INNER JOIN sys.schemas rs ON
+                    rt.schema_id = rs.schema_id
+                INNER JOIN sys.columns rc ON
+                    fkc.referenced_object_id = rc.object_id AND
+                    fkc.referenced_column_id = rc.column_id
+            ) fk ON
+                kc.table_schema = fk.table_schema AND
+                kc.table_name = fk.table_name AND
+                kc.column_name = fk.column_name
+            WHERE
+                kc.table_name = %s
+            ORDER BY kc.ordinal_position ASC
+        """, [table_name])
+        for constraint, column, kind, ref_table, ref_column in cursor.fetchall():
+            # If we're the first column, make the record
+            if constraint not in constraints:
+                constraints[constraint] = {
+                    "columns": [],
+                    "primary_key": kind.lower() == "primary key",
+                    "unique": kind.lower() in ["primary key", "unique"],
+                    "foreign_key": (ref_table, ref_column) if kind.lower() == "foreign key" else None,
+                    "check": False,
+                    "index": False,
+                }
+            # Record the details
+            constraints[constraint]['columns'].append(column)
+        # Now get CHECK constraint columns
+        cursor.execute("""
+            SELECT kc.constraint_name, kc.column_name
+            FROM information_schema.constraint_column_usage AS kc
+            JOIN information_schema.table_constraints AS c ON
+                kc.table_schema = c.table_schema AND
+                kc.table_name = c.table_name AND
+                kc.constraint_name = c.constraint_name
+            WHERE
+                c.constraint_type = 'CHECK' AND
+                kc.table_name = %s
+        """, [table_name])
+        for constraint, column in cursor.fetchall():
+            # If we're the first column, make the record
+            if constraint not in constraints:
+                constraints[constraint] = {
+                    "columns": [],
+                    "primary_key": False,
+                    "unique": False,
+                    "foreign_key": None,
+                    "check": True,
+                    "index": False,
+                }
+            # Record the details
+            constraints[constraint]['columns'].append(column)
+        # Now get indexes
+        cursor.execute("""
+            SELECT
+                i.name AS index_name,
+                i.is_unique,
+                i.is_primary_key,
+                c.name AS column_name
+            FROM
+                sys.tables AS t
+            INNER JOIN sys.schemas AS s ON
+                t.schema_id = s.schema_id
+            INNER JOIN sys.indexes AS i ON
+                t.object_id = i.object_id
+            INNER JOIN sys.index_columns AS ic ON
+                i.object_id = ic.object_id AND
+                i.index_id = ic.index_id
+            INNER JOIN sys.columns AS c ON
+                ic.object_id = c.object_id AND
+                ic.column_id = c.column_id
+            WHERE
+                t.name = %s
+            ORDER BY
+                i.index_id ASC,
+                ic.index_column_id ASC
+        """, [table_name])
+        indexes = {}
+        for index, unique, primary, column in cursor.fetchall():
+            if index not in indexes:
+                indexes[index] = {
+                    "columns": [],
+                    "primary_key": primary,
+                    "unique": unique,
+                    "foreign_key": None,
+                    "check": False,
+                    "index": True,
+                }
+            indexes[index]["columns"].append(column)
+        for index, constraint in indexes.items():
+            if index not in constraints:
+                constraints[index] = constraint
+        return constraints
