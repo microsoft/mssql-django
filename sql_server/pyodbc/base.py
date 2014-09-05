@@ -2,10 +2,8 @@
 MS SQL Server database backend for Django.
 """
 import datetime
-import logging
 import os
 import re
-import sys
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -43,8 +41,6 @@ from sql_server.pyodbc.operations import DatabaseOperations
 from sql_server.pyodbc.client import DatabaseClient
 from sql_server.pyodbc.creation import DatabaseCreation
 from sql_server.pyodbc.introspection import DatabaseIntrospection
-
-logger = logging.getLogger('django.db.backends')
 
 EDITION_AZURE_SQL_DB = 5
 
@@ -145,33 +141,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         self.introspection = DatabaseIntrospection(self)
         self.validation = BaseDatabaseValidation(self)
 
-    def close(self):
-        self.validate_thread_sharing()
-        if self.connection is None:
-            return
-        if self.open_cursor:
-            try:
-                self.open_cursor.close()
-            except:
-                pass
-
-        try:
-            self.connection.close()
-        except Database.Error:
-            # In some cases (database restart, network connection lost etc...)
-            # the connection to the database is lost without giving Django a
-            # notification. If we don't set self.connection to None, the error
-            # will occur a every request.
-            logger.warning('pyodbc error while closing the connection.',
-                           exc_info=sys.exc_info())
-            raise
-        finally:
-            self.connection = None
-            self.open_cursor = None
-            self.set_clean()
-
     def create_cursor(self):
-        return CursorWrapper(self._create_cursor(), self)
+        if self.supports_mars:
+            cursor = self._create_cursor()
+        else:
+            if not self.open_cursor or not self.open_cursor.active:
+                self.open_cursor = self._create_cursor()
+            cursor = self.open_cursor
+        return cursor
 
     def get_connection_params(self):
         settings_dict = self.settings_dict
@@ -274,7 +251,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.features.supports_microsecond_precision = False
 
         settings_dict = self.settings_dict
-        cursor = self._create_cursor()
+        cursor = self.create_cursor()
 
         # Set date format for the connection. Also, make sure Sunday is
         # considered the first day of the week (to be consistent with the
@@ -286,8 +263,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def is_usable(self):
         try:
-            # use a pyodbc cursor directly, bypassing Django's utilities.
-            self._create_cursor().execute("SELECT 1")
+            self.create_cursor().execute("SELECT 1")
         except Database.Error:
             return False
         else:
@@ -295,9 +271,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     @cached_property
     def sql_server_version(self):
-        with self.temporary_connection():
-            # use a pyodbc cursor directly, bypassing Django's utilities.
-            cursor = self._create_cursor()
+        with self.temporary_connection() as cursor:
             cursor.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar)")
             ver = cursor.fetchone()[0]
             ver = int(ver.split('.')[0])
@@ -307,24 +281,22 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     @cached_property
     def to_azure_sql_db(self):
-        with self.temporary_connection():
-            # use a pyodbc cursor directly, bypassing Django's utilities.
-            cursor = self._create_cursor()
+        with self.temporary_connection() as cursor:
             cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
             return cursor.fetchone()[0] == EDITION_AZURE_SQL_DB
 
-    def _create_cursor(self):
-        if self.supports_mars:
-            cursor = self.connection.cursor()
-        else:
-            if not self.open_cursor:
-                self.open_cursor = self.connection.cursor()
-            cursor = self.open_cursor
-        return cursor
+    def _close(self):
+        if self.open_cursor:
+            try:
+                self.open_cursor.close()
+            except:
+                pass
+            finally:
+                self.open_cursor = None
+        super(DatabaseWrapper, self)._close()
 
-    def _cursor_closed(self, cursor):
-        if not self.supports_mars:
-            self.open_cursor = None
+    def _create_cursor(self):
+        return CursorWrapper(self.connection.cursor(), self)
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
@@ -358,11 +330,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         pass
 
     def _set_autocommit(self, autocommit):
-        if autocommit:
-            self.connection.commit()
-        else:
-            self.connection.rollback()
-        self.connection.autocommit = autocommit
+        with self.wrap_database_errors:
+            if autocommit:
+                self.connection.commit()
+            else:
+                self.connection.rollback()
+            self.connection.autocommit = autocommit
 
     def check_constraints(self, table_names=None):
         self._execute_foreach('ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL',
@@ -385,6 +358,7 @@ class CursorWrapper(object):
     DB-API 2.0 implementation and b) some common ODBC driver particularities.
     """
     def __init__(self, cursor, connection):
+        self.active = True
         self.cursor = cursor
         self.connection = connection
         self.driver_needs_utf8 = connection.driver_needs_utf8
@@ -392,8 +366,9 @@ class CursorWrapper(object):
         self.last_params = ()
 
     def close(self):
-        self.cursor.close()
-        self.connection._cursor_closed(self)
+        if self.active:
+            self.active = False
+            self.cursor.close()
 
     def format_sql(self, sql, n_params=0):
         if self.driver_needs_utf8 and isinstance(sql, text_type):
