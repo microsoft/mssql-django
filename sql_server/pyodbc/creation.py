@@ -93,10 +93,11 @@ class DatabaseCreation(BaseDatabaseCreation):
             if self.connection.to_azure_sql_db:
                 self.connection.close()
                 self.connection.settings_dict["NAME"] = 'master'
-            cursor = self.connection.cursor()
             self.connection.set_autocommit(True)
             #time.sleep(1) # To avoid "database is being accessed by other users" errors.
-            if not self.connection.to_azure_sql_db:
+            to_azure_sql_db = self.connection.to_azure_sql_db
+            cursor = self.connection.cursor()
+            if not to_azure_sql_db:
                 cursor.execute("ALTER DATABASE %s SET SINGLE_USER WITH ROLLBACK IMMEDIATE " % \
                         self.connection.ops.quote_name(test_database_name))
             cursor.execute("DROP DATABASE %s" % \
