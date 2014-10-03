@@ -143,6 +143,12 @@ Dictionary. Current available keys are:
 
    See http://www.freetds.org/userguide/dsnless.htm for more information.
 
+-  unicode_results
+
+   Boolean. If it is set to ``True``, pyodbc's *unicode_results* feature
+   is activated and strings returned from pyodbc are always Unicode.
+   Default value is ``False``.
+
 -  extra_params
 
    String. Additional parameters for the ODBC connection. The format is
