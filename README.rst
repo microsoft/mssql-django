@@ -1,6 +1,9 @@
 django-pyodbc-azure
 ===================
 
+.. image:: http://img.shields.io/pypi/v/django-pyodbc-azure.svg?style=flat
+    :target: https://pypi.python.org/pypi/django-pyodbc-azure
+
 *django-pyodbc-azure* is a refined fork of
 `django-pyodbc <https://github.com/avidal/django-pyodbc>`__, a
 `Django <http://djangoproject.com/>`__ Microsoft SQL Server external
