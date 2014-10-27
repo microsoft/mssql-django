@@ -23,10 +23,10 @@ from django.utils.functional import cached_property
 from django.utils.six import binary_type, text_type
 from django.utils.timezone import utc
 from django import VERSION as DjangoVersion
-if DjangoVersion[:2] == (1,7):
+if DjangoVersion[:3] >= (1,7,1):
     _DJANGO_VERSION = 17
 else:
-    raise ImproperlyConfigured("Django %d.%d is not supported." % DjangoVersion[:2])
+    raise ImproperlyConfigured("Django %d.%d.%d is not supported." % DjangoVersion[:3])
 
 try:
     import pytz
