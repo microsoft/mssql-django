@@ -23,6 +23,7 @@ setup(
     description='Django backend for Microsoft SQL Server and Azure SQL Database using pyodbc',
     long_description=open('README.rst').read(),
     author='Michiya Takahashi',
+    author_email='michiya.takahashi@gmail.com',
     url='https://github.com/michiya/django-pyodbc-azure',
     license='BSD',
     packages=['sql_server', 'sql_server.pyodbc'],
