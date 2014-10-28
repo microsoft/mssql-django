@@ -3,9 +3,8 @@ try:
 except ImportError:
     from itertools import izip_longest as zip_longest
 
-from django.db.models.sql import compiler, constants
+from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
-from django.db.utils import ProgrammingError
 from django.utils import six
 
 from sql_server.pyodbc.aggregates import AggregateWrapper
@@ -156,19 +155,6 @@ class SQLCompiler(compiler.SQLCompiler):
         self.query.reset_refcounts(self.refcounts_before)
 
         return ' '.join(result), tuple(params)
-
-    def execute_sql(self, result_type=constants.MULTI):
-        try:
-            return super(SQLCompiler, self).execute_sql(result_type)
-        except ProgrammingError as e:
-            # see https://code.google.com/p/pyodbc/issues/detail?id=319
-            if self.connection.driver_is_freetds:
-                if e.args[0] == 'No results.  Previous SQL was not a query.':
-                    if result_type == constants.SINGLE:
-                        return
-                    if result_type == constants.MULTI:
-                        return iter([])
-            raise
 
     def _get_ordering(self, out_cols, allow_aliases=True):
         ordering, o_params, ordering_group_by = self.get_ordering()

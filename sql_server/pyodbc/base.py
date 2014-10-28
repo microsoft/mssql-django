@@ -226,11 +226,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         drv_name = conn.getinfo(Database.SQL_DRIVER_NAME).upper()
 
-        self.driver_is_freetds = drv_name.startswith('LIBTDSODBC')
+        driver_is_freetds = drv_name.startswith('LIBTDSODBC')
         driver_is_sqlsrv32 = drv_name == 'SQLSRV32.DLL'
         driver_is_snac9 = drv_name == 'SQLNCLI.DLL'
 
-        if self.driver_is_freetds or driver_is_sqlsrv32:
+        if driver_is_freetds or driver_is_sqlsrv32:
             self.use_legacy_datetime = True
             self.supports_mars = False
         elif driver_is_snac9:
@@ -248,7 +248,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
         # in multi-statement, so we need to commit the above SQL sentence(s)
         # to avoid this
-        if self.driver_is_freetds and not conn_params['AUTOCOMMIT']:
+        if driver_is_freetds and not conn_params['AUTOCOMMIT']:
             conn.commit()
 
         return conn
