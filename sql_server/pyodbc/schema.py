@@ -71,16 +71,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 rel_fk_names = self._constraint_names(rel.model, [rel.field.column], foreign_key=True)
                 for fk_name in rel_fk_names:
                     self.execute(self._delete_constraint_sql(self.sql_delete_fk, rel.model, fk_name))
-        # Removed an index?
-        if old_field.db_index and not new_field.db_index and not old_field.unique and not (not new_field.unique and old_field.unique):
+        # Removed an index? (no strict check, as multiple indexes are possible)
+        if (old_field.db_index and not new_field.db_index and
+                not old_field.unique and not
+                (not new_field.unique and old_field.unique)):
             # Find the index for this field
             index_names = self._constraint_names(model, [old_field.column], index=True)
-            if strict and len(index_names) != 1:
-                raise ValueError("Found wrong number (%s) of indexes for %s.%s" % (
-                    len(index_names),
-                    model._meta.db_table,
-                    old_field.column,
-                ))
             for index_name in index_names:
                 self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
         # Change check constraints?
@@ -120,42 +116,31 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Default change?
         old_default = self.effective_default(old_field)
         new_default = self.effective_default(new_field)
-        if old_default != new_default:
-            if new_default is None:
-                # SQL Server requires the name of the default constraint
-                result = self.execute(
-                    self._sql_select_default_constraint_name % {
-                        "table": self.quote_value(model._meta.db_table),
-                        "column": self.quote_value(new_field.column),
+        needs_database_default = (
+            old_default != new_default and
+            new_default is not None and
+            not self.skip_default(new_field)
+        )
+        if needs_database_default:
+            if self.connection.features.requires_literal_defaults:
+                # Some databases can't take defaults as a parameter (oracle)
+                # If this is the case, the individual schema backend should
+                # implement prepare_default
+                actions.append((
+                    self.sql_alter_column_default % {
+                        "column": self.quote_name(new_field.column),
+                        "default": self.prepare_default(new_default),
                     },
-                    has_result=True
-                )
-                if result:
-                    actions.append(
-                        self.sql_alter_column_no_default % {
-                        "name": self.quote_name(next(iter(result))),
-                    }
-                )
+                    [],
+                ))
             else:
-                if self.connection.features.requires_literal_defaults:
-                    # Some databases can't take defaults as a parameter (oracle)
-                    # If this is the case, the individual schema backend should
-                    # implement prepare_default
-                    actions.append((
-                        self.sql_alter_column_default % {
-                            "column": self.quote_name(new_field.column),
-                            "default": self.prepare_default(new_default),
-                        },
-                        [],
-                    ))
-                else:
-                    actions.append((
-                        self.sql_alter_column_default % {
-                            "column": self.quote_name(new_field.column),
-                            "default": "%s",
-                        },
-                        [new_default],
-                    ))
+                actions.append((
+                    self.sql_alter_column_default % {
+                        "column": self.quote_name(new_field.column),
+                        "default": "%s",
+                    },
+                    [new_default],
+                ))
         # Nullability change?
         if old_field.null != new_field.null:
             if new_field.null:
@@ -185,7 +170,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 # directly run a (NOT) NULL alteration
                 actions = actions + null_actions
             # Combine actions together if we can (e.g. postgres)
-            if self.connection.features.supports_combined_alters:
+            if self.connection.features.supports_combined_alters and actions:
                 sql, params = tuple(zip(*actions))
                 actions = [(", ".join(sql), reduce(operator.add, params))]
             # Apply those actions
@@ -224,15 +209,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if not old_field.unique and new_field.unique:
             self.execute(self._create_unique_sql(model, [new_field.column]))
         # Added an index?
-        if not old_field.db_index and new_field.db_index and not new_field.unique and not (not old_field.unique and new_field.unique):
-            self.execute(
-                self.sql_create_index % {
-                    "table": self.quote_name(model._meta.db_table),
-                    "name": self._create_index_name(model, [new_field.column], suffix="_uniq"),
-                    "columns": self.quote_name(new_field.column),
-                    "extra": "",
-                }
-            )
+        if (not old_field.db_index and new_field.db_index and
+                not new_field.unique and not
+                (not old_field.unique and new_field.unique)):
+            self.execute(self._create_index_sql(model, [new_field], suffix="_uniq"))
         # Type alteration on primary key? Then we need to alter the column
         # referring to us.
         rels_to_update = []
@@ -295,7 +275,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             )
         # Drop the default if we need to
         # (Django usually does not use in-database defaults)
-        if not self.skip_default(new_field) and new_field.default is not None:
+        if needs_database_default:
             # SQL Server requires the name of the default constraint
             result = self.execute(
                 self._sql_select_default_constraint_name % {
@@ -362,14 +342,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(sql)
         # Add an index, if required
         if field.db_index and not field.unique:
-            self.deferred_sql.append(
-                self.sql_create_index % {
-                    "name": self._create_index_name(model, [field.column], suffix=""),
-                    "table": self.quote_name(model._meta.db_table),
-                    "columns": self.quote_name(field.column),
-                    "extra": "",
-                }
-            )
+            self.deferred_sql.append(self._create_index_sql(model, [field]))
         # Add any FK constraints later
         if field.rel and self.connection.features.supports_foreign_keys and field.db_constraint:
             self.deferred_sql.append(self._create_fk_sql(model, field, "_fk_%(to_table)s_%(to_column)s"))
@@ -403,16 +376,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if col_type_suffix:
                 definition += " %s" % col_type_suffix
             params.extend(extra_params)
-            # Indexes
-            if field.db_index and not field.unique:
-                self.deferred_sql.append(
-                    self.sql_create_index % {
-                        "name": self._create_index_name(model, [field.column], suffix=""),
-                        "table": self.quote_name(model._meta.db_table),
-                        "columns": self.quote_name(field.column),
-                        "extra": "",
-                    }
-                )
             # FK
             if field.rel and field.db_constraint:
                 to_table = field.rel.to._meta.db_table
@@ -445,16 +408,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             "table": self.quote_name(model._meta.db_table),
             "definition": ", ".join(column_sqls)
         }
+        if model._meta.db_tablespace:
+            tablespace_sql = self.connection.ops.tablespace_sql(model._meta.db_tablespace)
+            if tablespace_sql:
+                sql += ' ' + tablespace_sql
+
         self.execute(sql, params)
-        # Add any index_togethers
-        for fields in model._meta.index_together:
-            columns = [model._meta.get_field_by_name(field)[0].column for field in fields]
-            self.execute(self.sql_create_index % {
-                "table": self.quote_name(model._meta.db_table),
-                "name": self._create_index_name(model, columns, suffix="_idx"),
-                "columns": ", ".join(self.quote_name(column) for column in columns),
-                "extra": "",
-            })
+
+        # Add any field index and index_together's (deferred as SQLite3 _remake_table needs it)
+        self.deferred_sql.extend(self._model_indexes_sql(model))
+
         # Make M2M tables
         for field in model._meta.local_many_to_many:
             if field.rel.through._meta.auto_created:
@@ -468,7 +431,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Log the command we're running, then run it
         logger.debug("%s; (params %r)" % (sql, params))
         if self.collect_sql:
-            self.collected_sql.append((sql % tuple(map(self.quote_value, params))) + ";")
+            ending = "" if sql.endswith(";") else ";"
+            if params is not None:
+                self.collected_sql.append((sql % tuple(map(self.quote_value, params))) + ending)
+            else:
+                self.collected_sql.append(sql + ending)
         else:
             with self.connection.cursor() as cursor:
                 cursor.execute(sql, params)

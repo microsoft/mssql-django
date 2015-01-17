@@ -5,7 +5,7 @@ django-pyodbc-azure
     :target: https://pypi.python.org/pypi/django-pyodbc-azure
 
 .. image:: http://img.shields.io/pypi/l/django-pyodbc-azure.svg?style=flat
-    :target: http://opensource.org/licenses/BSD-3-Clause
+    :target: http://opensource.org/licenses/BSD-2-Clause
 
 *django-pyodbc-azure* is a refined fork of
 `django-pyodbc <https://github.com/avidal/django-pyodbc>`__, a
@@ -17,7 +17,7 @@ Microsoft SQL Server and Azure SQL Database.
 Features
 --------
 
--  Supports Django 1.7.1
+-  Supports Django 1.7.3
 -  Supports Microsoft SQL Server 2005, 2008/2008R2, 2012, 2014 and
    Azure SQL Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
@@ -28,7 +28,7 @@ Features
 Dependencies
 ------------
 
--  Django 1.7.1
+-  Django 1.7.3
 -  pyodbc 3.0 or newer
 
 Installation
