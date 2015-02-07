@@ -179,12 +179,12 @@ AND t.name = %s"""
         key_columns = []
         cursor.execute("""
             SELECT kcu.column_name, ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
-            FROM information_schema.constraint_column_usage ccu
+            FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
             LEFT JOIN information_schema.key_column_usage kcu
                 ON ccu.constraint_catalog = kcu.constraint_catalog
                     AND ccu.constraint_schema = kcu.constraint_schema
                     AND ccu.constraint_name = kcu.constraint_name
-            LEFT JOIN information_schema.table_constraints tc
+            LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
                 ON ccu.constraint_catalog = tc.constraint_catalog
                     AND ccu.constraint_schema = tc.constraint_schema
                     AND ccu.constraint_name = tc.constraint_name
@@ -216,8 +216,8 @@ AND t.name = %s"""
                 tc.constraint_type,
                 fk.referenced_table_name,
                 fk.referenced_column_name
-            FROM information_schema.key_column_usage AS kc
-            INNER JOIN information_schema.table_constraints AS tc ON
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS kc
+            INNER JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS tc ON
                 kc.table_schema = tc.table_schema AND
                 kc.table_name = tc.table_name AND
                 kc.constraint_name = tc.constraint_name
@@ -268,8 +268,8 @@ AND t.name = %s"""
         # Now get CHECK constraint columns
         cursor.execute("""
             SELECT kc.constraint_name, kc.column_name
-            FROM information_schema.constraint_column_usage AS kc
-            JOIN information_schema.table_constraints AS c ON
+            FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS kc
+            JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS c ON
                 kc.table_schema = c.table_schema AND
                 kc.table_name = c.table_name AND
                 kc.constraint_name = c.constraint_name
