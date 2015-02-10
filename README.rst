@@ -96,7 +96,7 @@ Standard Django settings
 
 -  TEST_CREATE
 
-   Boolean. If it is set to ``False``, the test database won’t be
+   Boolean. If it is set to ``False``, the test database won't be
    automatically created at the beginning of the tests and dropped at the end.
    This is useful not to be charged too much for creating new databases
    in every test when you run tests with Azure SQL Database.
