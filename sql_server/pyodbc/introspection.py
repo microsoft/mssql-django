@@ -179,12 +179,12 @@ AND t.name = %s"""
         key_columns = []
         cursor.execute("""
             SELECT kcu.column_name, ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
-            FROM information_schema.constraint_column_usage ccu
+            FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
             LEFT JOIN information_schema.key_column_usage kcu
                 ON ccu.constraint_catalog = kcu.constraint_catalog
                     AND ccu.constraint_schema = kcu.constraint_schema
                     AND ccu.constraint_name = kcu.constraint_name
-            LEFT JOIN information_schema.table_constraints tc
+            LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
                 ON ccu.constraint_catalog = tc.constraint_catalog
                     AND ccu.constraint_schema = tc.constraint_schema
                     AND ccu.constraint_name = tc.constraint_name
