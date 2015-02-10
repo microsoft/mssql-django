@@ -180,7 +180,7 @@ AND t.name = %s"""
         cursor.execute("""
             SELECT kcu.column_name, ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
             FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
-            LEFT JOIN information_schema.key_column_usage kcu
+            LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
                 ON ccu.constraint_catalog = kcu.constraint_catalog
                     AND ccu.constraint_schema = kcu.constraint_schema
                     AND ccu.constraint_name = kcu.constraint_name
