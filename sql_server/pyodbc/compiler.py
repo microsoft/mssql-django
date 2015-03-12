@@ -74,7 +74,6 @@ class SQLCompiler(compiler.SQLCompiler):
 
         if self.query.distinct:
             result.append(self.connection.ops.distinct_sql(distinct_fields))
-        params.extend(o_params)
 
         if do_offset:
             if not ordering:
@@ -133,12 +132,14 @@ class SQLCompiler(compiler.SQLCompiler):
             result.append('HAVING %s' % having)
             params.extend(h_params)
 
-        if ordering and not with_col_aliases:
-            result.append('ORDER BY %s' % ', '.join(ordering))
-            if do_offset and not do_offset_emulation:
-                result.append('OFFSET %d ROWS' % low_mark)
-                if do_limit:
-                    result.append('FETCH FIRST %d ROWS ONLY' % (high_mark - low_mark))
+        if ordering:
+            params.extend(o_params)
+            if not with_col_aliases:
+                result.append('ORDER BY %s' % ', '.join(ordering))
+                if do_offset and not do_offset_emulation:
+                    result.append('OFFSET %d ROWS' % low_mark)
+                    if do_limit:
+                        result.append('FETCH FIRST %d ROWS ONLY' % (high_mark - low_mark))
 
         if do_offset_emulation:
             # Construct the final SQL clause, using the initial select SQL
