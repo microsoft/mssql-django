@@ -180,6 +180,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         driver = options.get('driver', default_driver)
         dsn = options.get('dsn', None)
 
+        # unixODBC uses string 'FreeTDS'; iODBC requires full path to lib
+        if driver == 'FreeTDS' or driver.endswith('/libtdsodbc.so'):
+            driver_is_freetds = True
+        else:
+            driver_is_freetds = False
+
         # Microsoft driver names assumed here are:
         # * SQL Server
         # * SQL Native Client
@@ -192,8 +198,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             cstr_parts.append('DSN=%s' % dsn)
         else:
             # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
-            cstr_parts.append('DRIVER={%s}' % driver)
-            if ms_drivers.match(driver) or driver == 'FreeTDS' and \
+            if os.path.isabs(driver):
+                cstr_parts.append('DRIVER=%s' % driver) # iODBC compatible
+            else:
+                cstr_parts.append('DRIVER={%s}' % driver)
+
+            if ms_drivers.match(driver) or driver_is_freetds and \
                 options.get('host_is_server', False):
                 if port:
                     host += ';PORT=%s' % port
