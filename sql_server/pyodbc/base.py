@@ -120,7 +120,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # However, recent versions of FreeTDS and pyodbc (0.91 and 3.0.6 as
         # of writing) are perfectly okay being fed unicode, which is why
         # this option is configurable.
-        self.driver_needs_utf8 = opts.get('driver_needs_utf8', False)
+        if 'driver_needs_utf8' in opts:
+            self.driver_charset = 'utf-8'
+        else:
+            self.driver_charset = opts.get('driver_charset', None)
 
         # data type compatibility to databases created by old django-pyodbc
         self.use_legacy_datetime = opts.get('use_legacy_datetime', False)
@@ -249,7 +252,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         ms_drv_names = re.compile('^(LIB)?(SQLN?CLI|MSODBCSQL)')
 
         if driver_is_sqlsrv32 or ms_drv_names.match(drv_name):
-            self.driver_needs_utf8 = False
+            self.driver_charset = None
 
         # http://msdn.microsoft.com/en-us/library/ms131686.aspx
         if self.supports_mars and ms_drv_names.match(drv_name):
@@ -387,7 +390,7 @@ class CursorWrapper(object):
         self.active = True
         self.cursor = cursor
         self.connection = connection
-        self.driver_needs_utf8 = connection.driver_needs_utf8
+        self.driver_charset = connection.driver_charset
         self.last_sql = ''
         self.last_params = ()
 
@@ -397,10 +400,10 @@ class CursorWrapper(object):
             self.cursor.close()
 
     def format_sql(self, sql, n_params=0):
-        if self.driver_needs_utf8 and isinstance(sql, text_type):
+        if self.driver_charset and isinstance(sql, text_type):
             # FreeTDS (and other ODBC drivers?) doesn't support Unicode
             # yet, so we need to encode the SQL clause itself in utf-8
-            sql = smart_str(sql, 'utf-8')
+            sql = smart_str(sql, self.driver_charset)
 
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
         if n_params > 0:
@@ -412,10 +415,10 @@ class CursorWrapper(object):
         fp = []
         for p in params:
             if isinstance(p, text_type):
-                if self.driver_needs_utf8:
+                if self.driver_charset:
                     # FreeTDS (and other ODBC drivers?) doesn't support Unicode
                     # yet, so we need to encode parameters in utf-8
-                    fp.append(smart_str(p, 'utf-8'))
+                    fp.append(smart_str(p, self.driver_charset))
                 else:
                     fp.append(p)
 
@@ -464,7 +467,7 @@ class CursorWrapper(object):
         Decode data coming from the database if needed and convert rows to tuples
         (pyodbc Rows are not sliceable).
         """
-        if not (settings.USE_TZ or self.driver_needs_utf8):
+        if not (settings.USE_TZ or self.driver_charset):
             return row
 
         for i in range(len(row)):
@@ -472,11 +475,11 @@ class CursorWrapper(object):
             if isinstance(f, datetime.datetime):
                 if settings.USE_TZ:
                     row[i] = f.replace(tzinfo=utc)
-            elif self.driver_needs_utf8:
+            elif self.driver_charset:
                 # FreeTDS (and other ODBC drivers?) doesn't support Unicode
                 # yet, so we need to decode utf-8 data coming from the DB
                 if isinstance(f, binary_type):
-                    row[i] = f.decode('utf-8')
+                    row[i] = f.decode(self.driver_charset)
 
         return row
 
