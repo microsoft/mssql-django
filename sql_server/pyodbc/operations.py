@@ -283,10 +283,10 @@ class DatabaseOperations(BaseDatabaseOperations):
             sql_list.extend(['%s %s %s;' % (style.SQL_KEYWORD('DELETE'), style.SQL_KEYWORD('FROM'),
                              style.SQL_FIELD(self.quote_name(table)) ) for table in tables])
 
-            if self.connection.to_azure_sql_db:
+            if self.connection.to_azure_sql_db and self.connection.sql_server_version < 2014:
                 import warnings
-                warnings.warn("The identity columns will never be reset " \
-                              "on Azure SQL Database.",
+                warnings.warn("Resetting identity columns is not supported " \
+                              "on this versios of Azure SQL Database.",
                               RuntimeWarning)
             else:
                 # Then reset the counters on each table.
