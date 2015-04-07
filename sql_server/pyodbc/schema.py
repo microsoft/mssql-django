@@ -1,8 +1,9 @@
 import binascii
 import datetime
-import operator
 
-from django.db.backends.schema import BaseDatabaseSchemaEditor, logger
+from django.db.backends.base.schema import (
+    BaseDatabaseSchemaEditor, logger, _related_non_m2m_objects,
+)
 from django.db.models.fields import AutoField
 from django.db.models.fields.related import ManyToManyField
 from django.utils import six
@@ -32,7 +33,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_rename_column = "EXEC sp_rename '%(table)s.%(old_column)s', %(new_column)s, 'COLUMN'"
     sql_rename_table = "EXEC sp_rename %(old_table)s, %(new_table)s"
 
-    def _alter_field(self, model, old_field, new_field, old_type, new_type, old_db_params, new_db_params, strict=False):
+    def _alter_field(self, model, old_field, new_field, old_type, new_type,
+                     old_db_params, new_db_params, strict=False):
         """Actually perform a "physical" (non-ManyToMany) field update."""
 
         # the backend doesn't support altering from/to AutoField
@@ -67,10 +69,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Drop incoming FK constraints if we're a primary key and things are going
         # to change.
         if old_field.primary_key and new_field.primary_key and old_type != new_type:
-            for rel in new_field.model._meta.get_all_related_objects():
-                rel_fk_names = self._constraint_names(rel.model, [rel.field.column], foreign_key=True)
+            # '_meta.related_field' also contains M2M reverse fields, these
+            # will be filtered out
+            for rel in _related_non_m2m_objects(new_field.model._meta):
+                rel_fk_names = self._constraint_names(rel.related_model, [rel.field.column], foreign_key=True)
                 for fk_name in rel_fk_names:
-                    self.execute(self._delete_constraint_sql(self.sql_delete_fk, rel.model, fk_name))
+                    self.execute(self._delete_constraint_sql(self.sql_delete_fk, rel.related_model, fk_name))
         # Removed an index? (no strict check, as multiple indexes are possible)
         if (old_field.db_index and not new_field.db_index and
                 not old_field.unique and not
@@ -143,7 +147,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 ))
         # Nullability change?
         if old_field.null != new_field.null:
-            if new_field.null:
+            if (self.connection.features.interprets_empty_strings_as_nulls and
+                    new_field.get_internal_type() in ("CharField", "TextField")):
+                # The field is nullable in the database anyway, leave it alone
+                pass
+            elif new_field.null:
                 null_actions.append((
                     self.sql_alter_column_null % {
                         "column": self.quote_name(new_field.column),
@@ -172,7 +180,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # Combine actions together if we can (e.g. postgres)
             if self.connection.features.supports_combined_alters and actions:
                 sql, params = tuple(zip(*actions))
-                actions = [(", ".join(sql), reduce(operator.add, params))]
+                actions = [(", ".join(sql), sum(params, []))]
             # Apply those actions
             for sql, params in actions:
                 self.execute(
@@ -217,7 +225,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # referring to us.
         rels_to_update = []
         if old_field.primary_key and new_field.primary_key and old_type != new_type:
-            rels_to_update.extend(new_field.model._meta.get_all_related_objects())
+            rels_to_update.extend(_related_non_m2m_objects(new_field.model._meta))
         # Changed to become primary key?
         # Note that we don't detect unsetting of a PK, as we assume another field
         # will always come along and replace it.
@@ -240,14 +248,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 }
             )
             # Update all referencing columns
-            rels_to_update.extend(new_field.model._meta.get_all_related_objects())
+            rels_to_update.extend(_related_non_m2m_objects(new_field.model._meta))
         # Handle our type alters on the other end of rels from the PK stuff above
         for rel in rels_to_update:
             rel_db_params = rel.field.db_parameters(connection=self.connection)
             rel_type = rel_db_params['type']
             self.execute(
                 self.sql_alter_column % {
-                    "table": self.quote_name(rel.model._meta.db_table),
+                    "table": self.quote_name(rel.related_model._meta.db_table),
                     "changes": self.sql_alter_column_type % {
                         "column": self.quote_name(rel.field.column),
                         "type": rel_type,
@@ -261,8 +269,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.execute(self._create_fk_sql(model, new_field, "_fk_%(to_table)s_%(to_column)s"))
         # Rebuild FKs that pointed to us if we previously had to drop them
         if old_field.primary_key and new_field.primary_key and old_type != new_type:
-            for rel in new_field.model._meta.get_all_related_objects():
-                self.execute(self._create_fk_sql(rel.model, rel.field, "_fk"))
+            for rel in new_field.model._meta.related_objects:
+                if not rel.many_to_many:
+                    self.execute(self._create_fk_sql(rel.related_model, rel.field, "_fk"))
         # Does it have check constraints we need to add?
         if old_db_params['check'] != new_db_params['check'] and new_db_params['check']:
             self.execute(
@@ -303,8 +312,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         table instead (for M2M fields)
         """
         # Special-case implicit M2M tables
-        if ((isinstance(field, ManyToManyField) or field.get_internal_type() == 'ManyToManyField') and
-                field.rel.through._meta.auto_created):
+        if field.many_to_many and field.rel.through._meta.auto_created:
             return self.create_model(field.rel.through)
         # Get the column's definition
         definition, params = self.column_sql(model, field, include_default=True)
@@ -398,9 +406,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
                 if autoinc_sql:
                     self.deferred_sql.extend(autoinc_sql)
+
         # Add any unique_togethers
         for fields in model._meta.unique_together:
-            columns = [model._meta.get_field_by_name(field)[0].column for field in fields]
+            columns = [model._meta.get_field(field).column for field in fields]
             column_sqls.append(self.sql_create_table_unique % {
                 "columns": ", ".join(self.quote_name(column) for column in columns),
             })
@@ -413,8 +422,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             tablespace_sql = self.connection.ops.tablespace_sql(model._meta.db_tablespace)
             if tablespace_sql:
                 sql += ' ' + tablespace_sql
-
-        self.execute(sql, params)
+        # Prevent using [] as params, in the case a literal '%' is used in the definition
+        self.execute(sql, params or None)
 
         # Add any field index and index_together's (deferred as SQLite3 _remake_table needs it)
         self.deferred_sql.extend(self._model_indexes_sql(model))
@@ -472,8 +481,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         but for M2Ms may involve deleting a table.
         """
         # Special-case implicit M2M tables
-        if ((isinstance(field, ManyToManyField) or field.get_internal_type() == 'ManyToManyField') and
-                field.rel.through._meta.auto_created):
+        if field.many_to_many and field.rel.through._meta.auto_created:
             return self.delete_model(field.rel.through)
         # It might not actually have a column behind it
         if field.db_parameters(connection=self.connection)['type'] is None:

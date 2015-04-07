@@ -1,9 +1,11 @@
 import datetime
 import time
+import uuid
 
 from django.conf import settings
-from django.db.backends import BaseDatabaseOperations
+from django.db.backends.base.operations import BaseDatabaseOperations
 from django.utils import timezone
+from django.utils.encoding import force_text
 from django.utils.six import string_types
 
 try:
@@ -14,9 +16,6 @@ except ImportError:
 
 class DatabaseOperations(BaseDatabaseOperations):
     compiler_module = 'sql_server.pyodbc.compiler'
-
-    def __init__(self, connection):
-        super(DatabaseOperations, self).__init__(connection)
 
     def _get_utcoffset(self, tzname):
         """
@@ -63,6 +62,18 @@ class DatabaseOperations(BaseDatabaseOperations):
                "ROW_NUMBER() OVER (ORDER BY cache_key) AS rn FROM %s" \
                ") cache WHERE rn = %%s + 1"
 
+    def combine_duration_expression(self, connector, sub_expressions):
+        lhs, rhs = sub_expressions
+        sign = ' * -1' if connector == '-' else ''
+        if lhs.startswith('DATEADD'):
+            col, sql = rhs, lhs
+        else:
+            col, sql = lhs, rhs
+        params = [sign, col]
+        if not sql[7:].find('DATEADD') == -1:
+            params.insert(0, sign)
+        return sql % tuple(params)
+
     def combine_expression(self, connector, sub_expressions):
         """
         SQL Server requires special cases for some operators in query expressions
@@ -70,6 +81,30 @@ class DatabaseOperations(BaseDatabaseOperations):
         if connector == '^':
             return 'POWER(%s)' % ','.join(sub_expressions)
         return super(DatabaseOperations, self).combine_expression(connector, sub_expressions)
+
+    def convert_datefield_value(self, value, expression, connection, context):
+        if value is not None:
+            if self.connection.use_legacy_datetime:
+                if isinstance(value, datetime.datetime):
+                    value = value.date() # extract date
+        return value
+
+    def convert_floatfield_value(self, value, expression, connection, context):
+        if value is not None:
+            value = float(value)
+        return value
+
+    def convert_timefield_value(self, value, expression, connection, context):
+        if value is not None:
+            if self.connection.use_legacy_datetime:
+                if (isinstance(value, datetime.datetime) and value.year == 1900 and value.month == value.day == 1):
+                    value = value.time() # extract time
+        return value
+
+    def convert_uuidfield_value(self, value, expression, connection, context):
+        if value is not None:
+            value = uuid.UUID(value)
+        return value
 
     def date_extract_sql(self, lookup_type, field_name):
         """
@@ -81,20 +116,18 @@ class DatabaseOperations(BaseDatabaseOperations):
         else:
             return "DATEPART(%s, %s)" % (lookup_type, field_name)
 
-    def date_interval_sql(self, sql, connector, timedelta):
+    def date_interval_sql(self, timedelta):
         """
         implements the interval functionality for expressions
         """
-        sign = 1
-        if connector != '+':
-            sign = -1
-        sec = (timedelta.seconds + timedelta.days * 86400) * sign
-        if sec:
-            sql = 'DATEADD(SECOND, %d, CAST(%s AS DATETIME))' % (sec, sql)
-        if timedelta.microseconds and self.connection.sql_server_version >= 2008:
-            sql = 'DATEADD(MICROSECOND, %d, CAST(%s AS DATETIME2))' % \
-                (timedelta.microseconds * sign, sql)
-        return sql
+        sec = timedelta.seconds + timedelta.days * 86400
+        sql = 'DATEADD(second, %d%%s, CAST(%%s AS datetime))' % sec
+        if timedelta.microseconds:
+            if self.connection.use_legacy_datetime:
+                sql = 'DATEADD(millisecond, %d%%s, CAST(%s AS datetime))' % (timedelta.microseconds // 1000, sql)
+            else:
+                sql = 'DATEADD(microsecond, %d%%s, CAST(%s AS datetime2))' % (timedelta.microseconds, sql)
+        return sql, ()
 
     def date_trunc_sql(self, lookup_type, field_name):
         """
@@ -142,6 +175,12 @@ class DatabaseOperations(BaseDatabaseOperations):
         else:
             return 'WITH (ROWLOCK, UPDLOCK)'
 
+    def format_for_duration_arithmetic(self, sql):
+        if self.connection.use_legacy_datetime:
+            return 'DATEADD(millisecond, %s / 1000%%s, CAST(%%s AS datetime))' % sql
+        else:
+            return 'DATEADD(microsecond, %s%%s, CAST(%%s AS datetime2))' % sql
+
     def fulltext_search_sql(self, field_name):
         """
         Returns the SQL WHERE clause to use in order to perform a full-text
@@ -149,6 +188,19 @@ class DatabaseOperations(BaseDatabaseOperations):
         contain a '%s' placeholder for the value being searched against.
         """
         return 'CONTAINS(%s, %%s)' % field_name
+
+    def get_db_converters(self, expression):
+        converters = super(DatabaseOperations, self).get_db_converters(expression)
+        internal_type = expression.output_field.get_internal_type()
+        if internal_type == 'DateField':
+            converters.append(self.convert_datefield_value)
+        if internal_type == 'FloatField':
+            converters.append(self.convert_floatfield_value)
+        if internal_type == 'TimeField':
+            converters.append(self.convert_timefield_value)
+        if internal_type == 'UUIDField':
+            converters.append(self.convert_uuidfield_value)
+        return converters
 
     def last_insert_id(self, cursor, table_name, pk_name):
         """
@@ -177,7 +229,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as bigint)", [table_name])
         return cursor.fetchone()[0]
 
-    def lookup_cast(self, lookup_type):
+    def lookup_cast(self, lookup_type, internal_type=None):
         if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
             return "UPPER(%s)"
         return "%s"
@@ -322,7 +374,6 @@ class DatabaseOperations(BaseDatabaseOperations):
     def prep_for_like_query(self, x):
         """Prepares a value for use in a LIKE query."""
         # http://msdn2.microsoft.com/en-us/library/ms179859.aspx
-        from django.utils.encoding import force_text
         return force_text(x).replace('\\', '\\\\').replace('[', '[[]').replace('%', '[%]').replace('_', '[_]')
 
     def prep_for_iexact_query(self, x):
@@ -334,7 +385,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def value_to_db_datetime(self, value):
         """
-        Transform a datetime value to an object compatible with what is expected
+        Transforms a datetime value to an object compatible with what is expected
         by the backend driver for datetime columns.
         """
         if value is None:
@@ -348,7 +399,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def value_to_db_time(self, value):
         """
-        Transform a time value to an object compatible with what is expected
+        Transforms a time value to an object compatible with what is expected
         by the backend driver for time columns.
         """
         if value is None:
@@ -391,39 +442,3 @@ class DatabaseOperations(BaseDatabaseOperations):
         if not self.connection.features.supports_microsecond_precision:
             bounds = [dt.replace(microsecond=0) for dt in bounds]
         return bounds
-
-    def convert_values(self, value, field):
-        """
-        Coerce the value returned by the database backend into a consistent
-        type that is compatible with the field type.
-
-        In our case, cater for the fact that SQL Server < 2008 has no
-        separate Date and Time data types.
-        """
-        if value is None:
-            return None
-        if field and field.get_internal_type() == 'DateTimeField':
-            return value
-        elif field and field.get_internal_type() == 'DateField':
-            if self.connection.use_legacy_datetime:
-                if isinstance(value, datetime.datetime):
-                    value = value.date() # extract date
-        elif field and field.get_internal_type() == 'TimeField':
-            if self.connection.use_legacy_datetime:
-                if (isinstance(value, datetime.datetime) and value.year == 1900 and value.month == value.day == 1):
-                    value = value.time() # extract time
-        # Some cases (for example when select_related() is used) aren't
-        # caught by the DateField case above and date fields arrive from
-        # the DB as datetime instances.
-        # Implement a workaround stealing the idea from the Oracle
-        # backend. It's not perfect so the same warning applies (i.e. if a
-        # query results in valid date+time values with the time part set
-        # to midnight, this workaround can surprise us by converting them
-        # to the datetime.date Python type).
-        elif isinstance(value, datetime.datetime) and value.hour == value.minute == value.second == value.microsecond == 0:
-            if self.connection.use_legacy_datetime:
-                value = value.date()
-        # Force floats to the correct type
-        elif field and field.get_internal_type() == 'FloatField':
-            value = float(value)
-        return value

@@ -17,7 +17,7 @@ Microsoft SQL Server and Azure SQL Database.
 Features
 --------
 
--  Supports Django 1.7.6
+-  Supports Django 1.8.0
 -  Supports Microsoft SQL Server 2005, 2008/2008R2, 2012, 2014 and
    Azure SQL Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
@@ -28,7 +28,7 @@ Features
 Dependencies
 ------------
 
--  Django 1.7.6
+-  Django 1.8.0
 -  pyodbc 3.0 or newer
 
 Installation
@@ -102,13 +102,6 @@ for any given database-level settings dictionary:
    String. The collation order to use when creating the test database.
    If the default value (``None``) is used, the test database is assigned
    the default collation of the instance of SQL Server.
-
--  CREATE_DB
-
-   Boolean. If it is set to ``False``, the test database won't be
-   automatically created at the beginning of the tests and dropped at the end.
-   This is useful not to be charged too much for creating new databases
-   in every test when you run tests with Azure SQL Database.
 
 -  DEPENDENCIES
 
@@ -220,19 +213,19 @@ Here is an example of the database settings:
 Limitations
 -----------
 
-The following migration features are currently not supported:
+The following features are currently not supported:
 
-- Altering a model field from or to AutoField
+- Altering a model field from or to AutoField at migration
 
 Notice
 ------
 
-This version of *django-pyodbc-azure* only supports Django 1.7.
+This version of *django-pyodbc-azure* only supports Django 1.8.
 If you want to use it on older versions of Django,
-specify an appropriate version (1.1.x for Django 1.6,
-or 1.0.x for Django 1.5 and earlier) at installation like this: ::
+specify an appropriate version number (1.2.x for Django 1.7)
+at installation like this: ::
 
-    pip install "django-pyodbc-azure<1.2"
+    pip install "django-pyodbc-azure<1.8"
 
 License
 -------

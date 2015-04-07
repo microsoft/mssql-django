@@ -1,27 +1,13 @@
-try:
-    from itertools import zip_longest
-except ImportError:
-    from itertools import izip_longest as zip_longest
-
+from django.db.models.expressions import Ref, Value
 from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
+from django.db.utils import DatabaseError
 from django.utils import six
-
-from sql_server.pyodbc.aggregates import AggregateWrapper
 
 
 class SQLCompiler(compiler.SQLCompiler):
 
-    def resolve_columns(self, row, fields=()):
-        index_start = len(list(self.query.extra_select.keys()))
-        values = [self.query.convert_values(v, None, self.connection) for v in row[:index_start]]
-        for value, field in zip_longest(row[index_start:], fields):
-            if field:
-                value = self.query.convert_values(value, field, self.connection)
-            values.append(value)
-        return tuple(values)
-
-    def as_sql(self, with_limits=True, with_col_aliases=False):
+    def as_sql(self, with_limits=True, with_col_aliases=False, subquery=False):
         """
         Creates the SQL for this query. Returns the SQL string and list of
         parameters.
@@ -29,162 +15,181 @@ class SQLCompiler(compiler.SQLCompiler):
         If 'with_limits' is False, any limit/offset information is not included
         in the query.
         """
-        if with_limits and self.query.low_mark == self.query.high_mark:
-            return '', ()
-
-        self._wrap_aggregates()
-
-        self.pre_sql_setup()
-
-        # The do_offset flag indicates whether we need to construct
-        # the SQL needed to use limit/offset w/SQL Server.
-        high_mark = self.query.high_mark
-        low_mark = self.query.low_mark
-        do_limit = with_limits and high_mark is not None
-        do_offset = with_limits and low_mark != 0
-        # SQL Server 2012 or newer supports OFFSET/FETCH clause
-        supports_offset_clause = self.connection.sql_server_version >= 2012
-        do_offset_emulation = do_offset and not supports_offset_clause
-
         # After executing the query, we must get rid of any joins the query
         # setup created. So, take note of alias counts before the query ran.
         # However we do not want to get rid of stuff done in pre_sql_setup(),
         # as the pre_sql_setup will modify query state in a way that forbids
         # another run of it.
-        self.refcounts_before = self.query.alias_refcount.copy()
-        out_cols, s_params = self.get_columns(with_col_aliases or do_offset_emulation)
-        #ordering, o_params, ordering_group_by = self.get_ordering()
-        ordering, o_params, ordering_group_by, offset_params = \
-            self._get_ordering(out_cols, not do_offset_emulation)
+        self.subquery = subquery
+        refcounts_before = self.query.alias_refcount.copy()
+        try:
+            extra_select, order_by, group_by = self.pre_sql_setup()
+            if with_limits and self.query.low_mark == self.query.high_mark:
+                return '', ()
 
-        distinct_fields = self.get_distinct()
+            # The do_offset flag indicates whether we need to construct
+            # the SQL needed to use limit/offset w/SQL Server.
+            high_mark = self.query.high_mark
+            low_mark = self.query.low_mark
+            do_limit = with_limits and high_mark is not None
+            do_offset = with_limits and low_mark != 0
+            # SQL Server 2012 or newer supports OFFSET/FETCH clause
+            supports_offset_clause = self.connection.sql_server_version >= 2012
+            do_offset_emulation = do_offset and not supports_offset_clause
 
-        # This must come after 'select', 'ordering' and 'distinct' -- see
-        # docstring of get_from_clause() for details.
-        from_, f_params = self.get_from_clause()
+            distinct_fields = self.get_distinct()
 
-        where, w_params = self.compile(self.query.where)
-        having, h_params = self.compile(self.query.having)
-        having_group_by = self.query.having.get_group_by_cols()
-        params = []
-        for val in six.itervalues(self.query.extra_select):
-            params.extend(val[1])
+            # This must come after 'select', 'ordering', and 'distinct' -- see
+            # docstring of get_from_clause() for details.
+            from_, f_params = self.get_from_clause()
 
-        result = ['SELECT']
+            where, w_params = self.compile(self.query.where)
+            having, h_params = self.compile(self.query.having)
+            params = []
+            result = ['SELECT']
 
-        if self.query.distinct:
-            result.append(self.connection.ops.distinct_sql(distinct_fields))
+            if self.query.distinct:
+                result.append(self.connection.ops.distinct_sql(distinct_fields))
 
-        if do_offset:
-            if not ordering:
+            # SQL Server requires the keword for limitting at the begenning
+            if do_limit and not do_offset:
+                result.append('TOP %d' % high_mark)
+
+            out_cols = []
+            col_idx = 1
+            for _, (s_sql, s_params), alias in self.select + extra_select:
+                if alias:
+                    s_sql = '%s AS %s' % (s_sql, self.connection.ops.quote_name(alias))
+                elif with_col_aliases:
+                    s_sql = '%s AS %s' % (s_sql, 'Col%d' % col_idx)
+                    col_idx += 1
+                params.extend(s_params)
+                out_cols.append(s_sql)
+
+            # SQL Server requires an order-by clause for offsetting
+            if do_offset:
                 meta = self.query.get_meta()
                 qn = self.quote_name_unless_alias
-                pk = '%s.%s' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))
-                # Special case: pk not in out_cols, use random ordering.
-                if not pk in out_cols:
-                    ordering = [self.connection.ops.random_function_sql()]
-                # XXX: Maybe use group_by field for ordering?
-                #if self.group_by:
-                    #ordering = ['%s.%s ASC' % (qn(self.group_by[0][0]),qn(self.group_by[0][1]))]
-                else:
-                    ordering = ['%s ASC' % pk]
-            if do_offset_emulation:
-                order = ', '.join(ordering)
-                self.ordering_aliases.append('(ROW_NUMBER() OVER (ORDER BY %s)) AS [rn]' % order)
-                ordering = self.connection.ops.force_no_ordering()
-        elif do_limit:
-            result.append('TOP %d' % high_mark)
+                offsetting_order_by = '%s.%s' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))
+                if do_offset_emulation:
+                    if order_by:
+                        ordering = []
+                        for expr, (o_sql, o_params, _) in order_by:
+                            # value_expression in OVER clause cannot refer to
+                            # expressions or aliases in the select list. See:
+                            # http://msdn.microsoft.com/en-us/library/ms189461.aspx
+                            src = next(iter(expr.get_source_expressions()))
+                            if isinstance(src, Ref):
+                                src = next(iter(src.get_source_expressions()))
+                                o_sql, _  = src.as_sql(self, self.connection)
+                                odir = 'DESC' if expr.descending else 'ASC'
+                                o_sql = '%s %s' % (o_sql, odir)
+                            ordering.append(o_sql)
+                            params.extend(o_params)
+                        offsetting_order_by = ', '.join(ordering)
+                        order_by = []
+                    out_cols.append('ROW_NUMBER() OVER (ORDER BY %s) AS [rn]' % offsetting_order_by)
+                elif not order_by:
+                    order_by.append(((None, ('%s ASC' % offsetting_order_by, [], None))))
 
-        result.append(', '.join(out_cols + self.ordering_aliases))
+            result.append(', '.join(out_cols))
 
-        params.extend(s_params)
-        params.extend(self.ordering_params)
-        params.extend(offset_params)
+            result.append('FROM')
+            result.extend(from_)
+            params.extend(f_params)
 
-        result.append('FROM')
-        result.extend(from_)
-        params.extend(f_params)
+            if self.query.select_for_update and self.connection.features.has_select_for_update:
+                if self.connection.get_autocommit():
+                    raise TransactionManagementError(
+                        "select_for_update cannot be used outside of a transaction."
+                    )
 
-        if self.query.select_for_update and self.connection.features.has_select_for_update:
-            if self.connection.get_autocommit():
-                raise TransactionManagementError("select_for_update cannot be used outside of a transaction.")
+                # If we've been asked for a NOWAIT query but the backend does
+                # not support it, raise a DatabaseError otherwise we could get
+                # an unexpected deadlock.
+                nowait = self.query.select_for_update_nowait
+                if nowait and not self.connection.features.has_select_for_update_nowait:
+                    raise DatabaseError('NOWAIT is not supported on this database backend.')
+                result.append(self.connection.ops.for_update_sql(nowait=nowait))
 
-            # If we've been asked for a NOWAIT query but the backend does not support it,
-            # raise a DatabaseError otherwise we could get an unexpected deadlock.
-            nowait = self.query.select_for_update_nowait
-            result.append(self.connection.ops.for_update_sql(nowait=nowait))
+            if where:
+                result.append('WHERE %s' % where)
+                params.extend(w_params)
 
-        if where:
-            result.append('WHERE %s' % where)
-            params.extend(w_params)
+            grouping = []
+            for g_sql, g_params in group_by:
+                grouping.append(g_sql)
+                params.extend(g_params)
+            if grouping:
+                if distinct_fields:
+                    raise NotImplementedError(
+                        "annotate() + distinct(fields) is not implemented.")
+                if not order_by:
+                    order_by = self.connection.ops.force_no_ordering()
+                result.append('GROUP BY %s' % ', '.join(grouping))
 
-        grouping, gb_params = self.get_grouping(having_group_by, ordering_group_by)
-        if grouping:
-            if distinct_fields:
-                raise NotImplementedError(
-                    "annotate() + distinct(fields) not implemented.")
-            if not ordering:
-                ordering = self.connection.ops.force_no_ordering()
-            result.append('GROUP BY %s' % ', '.join(grouping))
-            params.extend(gb_params)
+            if having:
+                result.append('HAVING %s' % having)
+                params.extend(h_params)
 
-        if having:
-            result.append('HAVING %s' % having)
-            params.extend(h_params)
-
-        if ordering:
-            params.extend(o_params)
-            if not with_col_aliases:
+            if order_by:
+                ordering = []
+                for _, (o_sql, o_params, _) in order_by:
+                    ordering.append(o_sql)
+                    params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))
-                if do_offset and not do_offset_emulation:
+
+            # SQL Server requires the backend-specific emulation (2008 or earlier)
+            # or an offset clause (2012 or newer) for offsetting
+            if do_offset:
+                if do_offset_emulation:
+                    # Construct the final SQL clause, using the initial select SQL
+                    # obtained above.
+                    result = ['SELECT * FROM (%s) AS X WHERE X.rn' % ' '.join(result)]
+                    # Place WHERE condition on `rn` for the desired range.
+                    if do_limit:
+                        result.append('BETWEEN %d AND %d' % (low_mark+1, high_mark))
+                    else:
+                        result.append('>= %d' % (low_mark+1))
+                    if not subquery:
+                        result.append('ORDER BY X.rn')
+                else:
                     result.append('OFFSET %d ROWS' % low_mark)
                     if do_limit:
                         result.append('FETCH FIRST %d ROWS ONLY' % (high_mark - low_mark))
 
-        if do_offset_emulation:
-            # Construct the final SQL clause, using the initial select SQL
-            # obtained above.
-            result = ['SELECT * FROM (%s) AS X WHERE X.rn' % ' '.join(result)]
-            # Place WHERE condition on `rn` for the desired range.
-            if do_limit:
-                result.append('BETWEEN %d AND %d' % (low_mark+1, high_mark))
-            else:
-                result.append('>= %d' % (low_mark+1))
-            result.append('ORDER BY X.rn')
+            return ' '.join(result), tuple(params)
+        finally:
+            # Finally do cleanup - get rid of the joins we created above.
+            self.query.reset_refcounts(refcounts_before)
 
-        # Finally do cleanup - get rid of the joins we created above.
-        self.query.reset_refcounts(self.refcounts_before)
+    def compile(self, node, select_format=False):
+        node = self._as_microsoft(node)
+        return super(SQLCompiler, self).compile(node, select_format)
 
-        return ' '.join(result), tuple(params)
-
-    def _get_ordering(self, out_cols, allow_aliases=True):
-        ordering, o_params, ordering_group_by = self.get_ordering()
-        # SQL Server doesn't support grouping by column number
-        grouping = []
-        for group_by in ordering_group_by:
-            try:
-                col_index = int(group_by[0]) - 1
-                grouping.append((out_cols[col_index], group_by[1]))
-            except ValueError:
-                grouping.append(group_by)
-        # value_expression in OVER clause cannot refer to
-        # expressions or aliases in the select list. See:
-        # http://msdn.microsoft.com/en-us/library/ms189461.aspx
-        offset_params = []
-        if not allow_aliases:
-            keys = self.query.extra.keys()
-            for i in range(len(ordering)):
-                order_col, order_dir = ordering[i].split()
-                order_col = order_col.strip('[]')
-                if order_col in keys:
-                    ex = self.query.extra[order_col]
-                    ordering[i] = '%s %s' % (ex[0], order_dir)
-                    offset_params.extend(ex[1])
-        return ordering, o_params, grouping, offset_params
-
-    def _wrap_aggregates(self):
-        for alias, aggregate in self.query.aggregate_select.items():
-            self.query.aggregate_select[alias] = AggregateWrapper(aggregate)
+    def _as_microsoft(self, node):
+        if hasattr(node, 'function'):
+            if node.function == 'AVG':
+                node.template = '%(function)s(CONVERT(float, %(field)s))'
+            elif node.function == 'CONCAT':
+                if self.connection.sql_server_version < 2012:
+                    node.arg_joiner = ' + '
+                    node.template = '%(expressions)s'
+                    node.coalesce()
+            elif node.function == 'LENGTH':
+                node.function = 'LEN'
+            elif node.function == 'STDDEV_SAMP':
+                node.function = 'STDEV'
+            elif node.function == 'STDDEV_POP':
+                node.function = 'STDEVP'
+            elif node.function == 'SUBSTRING':
+                if len(node.get_source_expressions()) < 3:
+                    node.get_source_expressions().append(Value(2147483647))
+            elif node.function == 'VAR_SAMP':
+                node.function = 'VAR'
+            elif node.function == 'VAR_POP':
+                node.function = 'VARP'
+        return node
 
 
 class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
@@ -204,8 +209,10 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
             values_format = 'VALUES (%s)'
             params = values = [
                 [
-                    f.get_db_prep_save(getattr(obj, f.attname) if self.query.raw else f.pre_save(obj, True), connection=self.connection)
-                    for f in fields
+                    f.get_db_prep_save(
+                        getattr(obj, f.attname) if self.query.raw else f.pre_save(obj, True),
+                        connection=self.connection
+                    ) for f in fields
                 ]
                 for obj in self.query.objs
             ]
@@ -257,8 +264,10 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
         return sql
 
+
 class SQLDeleteCompiler(compiler.SQLDeleteCompiler, SQLCompiler):
     pass
+
 
 class SQLUpdateCompiler(compiler.SQLUpdateCompiler, SQLCompiler):
     def as_sql(self):
@@ -267,13 +276,6 @@ class SQLUpdateCompiler(compiler.SQLUpdateCompiler, SQLCompiler):
             sql = '; '.join(['SET NOCOUNT OFF', sql])
         return sql, params
 
+
 class SQLAggregateCompiler(compiler.SQLAggregateCompiler, SQLCompiler):
-    def as_sql(self, qn=None):
-        self._wrap_aggregates()
-        return super(SQLAggregateCompiler, self).as_sql(qn=qn)
-
-class SQLDateCompiler(compiler.SQLDateCompiler, SQLCompiler):
-    pass
-
-class SQLDateTimeCompiler(compiler.SQLDateTimeCompiler, SQLCompiler):
     pass

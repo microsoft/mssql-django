@@ -17,64 +17,67 @@ if pyodbc_ver < (3, 0):
     raise ImproperlyConfigured("pyodbc 3.0 or newer is required; you have %s" % Database.version)
 
 from django.conf import settings
-from django.db.backends import *
+from django.db.backends.base.base import BaseDatabaseWrapper
+from django.db.backends.base.validation import BaseDatabaseValidation
 from django.utils.encoding import smart_str
 from django.utils.functional import cached_property
 from django.utils.six import binary_type, text_type
 from django.utils.timezone import utc
 from django import VERSION as DjangoVersion
-if DjangoVersion[:3] >= (1,7,5):
-    _DJANGO_VERSION = 17
-else:
+if DjangoVersion[:3] < (1,8,0):
     raise ImproperlyConfigured("Django %d.%d.%d is not supported." % DjangoVersion[:3])
-
-try:
-    import pytz
-except ImportError:
-    pytz = None
 
 if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
     if not settings.DATABASE_CONNECTION_POOLING:
         Database.pooling = False
 
-from sql_server.pyodbc.operations import DatabaseOperations
 from sql_server.pyodbc.client import DatabaseClient
 from sql_server.pyodbc.creation import DatabaseCreation
+from sql_server.pyodbc.features import DatabaseFeatures
 from sql_server.pyodbc.introspection import DatabaseIntrospection
+from sql_server.pyodbc.operations import DatabaseOperations
 from sql_server.pyodbc.schema import DatabaseSchemaEditor
 
 EDITION_AZURE_SQL_DB = 5
 
 
-class DatabaseFeatures(BaseDatabaseFeatures):
-    allow_sliced_subqueries = False
-    can_introspect_autofield = True
-    can_introspect_small_integer_field = True
-    can_return_id_from_insert = True
-    can_use_chunked_reads = False
-    has_bulk_insert = True
-    has_real_datatype = True
-    has_select_for_update = True
-    has_select_for_update_nowait = True
-    has_zoneinfo_database = pytz is not None
-    needs_datetime_string_cast = False
-    requires_literal_defaults = True
-    requires_sqlparse_for_splitting = False
-    supports_1000_query_parameters = False
-    supports_nullable_unique_constraints = False
-    supports_paramstyle_pyformat = 'pyformat' in Database.paramstyle
-    supports_partially_nullable_unique_constraints = False
-    supports_regex_backreferencing = False
-    supports_sequence_reset = False
-    supports_subqueries_in_group_by = False
-    supports_tablespaces = True
-    supports_timezones = False
-    supports_transactions = True
-    uses_savepoints = True
-
 class DatabaseWrapper(BaseDatabaseWrapper):
-    _DJANGO_VERSION = _DJANGO_VERSION
     vendor = 'microsoft'
+    # This dictionary maps Field objects to their associated MS SQL column
+    # types, as strings. Column-type strings can contain format strings; they'll
+    # be interpolated against the values of Field.__dict__ before being output.
+    # If a column type is set to None, it won't be included in the output.
+    data_types = {
+        'AutoField':         'int IDENTITY (1, 1)',
+        'BigIntegerField':   'bigint',
+        'BinaryField':       'varbinary(max)',
+        'BooleanField':      'bit',
+        'CharField':         'nvarchar(%(max_length)s)',
+        'CommaSeparatedIntegerField': 'nvarchar(%(max_length)s)',
+        'DateField':         'date',
+        'DateTimeField':     'datetime2',
+        'DecimalField':      'numeric(%(max_digits)s, %(decimal_places)s)',
+        'DurationField':     'bigint',
+        'FileField':         'nvarchar(%(max_length)s)',
+        'FilePathField':     'nvarchar(%(max_length)s)',
+        'FloatField':        'double precision',
+        'IntegerField':      'int',
+        'IPAddressField':    'nvarchar(15)',
+        'GenericIPAddressField': 'nvarchar(39)',
+        'NullBooleanField':  'bit',
+        'OneToOneField':     'int',
+        'PositiveIntegerField': 'int',
+        'PositiveSmallIntegerField': 'smallint',
+        'SlugField':         'nvarchar(%(max_length)s)',
+        'SmallIntegerField': 'smallint',
+        'TextField':         'nvarchar(max)',
+        'TimeField':         'time',
+        'UUIDField':         'char(32)',
+    }
+    data_type_check_constraints = {
+        'PositiveIntegerField': '[%(column)s] >= 0',
+        'PositiveSmallIntegerField': '[%(column)s] >= 0',
+    }
     operators = {
         # Since '=' is used not only for string comparision there is no way
         # to make it case (in)sensitive.
@@ -91,6 +94,28 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'istartswith': "LIKE UPPER(%s) ESCAPE '\\'",
         'iendswith': "LIKE UPPER(%s) ESCAPE '\\'",
     }
+
+    # The patterns below are used to generate SQL pattern lookup clauses when
+    # the right-hand side of the lookup isn't a raw string (it might be an expression
+    # or the result of a bilateral transformation).
+    # In those cases, special characters for LIKE operators (e.g. \, *, _) should be
+    # escaped on database side.
+    #
+    # Note: we use str.format() here for readability as '%' is used as a wildcard for
+    # the LIKE operator.
+    pattern_esc = r"REPLACE(REPLACE(REPLACE({}, '\', '\\'), '%%', '\%%'), '_', '\_')"
+    pattern_ops = {
+        'contains': "LIKE '%%' + {} + '%%'",
+        'icontains': "LIKE '%%' + UPPER({}) + '%%'",
+        'startswith': "LIKE {} + '%%'",
+        'istartswith': "LIKE UPPER({}) + '%%'",
+        'endswith': "LIKE '%%' + {}",
+        'iendswith': "LIKE '%%' + UPPER({})",
+    }
+
+    Database = Database
+    SchemaEditorClass = DatabaseSchemaEditor
+
     _codes_for_networkerror = (
         '08S01',
         '08S02',
@@ -101,8 +126,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         11: 2012,
         12: 2014,
     }
-
-    Database = Database
 
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
@@ -152,12 +175,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def create_cursor(self):
         if self.supports_mars:
-            cursor = self._create_cursor()
+            cursor = self.connection.cursor()
         else:
-            if not self.open_cursor or not self.open_cursor.active:
-                self.open_cursor = self._create_cursor()
+            if not self.open_cursor:
+                self.open_cursor = self.connection.cursor()
             cursor = self.open_cursor
-        return cursor
+        return CursorWrapper(cursor, self)
 
     def get_connection_params(self):
         settings_dict = self.settings_dict
@@ -272,7 +295,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.features.has_bulk_insert = False
 
         if self.use_legacy_datetime:
-            self.creation.use_legacy_datetime()
+            self._use_legacy_datetime()
             self.features.supports_microsecond_precision = False
 
         settings_dict = self.settings_dict
@@ -324,13 +347,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 self.open_cursor = None
         super(DatabaseWrapper, self)._close()
 
-    def _create_cursor(self):
-        return CursorWrapper(self.connection.cursor(), self)
-
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
         if not table_names:
-            table_names = self.introspection.get_table_list(cursor)
+            table_names = self.introspection.table_names(cursor)
         for table_name in table_names:
             cursor.execute(sql % self.ops.quote_name(table_name))
 
@@ -366,6 +386,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 self.connection.rollback()
             self.connection.autocommit = autocommit
 
+    def _use_legacy_datetime(self):
+        for field in ('DateField', 'DateTimeField', 'TimeField'):
+            self.data_types[field] = 'datetime'
+
     def check_constraints(self, table_names=None):
         self._execute_foreach('ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL',
                               table_names)
@@ -381,13 +405,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         #cursor.execute('EXEC sp_msforeachtable "ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL"')
         self.check_constraints()
 
+
 class CursorWrapper(object):
     """
     A wrapper around the pyodbc's cursor that takes in account a) some pyodbc
     DB-API 2.0 implementation and b) some common ODBC driver particularities.
     """
     def __init__(self, cursor, connection):
-        self.active = True
         self.cursor = cursor
         self.connection = connection
         self.driver_charset = connection.driver_charset
@@ -395,8 +419,7 @@ class CursorWrapper(object):
         self.last_params = ()
 
     def close(self):
-        if self.active:
-            self.active = False
+        if self.connection.supports_mars:
             self.cursor.close()
 
     def format_sql(self, sql, n_params=0):

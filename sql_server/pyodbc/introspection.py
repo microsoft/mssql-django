@@ -1,7 +1,11 @@
-from django.db.backends import BaseDatabaseIntrospection, FieldInfo
 import pyodbc as Database
 
+from django.db.backends.base.introspection import (
+    BaseDatabaseIntrospection, FieldInfo, TableInfo,
+)
+
 SQL_AUTOFIELD = -777555
+
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
     # Map type codes to Django Field types.
@@ -32,17 +36,18 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Database.SQL_WVARCHAR:          'TextField',
     }
 
+    ignored_tables = []
+
     def get_table_list(self, cursor):
         """
-        Returns a list of table names in the current database.
+        Returns a list of table and view names in the current database.
         """
-        # TABLES: http://msdn2.microsoft.com/en-us/library/ms186224.aspx
-
-        cursor.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
-        return [row[0] for row in cursor.fetchall()]
-
-        # Or pyodbc specific:
-        #return [row[2] for row in cursor.tables(tableType='TABLE')]
+        sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES'
+        cursor.execute(sql)
+        types = {'BASE TABLE': 't', 'VIEW': 'v'}
+        return [TableInfo(row[0], types.get(row[1]))
+                for row in cursor.fetchall()
+                if row[0] not in self.ignored_tables]
 
     def _is_auto_field(self, cursor, table_name, column_name):
         """
