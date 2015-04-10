@@ -175,12 +175,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def create_cursor(self):
         if self.supports_mars:
-            cursor = self.connection.cursor()
+            cursor = CursorWrapper(self.connection.cursor(), self)
         else:
-            if not self.open_cursor:
-                self.open_cursor = self.connection.cursor()
+            if not self.open_cursor or not self.open_cursor.active:
+                self.open_cursor = CursorWrapper(self.connection.cursor(), self)
             cursor = self.open_cursor
-        return CursorWrapper(cursor, self)
+        return cursor
 
     def get_connection_params(self):
         settings_dict = self.settings_dict
@@ -412,6 +412,7 @@ class CursorWrapper(object):
     DB-API 2.0 implementation and b) some common ODBC driver particularities.
     """
     def __init__(self, cursor, connection):
+        self.active = True
         self.cursor = cursor
         self.connection = connection
         self.driver_charset = connection.driver_charset
@@ -419,7 +420,8 @@ class CursorWrapper(object):
         self.last_params = ()
 
     def close(self):
-        if self.connection.supports_mars:
+        if self.active:
+            self.active = False
             self.cursor.close()
 
     def format_sql(self, sql, params):

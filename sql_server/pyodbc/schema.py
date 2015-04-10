@@ -447,10 +447,15 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             else:
                 self.collected_sql.append(sql + ending)
         else:
-            with self.connection.cursor() as cursor:
-                cursor.execute(sql, params)
-                if has_result:
-                    result = cursor.fetchone()
+            cursor = self.connection.cursor()
+            cursor.execute(sql, params)
+            if has_result:
+                result = cursor.fetchone()
+            # the cursor can be closed only when the driver supports opening
+            # multiple cursors on a connection because the migration command
+            # has already opened a cursor outside this method
+            if self.connection.supports_mars:
+                cursor.close()
         return result
 
     def prepare_default(self, value):
