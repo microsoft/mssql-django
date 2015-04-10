@@ -183,6 +183,23 @@ AND t.name = %s"""
 
         return indexes
 
+    def get_key_columns(self, cursor, table_name):
+        """
+        Returns a list of (column_name, referenced_table_name, referenced_column_name) for all
+        key columns in given table.
+        """
+        key_columns = []
+        cursor.execute("""
+            SELECT c.name AS column_name, rt.name AS referenced_table_name, rc.name AS referenced_column_name
+            FROM sys.foreign_key_columns fk
+            INNER JOIN sys.tables t ON t.object_id = fk.parent_object_id
+            INNER JOIN sys.columns c ON c.object_id = t.object_id AND c.column_id = fk.parent_column_id
+            INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
+            INNER JOIN sys.columns rc ON rc.object_id = rt.object_id AND rc.column_id = fk.referenced_column_id
+            WHERE t.name = %s""", [table_name])
+        key_columns.extend([tuple(row) for row in cursor.fetchall()])
+        return key_columns
+
     #def get_collations_list(self, cursor):
     #    """
     #    Returns list of available collations and theirs descriptions.
