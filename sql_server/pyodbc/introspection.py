@@ -84,24 +84,16 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
             items.append(FieldInfo(*column))
         return items
 
-    def _name_to_index(self, cursor, table_name):
-        """
-        Returns a dictionary of {field_name: field_index} for the given table.
-        Indexes are 0-based.
-        """
-        return dict([(d[0], i) for i, d in enumerate(self.get_table_description(cursor, table_name, identity_check=False))])
-
     def get_relations(self, cursor, table_name):
         """
-        Returns a dictionary of {field_index: (field_index_other_table, other_table)}
-        representing all relationships to the given table. Indexes are 0-based.
+        Returns a dictionary of {field_name: (field_name_other_table, other_table)}
+        representing all relationships to the given table.
         """
         # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
         # CONSTRAINT_TABLE_USAGE:  http://msdn2.microsoft.com/en-us/library/ms179883.aspx
         # REFERENTIAL_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms179987.aspx
         # TABLE_CONSTRAINTS:       http://msdn2.microsoft.com/en-us/library/ms181757.aspx
 
-        table_index = self._name_to_index(cursor, table_name)
         sql = """
 SELECT e.COLUMN_NAME AS column_name,
   c.TABLE_NAME AS referenced_table_name,
@@ -117,8 +109,7 @@ INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
   ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME
 WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         cursor.execute(sql, (table_name,))
-        return dict([(table_index[item[0]], (self._name_to_index(cursor, item[1])[item[2]], item[1]))
-                     for item in cursor.fetchall()])
+        return dict([[item[0], (item[2], item[1])] for item in cursor.fetchall()])
 
     def get_indexes(self, cursor, table_name):
         """
