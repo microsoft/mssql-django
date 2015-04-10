@@ -422,47 +422,48 @@ class CursorWrapper(object):
         if self.connection.supports_mars:
             self.cursor.close()
 
-    def format_sql(self, sql, n_params=0):
+    def format_sql(self, sql, params):
         if self.driver_charset and isinstance(sql, text_type):
             # FreeTDS (and other ODBC drivers?) doesn't support Unicode
             # yet, so we need to encode the SQL clause itself in utf-8
             sql = smart_str(sql, self.driver_charset)
 
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
-        if n_params > 0:
-            sql = sql % tuple('?' * n_params)
+        if params is not None:
+            sql = sql % tuple('?' * len(params))
 
         return sql
 
     def format_params(self, params):
         fp = []
-        for p in params:
-            if isinstance(p, text_type):
-                if self.driver_charset:
-                    # FreeTDS (and other ODBC drivers?) doesn't support Unicode
-                    # yet, so we need to encode parameters in utf-8
-                    fp.append(smart_str(p, self.driver_charset))
+        if params is not None:
+            for p in params:
+                if isinstance(p, text_type):
+                    if self.driver_charset:
+                        # FreeTDS (and other ODBC drivers?) doesn't support Unicode
+                        # yet, so we need to encode parameters in utf-8
+                        fp.append(smart_str(p, self.driver_charset))
+                    else:
+                        fp.append(p)
+
+                elif isinstance(p, binary_type):
+                    fp.append(p)
+
+                elif isinstance(p, type(True)):
+                    if p:
+                        fp.append(1)
+                    else:
+                        fp.append(0)
+
                 else:
                     fp.append(p)
 
-            elif isinstance(p, binary_type):
-                fp.append(p)
-
-            elif isinstance(p, type(True)):
-                if p:
-                    fp.append(1)
-                else:
-                    fp.append(0)
-
-            else:
-                fp.append(p)
-
         return tuple(fp)
 
-    def execute(self, sql, params=()):
+    def execute(self, sql, params=None):
         self.last_sql = sql
+        sql = self.format_sql(sql, params)
         params = self.format_params(params)
-        sql = self.format_sql(sql, len(params))
         self.last_params = params
         try:
             return self.cursor.execute(sql, params)
@@ -473,9 +474,9 @@ class CursorWrapper(object):
     def executemany(self, sql, params_list=()):
         if not params_list:
             return None
-        raw_pll = params_list
+        raw_pll = [p for p in params_list]
+        sql = self.format_sql(sql, raw_pll[0])
         params_list = [self.format_params(p) for p in raw_pll]
-        sql = self.format_sql(sql, len(params_list[0]))
         try:
             return self.cursor.executemany(sql, params_list)
         except Database.Error as e:
