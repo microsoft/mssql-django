@@ -69,9 +69,8 @@ class DatabaseOperations(BaseDatabaseOperations):
             col, sql = rhs, lhs
         else:
             col, sql = lhs, rhs
-        params = [sign, col]
-        if not sql[7:].find('DATEADD') == -1:
-            params.insert(0, sign)
+        params = [sign for _ in range(sql.count('DATEADD'))]
+        params.append(col)
         return sql % tuple(params)
 
     def combine_expression(self, connector, sub_expressions):
@@ -177,9 +176,10 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def format_for_duration_arithmetic(self, sql):
         if self.connection.use_legacy_datetime:
-            return 'DATEADD(millisecond, %s / 1000%%s, CAST(%%s AS datetime))' % sql
+            fmt = 'DATEADD(second, %s / 1000000%%s, DATEADD(millisecond, %s / 1000 %%%%%%%% 1000%%s, CAST(%%s AS datetime)))'
         else:
-            return 'DATEADD(microsecond, %s%%s, CAST(%%s AS datetime2))' % sql
+            fmt = 'DATEADD(second, %s / 1000000%%s, DATEADD(microsecond, %s %%%%%%%% 1000000%%s, CAST(%%s AS datetime2)))'
+        return fmt % (sql, sql)
 
     def fulltext_search_sql(self, field_name):
         """
