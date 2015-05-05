@@ -23,9 +23,7 @@ from django.utils.functional import cached_property
 from django.utils.six import binary_type, text_type
 from django.utils.timezone import utc
 from django import VERSION as DjangoVersion
-if DjangoVersion[:3] >= (1,7,8):
-    _DJANGO_VERSION = 17
-else:
+if DjangoVersion[:3] < (1,7,8):
     raise ImproperlyConfigured("Django %d.%d.%d is not supported." % DjangoVersion[:3])
 
 try:
@@ -73,7 +71,6 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     uses_savepoints = True
 
 class DatabaseWrapper(BaseDatabaseWrapper):
-    _DJANGO_VERSION = _DJANGO_VERSION
     vendor = 'microsoft'
     operators = {
         # Since '=' is used not only for string comparision there is no way
