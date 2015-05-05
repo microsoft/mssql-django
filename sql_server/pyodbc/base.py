@@ -6,6 +6,9 @@ import os
 import re
 
 from django.core.exceptions import ImproperlyConfigured
+from django import VERSION
+if VERSION[:3] < (1,8,1) or VERSION[:2] >= (1,9):
+    raise ImproperlyConfigured("Django %d.%d.%d is not supported." % VERSION[:3])
 
 try:
     import pyodbc as Database
@@ -23,9 +26,6 @@ from django.utils.encoding import smart_str
 from django.utils.functional import cached_property
 from django.utils.six import binary_type, text_type
 from django.utils.timezone import utc
-from django import VERSION as DjangoVersion
-if DjangoVersion[:3] < (1,8,1):
-    raise ImproperlyConfigured("Django %d.%d.%d is not supported." % DjangoVersion[:3])
 
 if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
     if not settings.DATABASE_CONNECTION_POOLING:
