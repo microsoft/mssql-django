@@ -24,7 +24,7 @@ from django.utils.functional import cached_property
 from django.utils.six import binary_type, text_type
 from django.utils.timezone import utc
 from django import VERSION as DjangoVersion
-if DjangoVersion[:3] < (1,8,0):
+if DjangoVersion[:3] < (1,8,1):
     raise ImproperlyConfigured("Django %d.%d.%d is not supported." % DjangoVersion[:3])
 
 if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
