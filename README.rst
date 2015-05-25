@@ -23,7 +23,8 @@ Features
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
 -  Passes most of the tests of the Django test suite.
 -  Compatible with *SQL Server* , *SQL Server Native Client* ,
-   *Micosoft ODBC Driver 11 for SQL Server* and *FreeTDS* ODBC drivers.
+   *Micosoft ODBC Driver 11 for SQL Server on Windows* and
+   *FreeTDS* ODBC drivers.
 
 Dependencies
 ------------
