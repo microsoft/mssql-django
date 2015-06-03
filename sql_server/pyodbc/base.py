@@ -243,13 +243,16 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
             connstr = ';'.join(cstr_parts)
             autocommit = options.get('autocommit', False)
+            connection_timeout = options.get('connection_timeout', 0)
             if self.unicode_results:
                 self.connection = Database.connect(connstr, \
                         autocommit=autocommit, \
-                        unicode_results='True')
+                        unicode_results='True', \
+                        timeout=connection_timeout)
             else:
                 self.connection = Database.connect(connstr, \
-                        autocommit=autocommit)
+                        autocommit=autocommit, \
+                        timeout=connection_timeout)
             connection_created.send(sender=self.__class__, connection=self)
 
         cursor = self.connection.cursor()
