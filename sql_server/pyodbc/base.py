@@ -231,8 +231,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         connstr = ';'.join(cstr_parts)
         unicode_results = options.get('unicode_results', False)
+        connection_timeout = options.get('connection_timeout', 0)
 
-        conn = Database.connect(connstr, unicode_results=unicode_results)
+        conn = Database.connect(connstr,
+                                unicode_results=unicode_results,
+                                timeout=connection_timeout)
 
         drv_name = conn.getinfo(Database.SQL_DRIVER_NAME).upper()
 
