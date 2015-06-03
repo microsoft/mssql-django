@@ -176,6 +176,11 @@ Dictionary. Current available keys are:
    when you use SQL Server 2005, or the outdated ODBC drivers
    (``"FreeTDS"``/``"SQL Server"``/``"SQL Native Client"``).
 
+-  connection_timeout
+
+   Integer. Sets the timeout in seconds for the database connection process.
+   Default value is ``0`` which disables the timeout.
+
 backend-specific settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
