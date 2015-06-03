@@ -23,7 +23,8 @@ Features
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
 -  Passes most of the tests of the Django test suite.
 -  Compatible with *SQL Server* , *SQL Server Native Client* ,
-   *Micosoft ODBC Driver 11 for SQL Server* and *FreeTDS* ODBC drivers.
+   *Micosoft ODBC Driver 11 for SQL Server on Windows* and
+   *FreeTDS* ODBC drivers.
 
 Dependencies
 ------------
@@ -177,6 +178,11 @@ Dictionary. Current available keys are:
    Default value is ``False``, and note that the feature is always activated
    when you use SQL Server 2005, or the outdated ODBC drivers
    (``"FreeTDS"``/``"SQL Server"``/``"SQL Native Client"``).
+
+-  connection_timeout
+
+   Integer. Sets the timeout in seconds for the database connection process.
+   Default value is ``0`` which disables the timeout.
 
 backend-specific settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~
