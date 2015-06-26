@@ -60,7 +60,7 @@ class SQLCompiler(compiler.SQLCompiler):
             for _, (s_sql, s_params), alias in self.select + extra_select:
                 if alias:
                     s_sql = '%s AS %s' % (s_sql, self.connection.ops.quote_name(alias))
-                elif with_col_aliases:
+                elif with_col_aliases or do_offset_emulation:
                     s_sql = '%s AS %s' % (s_sql, 'Col%d' % col_idx)
                     col_idx += 1
                 params.extend(s_params)
