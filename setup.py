@@ -28,7 +28,7 @@ setup(
     license='BSD',
     packages=['sql_server', 'sql_server.pyodbc'],
     install_requires=[
-        'Django>=1.8.1,<1.9',
+        'Django>=1.8.3,<1.9',
         'pyodbc>=3.0',
     ],
     classifiers=CLASSIFIERS,

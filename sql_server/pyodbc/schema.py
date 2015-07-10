@@ -34,11 +34,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_rename_table = "EXEC sp_rename %(old_table)s, %(new_table)s"
 
     def _alter_column_type_sql(self, table, old_field, new_field, new_type):
-        # Keep null property of old field, if it has changed, it will be handled separately
-        if old_field.null:
-            new_type += " NULL"
-        else:
-            new_type += " NOT NULL"
+        new_type = self._set_field_new_type_null_status(old_field, new_type)
         return super(DatabaseSchemaEditor, self)._alter_column_type_sql(table, old_field, new_field, new_type)
 
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
@@ -106,12 +102,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(self._delete_constraint_sql(self.sql_delete_check, model, constraint_name))
         # Have they renamed the column?
         if old_field.column != new_field.column:
-            self.execute(self.sql_rename_column % {
-                "table": self.quote_name(model._meta.db_table),
-                "old_column": self.quote_name(old_field.column),
-                "new_column": self.quote_name(new_field.column),
-                "type": new_type,
-            })
+            self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
         # Next, start accumulating actions to do
         actions = []
         null_actions = []
@@ -319,6 +310,21 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Reset connection if required
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
+
+    def _rename_field_sql(self, table, old_field, new_field, new_type):
+        new_type = self._set_field_new_type_null_status(old_field, new_type)
+        return super(DatabaseSchemaEditor, self)._rename_field_sql(table, old_field, new_field, new_type)
+
+    def _set_field_new_type_null_status(self, field, new_type):
+        """
+        Keep the null property of the old field. If it has changed, it will be
+        handled separately.
+        """
+        if field.null:
+            new_type += " NULL"
+        else:
+            new_type += " NOT NULL"
+        return new_type
 
     def add_field(self, model, field):
         """
