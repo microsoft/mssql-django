@@ -352,7 +352,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
-        if not table_names:
+        if table_names is None:
             table_names = self.introspection.table_names(cursor)
         for table_name in table_names:
             cursor.execute(sql % self.ops.quote_name(table_name))
