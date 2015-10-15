@@ -4,6 +4,7 @@ MS SQL Server database backend for Django.
 import datetime
 import os
 import re
+import time
 
 from django.core.exceptions import ImproperlyConfigured
 from django import VERSION
@@ -126,6 +127,18 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         11: 2012,
         12: 2014,
     }
+
+    _transient_error_numbers = (
+        '4060',
+        '10928',
+        '10929',
+        '40197',
+        '40501',
+        '40613',
+        '49918',
+        '49919',
+        '49920',
+    )
 
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
@@ -257,11 +270,30 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         connstr = ';'.join(cstr_parts)
         unicode_results = options.get('unicode_results', False)
-        connection_timeout = options.get('connection_timeout', 0)
+        timeout = options.get('connection_timeout', 0)
+        retries = options.get('connection_retries', 5)
+        backoff_time = options.get('connection_retry_backoff_time', 5)
 
-        conn = Database.connect(connstr,
-                                unicode_results=unicode_results,
-                                timeout=connection_timeout)
+        conn = None
+        retry_count = 0
+        need_to_retry = False
+        while conn is None:
+            try:
+                conn = Database.connect(connstr,
+                                        unicode_results=unicode_results,
+                                        timeout=timeout)
+            except Exception as e:
+                for error_number in self._transient_error_numbers:
+                    if error_number in e.args[1]:
+                        if error_number in e.args[1] and retry_count < retries:
+                            time.sleep(backoff_time)
+                            need_to_retry = True
+                            retry_count = retry_count + 1
+                        else:
+                            need_to_retry = False
+                        break
+                if not need_to_retry:
+                    raise
 
         drv_name = conn.getinfo(Database.SQL_DRIVER_NAME).upper()
 
@@ -363,7 +395,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 # close the stale connection
                 self.close()
                 # wait a moment for recovery from network error
-                import time
                 time.sleep(self.connection_recovery_interval_msec)
             except:
                 pass

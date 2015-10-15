@@ -181,6 +181,16 @@ Dictionary. Current available keys are:
    Integer. Sets the timeout in seconds for the database connection process.
    Default value is ``0`` which disables the timeout.
 
+-  connection_retries
+
+   Integer. Sets the times to retry the database connection process.
+   Default value is ``5``.
+
+-  connection_retry_backoff_time
+
+   Integer. Sets the back off time in seconds for reries of
+   the database connection process. Default value is ``5``.
+
 backend-specific settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
