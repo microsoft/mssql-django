@@ -128,6 +128,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         12: 2014,
     }
 
+    # https://azure.microsoft.com/en-us/documentation/articles/sql-database-develop-csharp-retry-windows/
     _transient_error_numbers = (
         '4060',
         '10928',
