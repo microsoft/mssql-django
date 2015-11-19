@@ -296,17 +296,28 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 if not need_to_retry:
                     raise
 
-        drv_name = conn.getinfo(Database.SQL_DRIVER_NAME).upper()
+        return conn
 
+    def init_connection_state(self):
+        drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
         driver_is_freetds = drv_name.startswith('LIBTDSODBC')
         driver_is_sqlsrv32 = drv_name == 'SQLSRV32.DLL'
-        driver_is_snac9 = drv_name == 'SQLNCLI.DLL'
 
-        if driver_is_freetds or driver_is_sqlsrv32:
-            self.use_legacy_datetime = True
+        if driver_is_freetds:
             self.supports_mars = False
-        elif driver_is_snac9:
-            self.use_legacy_datetime = True
+            try:
+                drv_ver = self.connection.getinfo(Database.SQL_DRIVER_VER)
+                ver = tuple(map(int, drv_ver.split('.')[:2]))
+                if ver < (0, 95):
+                    # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
+                    # in multi-statement, so we need to commit the above SQL sentence(s)
+                    # to avoid this
+                    self.connection.commit()
+            except:
+                # unknown driver version
+                pass
+        elif driver_is_sqlsrv32:
+            self.supports_mars = False
 
         ms_drv_names = re.compile('^(LIB)?(SQLN?CLI|MSODBCSQL)')
 
@@ -317,22 +328,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if self.supports_mars and ms_drv_names.match(drv_name):
             self.features.can_use_chunked_reads = True
 
-        # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
-        # in multi-statement, so we need to commit the above SQL sentence(s)
-        # to avoid this
-        if driver_is_freetds and not conn_params['AUTOCOMMIT']:
-            conn.commit()
-
-        return conn
-
-    def init_connection_state(self):
         if self.sql_server_version < 2008:
-            self.use_legacy_datetime = True
             self.features.has_bulk_insert = False
-
-        if self.use_legacy_datetime:
-            self._use_legacy_datetime()
-            self.features.supports_microsecond_precision = False
 
         settings_dict = self.settings_dict
         cursor = self.create_cursor()
@@ -344,6 +341,19 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         options = settings_dict.get('OPTIONS', {})
         datefirst = options.get('datefirst', 7)
         cursor.execute('SET DATEFORMAT ymd; SET DATEFIRST %s' % datefirst)
+
+        # http://blogs.msdn.com/b/sqlnativeclient/archive/2008/02/27/microsoft-sql-server-native-client-and-microsoft-sql-server-2008-native-client.aspx
+        try:
+            val = cursor.execute('SELECT SYSDATETIME()').fetchone()[0]
+            if isinstance(val, text_type):
+                # the driver doesn't support the modern datetime types
+                self.use_legacy_datetime = True
+        except:
+            # the server doesn't support the modern datetime types
+            self.use_legacy_datetime = True
+        if self.use_legacy_datetime:
+            self._use_legacy_datetime()
+            self.features.supports_microsecond_precision = False
 
     def is_usable(self):
         try:
@@ -415,10 +425,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def _set_autocommit(self, autocommit):
         with self.wrap_database_errors:
-            if autocommit:
-                self.connection.commit()
-            else:
-                self.connection.rollback()
+            # Any remaining rows must be discarded from the current set
+            # before changing autocommit mode when you use FreeTDS
+            if self.open_cursor and self.open_cursor.active:
+                self.open_cursor.nextset()
             self.connection.autocommit = autocommit
 
     def _use_legacy_datetime(self):
