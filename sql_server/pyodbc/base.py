@@ -148,7 +148,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         # capability for multiple result sets or cursors
         self.supports_mars = False
-        self.open_cursor = None
 
         # Some drivers need unicode encoded as UTF8. If this is left as
         # None, it will be determined based on the driver, namely it'll be
@@ -188,13 +187,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         self.validation = BaseDatabaseValidation(self)
 
     def create_cursor(self):
-        if self.supports_mars:
-            cursor = CursorWrapper(self.connection.cursor(), self)
-        else:
-            if not self.open_cursor or not self.open_cursor.active:
-                self.open_cursor = CursorWrapper(self.connection.cursor(), self)
-            cursor = self.open_cursor
-        return cursor
+        return CursorWrapper(self.connection.cursor(), self)
 
     def get_connection_params(self):
         settings_dict = self.settings_dict
@@ -383,16 +376,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
             return cursor.fetchone()[0] == EDITION_AZURE_SQL_DB
 
-    def _close(self):
-        if self.open_cursor:
-            try:
-                self.open_cursor.close()
-            except:
-                pass
-            finally:
-                self.open_cursor = None
-        super(DatabaseWrapper, self)._close()
-
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
         if table_names is None:
@@ -425,10 +408,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def _set_autocommit(self, autocommit):
         with self.wrap_database_errors:
-            # Any remaining rows must be discarded from the current set
-            # before changing autocommit mode when you use FreeTDS
-            if self.open_cursor and self.open_cursor.active:
-                self.open_cursor.nextset()
             self.connection.autocommit = autocommit
 
     def _use_legacy_datetime(self):
@@ -558,6 +537,9 @@ class CursorWrapper(object):
         row = self.cursor.fetchone()
         if row is not None:
             row = self.format_row(row)
+        # Any remaining rows in the current set must be discarded
+        # before changing autocommit mode when you use FreeTDS
+        self.cursor.nextset()
         return row
 
     def fetchmany(self, chunk):
