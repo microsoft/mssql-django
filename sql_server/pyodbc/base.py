@@ -383,6 +383,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         for table_name in table_names:
             cursor.execute(sql % self.ops.quote_name(table_name))
 
+    def _get_trancount(self):
+        with self.connection.cursor() as cursor:
+            return cursor.execute('SELECT @@TRANCOUNT').fetchone()[0]
+
     def _on_error(self, e):
         if e.args[0] in self._codes_for_networkerror:
             try:
@@ -395,20 +399,33 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.connection = None
 
     def _savepoint(self, sid):
-        cursor = self.cursor()
-        cursor.execute('SELECT @@TRANCOUNT')
-        trancount = cursor.fetchone()[0]
-        if trancount == 0:
-            cursor.execute(self.ops.start_transaction_sql())
-        cursor.execute(self.ops.savepoint_create_sql(sid))
+        with self.cursor() as cursor:
+            cursor.execute('SELECT @@TRANCOUNT')
+            trancount = cursor.fetchone()[0]
+            if trancount == 0:
+                cursor.execute(self.ops.start_transaction_sql())
+            cursor.execute(self.ops.savepoint_create_sql(sid))
 
     def _savepoint_commit(self, sid):
         # SQL Server has no support for partial commit in a transaction
         pass
 
+    def _savepoint_rollback(self, sid):
+        with self.cursor() as cursor:
+            # FreeTDS v0.95 requires TRANCOUNT that is greater than 0
+            cursor.execute('SELECT @@TRANCOUNT')
+            trancount = cursor.fetchone()[0]
+            if trancount > 0:
+                cursor.execute(self.ops.savepoint_rollback_sql(sid))
+
     def _set_autocommit(self, autocommit):
         with self.wrap_database_errors:
-            self.connection.autocommit = autocommit
+            allowed = not autocommit
+            if not allowed:
+                # FreeTDS v0.95 requires TRANCOUNT that is greater than 0
+                allowed = self._get_trancount() > 0
+            if allowed:
+                self.connection.autocommit = autocommit
 
     def _use_legacy_datetime(self):
         for field in ('DateField', 'DateTimeField', 'TimeField'):
