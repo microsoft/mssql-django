@@ -421,13 +421,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def disable_constraint_checking(self):
         # Azure SQL Database doesn't support sp_msforeachtable
         #cursor.execute('EXEC sp_msforeachtable "ALTER TABLE ? NOCHECK CONSTRAINT ALL"')
-        self._execute_foreach('ALTER TABLE %s NOCHECK CONSTRAINT ALL')
-        return True
+        if not self.needs_rollback:
+            self._execute_foreach('ALTER TABLE %s NOCHECK CONSTRAINT ALL')
+        return not self.needs_rollback
 
     def enable_constraint_checking(self):
         # Azure SQL Database doesn't support sp_msforeachtable
         #cursor.execute('EXEC sp_msforeachtable "ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL"')
-        self.check_constraints()
+        if not self.needs_rollback:
+            self.check_constraints()
 
 
 class CursorWrapper(object):
