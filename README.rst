@@ -122,7 +122,7 @@ Dictionary. Current available keys are:
 
 -  driver
 
-   String. ODBC Driver to use (``"SQL Server Native Client 11.0"`` etc).
+   String. ODBC Driver to use (``"ODBC Driver 11 for SQL Server"`` etc).
    See http://msdn.microsoft.com/en-us/library/ms130892.aspx. Default is
    ``"SQL Server"`` on Windows and ``"FreeTDS"`` on other platforms.
 
@@ -173,8 +173,8 @@ Dictionary. Current available keys are:
    (the same behavior as the original ``django-pyodbc``). Otherwise, they
    are mapped to new dedicated data types (``date``, ``time``, ``datetime2``).
    Default value is ``False``, and note that the feature is always activated
-   when you use SQL Server 2005, or the outdated ODBC drivers
-   (``"FreeTDS"``/``"SQL Server"``/``"SQL Native Client"``).
+   when you use SQL Server 2005, or the outdated ODBC drivers (``"FreeTDS"``
+   with TDS protocol v7.2 or earlier/``"SQL Server"``/``"SQL Native Client"``).
 
 -  connection_timeout
 
@@ -218,7 +218,7 @@ Here is an example of the database settings:
             'PORT': '',
 
             'OPTIONS': {
-                'driver': 'SQL Server Native Client 11.0',
+                'driver': 'ODBC Driver 11 for SQL Server',
             },
         },
     }
