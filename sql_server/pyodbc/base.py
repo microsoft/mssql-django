@@ -42,6 +42,27 @@ from sql_server.pyodbc.schema import DatabaseSchemaEditor
 EDITION_AZURE_SQL_DB = 5
 
 
+def encode_connection_string(fields):
+    """Encode dictionary of keys and values as an ODBC connection String.
+
+    See [MS-ODBCSTR] document:
+    https://msdn.microsoft.com/en-us/library/ee208909%28v=sql.105%29.aspx
+    """
+    # As the keys are all provided by us, don't need to encode them as we know
+    # they are ok.
+    return ';'.join(
+        '%s=%s' % (k, encode_value(v))
+        for k, v in fields.items()
+    )
+
+def encode_value(v):
+    """If the value contains a semicolon, or starts with a left curly brace,
+    then enclose it in curly braces and escape all right curly braces.
+    """
+    if ';' in v or v.strip(' ').startswith('{'):
+        return '{%s}' % (v.replace('}', '}}'),)
+    return v
+
 class DatabaseWrapper(BaseDatabaseWrapper):
     vendor = 'microsoft'
     # This dictionary maps Field objects to their associated MS SQL column
@@ -226,43 +247,45 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # * ODBC Driver 11 for SQL Server
         ms_drivers = re.compile('.*SQL (Server$|(Server )?Native Client)')
 
-        cstr_parts = []
+        cstr_parts = {}
         if dsn:
-            cstr_parts.append('DSN=%s' % dsn)
+            cstr_parts['DSN'] = dsn
         else:
             # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
-            if os.path.isabs(driver):
-                cstr_parts.append('DRIVER=%s' % driver) # iODBC compatible
-            else:
-                cstr_parts.append('DRIVER={%s}' % driver)
+            cstr_parts['DRIVER'] = driver
 
             if ms_drivers.match(driver) or driver_is_freetds and \
                 options.get('host_is_server', False):
                 if port:
-                    host += ';PORT=%s' % port
-                cstr_parts.append('SERVER=%s' % host)
+                    cstr_parts['PORT'] = str(port)
+                cstr_parts['SERVER'] = host
             else:
-                cstr_parts.append('SERVERNAME=%s' % host)
+                cstr_parts['SERVERNAME'] = host
 
         if user:
-            cstr_parts.append('UID=%s;PWD=%s' % (user, password))
+            cstr_parts['UID'] = user
+            cstr_parts['PWD'] = password
         else:
             if ms_drivers.match(driver):
-                cstr_parts.append('Trusted_Connection=yes')
+                cstr_parts['Trusted_Connection'] = 'yes'
             else:
-                cstr_parts.append('Integrated Security=SSPI')
+                cstr_parts['Integrated Security'] = 'SSPI'
 
-        cstr_parts.append('DATABASE=%s' % database)
+        cstr_parts['DATABASE'] = database
 
         if ms_drivers.match(driver) and not driver == 'SQL Server':
             self.supports_mars = True
         if self.supports_mars:
-            cstr_parts.append('MARS_Connection=yes')
-                
-        if options.get('extra_params', None):
-            cstr_parts.append(options['extra_params'])
+            cstr_parts['MARS_Connection'] = 'yes'
 
-        connstr = ';'.join(cstr_parts)
+        connstr = encode_connection_string(cstr_parts)
+
+        # extra_params are glued on the end of the string without encoding,
+        # so it's up to the settings writer to make sure they're appropriate -
+        # use encode_connection_string if constructing from external input.
+        if options.get('extra_params', None):
+            connstr += ';' + options['extra_params']
+
         unicode_results = options.get('unicode_results', False)
         timeout = options.get('connection_timeout', 0)
         retries = options.get('connection_retries', 5)
