@@ -175,7 +175,7 @@ class SQLCompiler(compiler.SQLCompiler):
                 if self.connection.sql_server_version < 2012:
                     node.arg_joiner = ' + '
                     node.template = '%(expressions)s'
-                    node.coalesce()
+                    node = node.coalesce()
             elif node.function == 'LENGTH':
                 node.function = 'LEN'
             elif node.function == 'STDDEV_SAMP':
