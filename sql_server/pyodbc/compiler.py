@@ -15,11 +15,8 @@ class SQLCompiler(compiler.SQLCompiler):
         If 'with_limits' is False, any limit/offset information is not included
         in the query.
         """
-        # After executing the query, we must get rid of any joins the query
-        # setup created. So, take note of alias counts before the query ran.
-        # However we do not want to get rid of stuff done in pre_sql_setup(),
-        # as the pre_sql_setup will modify query state in a way that forbids
-        # another run of it.
+        if with_limits and self.query.low_mark == self.query.high_mark:
+            return '', ()
         self.subquery = subquery
         refcounts_before = self.query.alias_refcount.copy()
         try:
@@ -43,8 +40,8 @@ class SQLCompiler(compiler.SQLCompiler):
             # docstring of get_from_clause() for details.
             from_, f_params = self.get_from_clause()
 
-            where, w_params = self.compile(self.query.where)
-            having, h_params = self.compile(self.query.having)
+            where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+            having, h_params = self.compile(self.having) if self.having is not None else ("", [])
             params = []
             result = ['SELECT']
 
@@ -176,6 +173,15 @@ class SQLCompiler(compiler.SQLCompiler):
                     node.arg_joiner = ' + '
                     node.template = '%(expressions)s'
                     node = node.coalesce()
+            # SQL Server does not provide GREATEST/LEAST functions,
+            # so we emulate them with table value constructors
+            # https://msdn.microsoft.com/en-us/library/dd776382.aspx
+            elif node.function == 'GREATEST':
+                node.arg_joiner = '), ('
+                node.template = '(SELECT MAX(value) FROM (VALUES (%(expressions)s)) AS _%(function)s(value))'
+            elif node.function == 'LEAST':
+                node.arg_joiner = '), ('
+                node.template = '(SELECT MIN(value) FROM (VALUES (%(expressions)s)) AS _%(function)s(value))'
             elif node.function == 'LENGTH':
                 node.function = 'LEN'
             elif node.function == 'STDDEV_SAMP':
@@ -205,48 +211,39 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
         if has_fields:
             fields = self.query.fields
-            result.append('(%s)' % ', '.join([qn(f.column) for f in fields]))
+            result.append('(%s)' % ', '.join(qn(f.column) for f in fields))
             values_format = 'VALUES (%s)'
-            params = values = [
-                [
-                    f.get_db_prep_save(
-                        getattr(obj, f.attname) if self.query.raw else f.pre_save(obj, True),
-                        connection=self.connection
-                    ) for f in fields
-                ]
+            value_rows = [
+                [self.prepare_value(field, self.pre_save_val(field, obj)) for field in fields]
                 for obj in self.query.objs
             ]
         else:
             values_format = '%s VALUES'
-            values = [[self.connection.ops.pk_default_value()] for obj in self.query.objs]
-            params = [[]]
+            # An empty object.
+            value_rows = [[self.connection.ops.pk_default_value()] for _ in self.query.objs]
             fields = [None]
-        can_bulk = (not any(hasattr(field, "get_placeholder") for field in fields) and
-            not self.return_id and self.connection.features.has_bulk_insert)
 
-        if can_bulk:
-            placeholders = [["%s"] * len(fields)]
-        else:
-            placeholders = [
-                [self.placeholder(field, v) for field, v in zip(fields, val)]
-                for val in values
-            ]
-            # Oracle Spatial needs to remove some values due to #10888
-            params = self.connection.ops.modify_insert_params(placeholders, params)
+        # Currently the backends just accept values when generating bulk
+        # queries and generate their own placeholders. Doing that isn't
+        # necessary and it should be possible to use placeholders and
+        # expressions in bulk inserts too.
+        can_bulk = (not self.return_id and self.connection.features.has_bulk_insert) and has_fields
+
+        placeholder_rows, param_rows = self.assemble_as_sql(fields, value_rows)
 
         if self.return_id and self.connection.features.can_return_id_from_insert:
             result.insert(0, 'SET NOCOUNT ON')
-            result.append((values_format + ';') % ', '.join(placeholders[0]))
+            result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
             result.append('SELECT CAST(SCOPE_IDENTITY() AS BIGINT)')
-            return [(" ".join(result), tuple(params[0]))]
+            return [(" ".join(result), tuple(param_rows[0]))]
 
         if can_bulk:
-            result.append(self.connection.ops.bulk_insert_sql(fields, len(values)))
-            sql = [(" ".join(result), tuple([v for val in values for v in val]))]
+            result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
+            sql = [(" ".join(result), tuple(p for ps in param_rows for p in ps))]
         else:
             sql = [
                 (" ".join(result + [values_format % ", ".join(p)]), vals)
-                for p, vals in zip(placeholders, params)
+                for p, vals in zip(placeholder_rows, param_rows)
             ]
 
         if has_fields:

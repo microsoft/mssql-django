@@ -17,7 +17,7 @@ Microsoft SQL Server and Azure SQL Database.
 Features
 --------
 
--  Supports Django 1.8.7
+-  Supports Django 1.9
 -  Supports Microsoft SQL Server 2005, 2008/2008R2, 2012, 2014 and
    Azure SQL Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
@@ -29,7 +29,7 @@ Features
 Dependencies
 ------------
 
--  Django 1.8.7
+-  Django 1.9
 -  pyodbc 3.0 or newer
 
 Installation
@@ -236,12 +236,12 @@ The following features are currently not supported:
 Notice
 ------
 
-This version of *django-pyodbc-azure* only supports Django 1.8.
+This version of *django-pyodbc-azure* only supports Django 1.9.
 If you want to use it on older versions of Django,
-specify an appropriate version number (1.2.x for Django 1.7)
+specify an appropriate version number (1.8.x.x for Django 1.8)
 at installation like this: ::
 
-    pip install "django-pyodbc-azure<1.8"
+    pip install "django-pyodbc-azure<1.9"
 
 License
 -------

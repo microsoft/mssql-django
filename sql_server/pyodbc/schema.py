@@ -66,7 +66,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             raise NotImplementedError("the backend doesn't support altering from/to AutoField.")
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
-        if old_field.rel and old_field.db_constraint:
+        if old_field.remote_field and old_field.db_constraint:
             fk_names = self._constraint_names(model, [old_field.column], foreign_key=True)
             if strict and len(fk_names) != 1:
                 raise ValueError("Found wrong number (%s) of foreign key constraints for %s.%s" % (
@@ -288,8 +288,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             for sql, params in other_actions:
                 self.execute(sql, params)
         # Does it have a foreign key?
-        if (new_field.rel and
-                (fks_dropped or not old_field.rel or not old_field.db_constraint) and
+        if (new_field.remote_field and
+                (fks_dropped or not old_field.remote_field or not old_field.db_constraint) and
                 new_field.db_constraint):
             self.execute(self._create_fk_sql(model, new_field, "_fk_%(to_table)s_%(to_column)s"))
         # Rebuild FKs that pointed to us if we previously had to drop them
@@ -353,8 +353,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         table instead (for M2M fields)
         """
         # Special-case implicit M2M tables
-        if field.many_to_many and field.rel.through._meta.auto_created:
-            return self.create_model(field.rel.through)
+        if field.many_to_many and field.remote_field.through._meta.auto_created:
+            return self.create_model(field.remote_field.through)
         # Get the column's definition
         definition, params = self.column_sql(model, field, include_default=True)
         # It might not actually have a column behind it
@@ -395,7 +395,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if field.db_index and not field.unique:
             self.deferred_sql.append(self._create_index_sql(model, [field]))
         # Add any FK constraints later
-        if field.rel and self.connection.features.supports_foreign_keys and field.db_constraint:
+        if field.remote_field and self.connection.features.supports_foreign_keys and field.db_constraint:
             self.deferred_sql.append(self._create_fk_sql(model, field, "_fk_%(to_table)s_%(to_column)s"))
         # Reset connection if required
         if self.connection.features.connection_persists_old_columns:
@@ -428,9 +428,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 definition += " %s" % col_type_suffix
             params.extend(extra_params)
             # FK
-            if field.rel and field.db_constraint:
-                to_table = field.rel.to._meta.db_table
-                to_column = field.rel.to._meta.get_field(field.rel.field_name).column
+            if field.remote_field and field.db_constraint:
+                to_table = field.remote_field.model._meta.db_table
+                to_column = field.remote_field.model._meta.get_field(field.remote_field.field_name).column
                 if self.connection.features.supports_foreign_keys:
                     self.deferred_sql.append(self._create_fk_sql(model, field, "_fk_%(to_table)s_%(to_column)s"))
                 elif self.sql_create_inline_fk:
@@ -449,12 +449,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 if autoinc_sql:
                     self.deferred_sql.extend(autoinc_sql)
 
-        # Add any unique_togethers
+        # Add any unique_togethers (always deferred, as some fields might be
+        # created afterwards, like geometry fields with some backends)
         for fields in model._meta.unique_together:
             columns = [model._meta.get_field(field).column for field in fields]
-            column_sqls.append(self.sql_create_table_unique % {
-                "columns": ", ".join(self.quote_name(column) for column in columns),
-            })
+            self.deferred_sql.append(self._create_unique_sql(model, columns))
         # Make the table
         sql = self.sql_create_table % {
             "table": self.quote_name(model._meta.db_table),
@@ -472,8 +471,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
         # Make M2M tables
         for field in model._meta.local_many_to_many:
-            if field.rel.through._meta.auto_created:
-                self.create_model(field.rel.through)
+            if field.remote_field.through._meta.auto_created:
+                self.create_model(field.remote_field.through)
 
     def delete_model(self, model):
         """
@@ -552,13 +551,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         but for M2Ms may involve deleting a table.
         """
         # Special-case implicit M2M tables
-        if field.many_to_many and field.rel.through._meta.auto_created:
-            return self.delete_model(field.rel.through)
+        if field.many_to_many and field.remote_field.through._meta.auto_created:
+            return self.delete_model(field.remote_field.through)
         # It might not actually have a column behind it
         if field.db_parameters(connection=self.connection)['type'] is None:
             return
         # Drop any FK constraints, MySQL requires explicit deletion
-        if field.rel:
+        if field.remote_field:
             fk_names = self._constraint_names(model, [field.column], foreign_key=True)
             for fk_name in fk_names:
                 self.execute(self._delete_constraint_sql(self.sql_delete_fk, model, fk_name))

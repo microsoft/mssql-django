@@ -4,6 +4,7 @@ import uuid
 
 from django.conf import settings
 from django.db.backends.base.operations import BaseDatabaseOperations
+from django.db.models.functions import Greatest, Least
 from django.utils import timezone
 from django.utils.encoding import force_text
 from django.utils.six import string_types
@@ -46,9 +47,10 @@ class DatabaseOperations(BaseDatabaseOperations):
             size = max_row_values // fields_len
         return size
 
-    def bulk_insert_sql(self, fields, num_values):
-        items_sql = "(%s)" % ", ".join(["%s"] * len(fields))
-        return "VALUES " + ", ".join([items_sql] * num_values)
+    def bulk_insert_sql(self, fields, placeholder_rows):
+        placeholder_rows_sql = (", ".join(row) for row in placeholder_rows)
+        values_sql = ", ".join("(%s)" % sql for sql in placeholder_rows_sql)
+        return "VALUES " + values_sql
 
     def cache_key_culling_sql(self):
         """
@@ -61,6 +63,16 @@ class DatabaseOperations(BaseDatabaseOperations):
         return "SELECT cache_key FROM (SELECT cache_key, " \
                "ROW_NUMBER() OVER (ORDER BY cache_key) AS rn FROM %s" \
                ") cache WHERE rn = %%s + 1"
+
+    def check_expression_support(self, expression):
+        if self.connection.sql_server_version < 2008:
+            # we can't even emulate GREATEST or LEAST
+            unsupported_functions = (Greatest, Least)
+            for f in unsupported_functions:
+                if isinstance(expression, f):
+                    raise NotImplementedError(
+                        'SQL Server has no support for %s function.' %
+                        f.function)
 
     def combine_duration_expression(self, connector, sub_expressions):
         lhs, rhs = sub_expressions
@@ -140,6 +152,17 @@ class DatabaseOperations(BaseDatabaseOperations):
             return "CONVERT(datetime, CONVERT(varchar, DATEPART(year, %s)) + '/' + CONVERT(varchar, DATEPART(month, %s)) + '/01')" % (field_name, field_name)
         if lookup_type == 'day':
             return "CONVERT(datetime, CONVERT(varchar(12), %s, 112))" % field_name
+
+    def datetime_cast_date_sql(self, field_name, tzname):
+        if settings.USE_TZ and not tzname == 'UTC':
+            offset = self._get_utcoffset(tzname)
+            field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
+        params = []
+        if self.connection.use_legacy_datetime:
+            sql = 'CONVERT(datetime, CONVERT(char(10), %s, 101), 101)' % field_name
+        else:
+            sql = 'CAST(%s AS date)' % field_name
+        return sql, params
 
     def datetime_extract_sql(self, lookup_type, field_name, tzname):
         if settings.USE_TZ and not tzname == 'UTC':
@@ -383,7 +406,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         return x
 
-    def value_to_db_datetime(self, value):
+    def adapt_datetimefield_value(self, value):
         """
         Transforms a datetime value to an object compatible with what is expected
         by the backend driver for datetime columns.
@@ -397,7 +420,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             value = value.replace(microsecond=0)
         return value
 
-    def value_to_db_time(self, value):
+    def adapt_timefield_value(self, value):
         """
         Transforms a time value to an object compatible with what is expected
         by the backend driver for time columns.

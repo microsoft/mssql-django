@@ -1,8 +1,12 @@
+from collections import namedtuple
+
 import pyodbc as Database
 
 from django.db.backends.base.introspection import (
     BaseDatabaseIntrospection, FieldInfo, TableInfo,
 )
+
+FieldInfo = namedtuple('FieldInfo', FieldInfo._fields + ('default',))
 
 SQL_AUTOFIELD = -777555
 
@@ -25,6 +29,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Database.SQL_NUMERIC:           'DecimalField',
         Database.SQL_REAL:              'FloatField',
         Database.SQL_SMALLINT:          'SmallIntegerField',
+        Database.SQL_SS_TIME2:          'TimeField',
         Database.SQL_TINYINT:           'SmallIntegerField',
         Database.SQL_TYPE_DATE:         'DateField',
         Database.SQL_TYPE_TIME:         'TimeField',
@@ -87,7 +92,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
 
         # map pyodbc's cursor.columns to db-api cursor description
-        columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10]] for c in cursor.columns(table=table_name)]
+        columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
         items = []
         for column in columns:
             if identity_check and self._is_auto_field(cursor, table_name, column[0]):

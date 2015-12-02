@@ -17,7 +17,6 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     has_select_for_update = True
     has_select_for_update_nowait = True
     has_zoneinfo_database = pytz is not None
-    needs_datetime_string_cast = False
     requires_literal_defaults = True
     requires_sqlparse_for_splitting = False
     supports_1000_query_parameters = False
