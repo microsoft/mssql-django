@@ -184,7 +184,7 @@ class SQLCompiler(compiler.SQLCompiler):
                 node.function = 'STDEVP'
             elif node.function == 'SUBSTRING':
                 if len(node.get_source_expressions()) < 3:
-                    node.get_source_expressions().append(Value(2147483647))
+                    node.get_source_expressions().append(Value(2**31-1))
             elif node.function == 'VAR_SAMP':
                 node.function = 'VAR'
             elif node.function == 'VAR_POP':
