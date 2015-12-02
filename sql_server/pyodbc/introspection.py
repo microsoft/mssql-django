@@ -38,6 +38,19 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
 
     ignored_tables = []
 
+    def get_field_type(self, data_type, description):
+        field_type = super(DatabaseIntrospection, self).get_field_type(data_type, description)
+        # the max nvarchar length is described as 0 or 2**30-1
+        # (it depends on the driver)
+        size = description.internal_size
+        if field_type == 'CharField':
+            if size == 0 or size >= 2**30-1:
+                field_type = "TextField"
+        elif field_type == 'TextField':
+            if size > 0 and size < 2**30-1:
+                field_type = 'CharField'
+        return field_type
+
     def get_table_list(self, cursor):
         """
         Returns a list of table and view names in the current database.
