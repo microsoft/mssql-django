@@ -66,7 +66,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def check_expression_support(self, expression):
         if self.connection.sql_server_version < 2008:
-            # we can't even emulate GREATEST or LEAST
+            # we can't even emulate GREATEST nor LEAST
             unsupported_functions = (Greatest, Least)
             for f in unsupported_functions:
                 if isinstance(expression, f):
@@ -157,12 +157,11 @@ class DatabaseOperations(BaseDatabaseOperations):
         if settings.USE_TZ and not tzname == 'UTC':
             offset = self._get_utcoffset(tzname)
             field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
-        params = []
         if self.connection.use_legacy_datetime:
             sql = 'CONVERT(datetime, CONVERT(char(10), %s, 101), 101)' % field_name
         else:
             sql = 'CAST(%s AS date)' % field_name
-        return sql, params
+        return sql, []
 
     def datetime_extract_sql(self, lookup_type, field_name, tzname):
         if settings.USE_TZ and not tzname == 'UTC':
@@ -217,11 +216,11 @@ class DatabaseOperations(BaseDatabaseOperations):
         internal_type = expression.output_field.get_internal_type()
         if internal_type == 'DateField':
             converters.append(self.convert_datefield_value)
-        if internal_type == 'FloatField':
+        elif internal_type == 'FloatField':
             converters.append(self.convert_floatfield_value)
-        if internal_type == 'TimeField':
+        elif internal_type == 'TimeField':
             converters.append(self.convert_timefield_value)
-        if internal_type == 'UUIDField':
+        elif internal_type == 'UUIDField':
             converters.append(self.convert_uuidfield_value)
         return converters
 
