@@ -100,6 +100,12 @@ class DatabaseOperations(BaseDatabaseOperations):
                     value = value.date() # extract date
         return value
 
+    def convert_datetimefield_value(self, value, expression, connection, context):
+        if value is not None:
+            if settings.USE_TZ:
+                value = timezone.make_aware(value, timezone.utc)
+        return value
+
     def convert_floatfield_value(self, value, expression, connection, context):
         if value is not None:
             value = float(value)
@@ -216,6 +222,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         internal_type = expression.output_field.get_internal_type()
         if internal_type == 'DateField':
             converters.append(self.convert_datefield_value)
+        elif internal_type == 'DateTimeField':
+            converters.append(self.convert_datetimefield_value)
         elif internal_type == 'FloatField':
             converters.append(self.convert_floatfield_value)
         elif internal_type == 'TimeField':
@@ -414,7 +422,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             return None
         if settings.USE_TZ and timezone.is_aware(value):
             # pyodbc donesn't support datetimeoffset
-            value = value.astimezone(timezone.utc)
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
         if not self.connection.features.supports_microsecond_precision:
             value = value.replace(microsecond=0)
         return value
@@ -449,18 +457,18 @@ class DatabaseOperations(BaseDatabaseOperations):
             bounds = super(DatabaseOperations, self).year_lookup_bounds_for_date_field(value)
         return bounds
 
-    def year_lookup_bounds_for_datetime_field(self, value):
-        """
-        Returns a two-elements list with the lower and upper bound to be used
-        with a BETWEEN operator to query a DateTimeField value using a year
-        lookup.
+    #def year_lookup_bounds_for_datetime_field(self, value):
+    #    """
+    #    Returns a two-elements list with the lower and upper bound to be used
+    #    with a BETWEEN operator to query a DateTimeField value using a year
+    #    lookup.
 
-        `value` is an int, containing the looked-up year.
-        """
-        bounds = super(DatabaseOperations, self).year_lookup_bounds_for_datetime_field(value)
-        if settings.USE_TZ:
-            # datetime values are saved as utc with no offset
-            bounds = [dt.astimezone(timezone.utc) for dt in bounds]
-        if not self.connection.features.supports_microsecond_precision:
-            bounds = [dt.replace(microsecond=0) for dt in bounds]
-        return bounds
+    #    `value` is an int, containing the looked-up year.
+    #    """
+    #    bounds = super(DatabaseOperations, self).year_lookup_bounds_for_datetime_field(value)
+    #    if settings.USE_TZ:
+    #        # datetime values are saved as utc with no offset
+    #        bounds = [dt.astimezone(timezone.utc) for dt in bounds]
+    #    if not self.connection.features.supports_microsecond_precision:
+    #        bounds = [dt.replace(microsecond=0) for dt in bounds]
+    #    return bounds

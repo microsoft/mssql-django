@@ -559,20 +559,13 @@ class CursorWrapper(object):
         Decode data coming from the database if needed and convert rows to tuples
         (pyodbc Rows are not sliceable).
         """
-        if not (settings.USE_TZ or self.driver_charset):
-            return row
-
-        for i in range(len(row)):
-            f = row[i]
-            if isinstance(f, datetime.datetime):
-                if settings.USE_TZ:
-                    row[i] = f.replace(tzinfo=utc)
-            elif self.driver_charset:
+        if self.driver_charset:
+            for i in range(len(row)):
+                f = row[i]
                 # FreeTDS (and other ODBC drivers?) doesn't support Unicode
                 # yet, so we need to decode utf-8 data coming from the DB
                 if isinstance(f, binary_type):
                     row[i] = f.decode(self.driver_charset)
-
         return row
 
     def fetchone(self):
