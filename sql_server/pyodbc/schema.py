@@ -535,7 +535,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for particularly tricky backends (defaults are not user-defined, though,
         so this is safe).
         """
-        if isinstance(value, (datetime.date, datetime.time, datetime.datetime)):
+        if isinstance(value, datetime.datetime):
+            if self.connection.use_legacy_datetime:
+                # exclude utc offset from the value
+                return "'%s'" % value.replace(tzinfo=None)
+            else:
+                return "'%s'" % value
+        elif isinstance(value, (datetime.date, datetime.time)):
             return "'%s'" % value
         elif isinstance(value, six.string_types):
             return "'%s'" % value.replace("'", "''")
