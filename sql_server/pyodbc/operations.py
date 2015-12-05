@@ -194,11 +194,11 @@ class DatabaseOperations(BaseDatabaseOperations):
         internal_type = expression.output_field.get_internal_type()
         if internal_type == 'DateField':
             converters.append(self.convert_datefield_value)
-        if internal_type == 'FloatField':
+        elif internal_type == 'FloatField':
             converters.append(self.convert_floatfield_value)
-        if internal_type == 'TimeField':
+        elif internal_type == 'TimeField':
             converters.append(self.convert_timefield_value)
-        if internal_type == 'UUIDField':
+        elif internal_type == 'UUIDField':
             converters.append(self.convert_uuidfield_value)
         return converters
 
