@@ -20,7 +20,7 @@ CLASSIFIERS=[
 
 setup(
     name='django-pyodbc-azure',
-    version='1.8.7.1',
+    version='1.8.7.2',
     description='Django backend for Microsoft SQL Server and Azure SQL Database using pyodbc',
     long_description=open('README.rst').read(),
     author='Michiya Takahashi',
