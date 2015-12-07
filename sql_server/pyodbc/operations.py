@@ -456,19 +456,3 @@ class DatabaseOperations(BaseDatabaseOperations):
         else:
             bounds = super(DatabaseOperations, self).year_lookup_bounds_for_date_field(value)
         return bounds
-
-    #def year_lookup_bounds_for_datetime_field(self, value):
-    #    """
-    #    Returns a two-elements list with the lower and upper bound to be used
-    #    with a BETWEEN operator to query a DateTimeField value using a year
-    #    lookup.
-
-    #    `value` is an int, containing the looked-up year.
-    #    """
-    #    bounds = super(DatabaseOperations, self).year_lookup_bounds_for_datetime_field(value)
-    #    if settings.USE_TZ:
-    #        # datetime values are saved as utc with no offset
-    #        bounds = [dt.astimezone(timezone.utc) for dt in bounds]
-    #    if not self.connection.features.supports_microsecond_precision:
-    #        bounds = [dt.replace(microsecond=0) for dt in bounds]
-    #    return bounds
