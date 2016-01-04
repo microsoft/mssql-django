@@ -15,14 +15,10 @@ class SQLCompiler(compiler.SQLCompiler):
         If 'with_limits' is False, any limit/offset information is not included
         in the query.
         """
-        if with_limits and self.query.low_mark == self.query.high_mark:
-            return '', ()
         self.subquery = subquery
         refcounts_before = self.query.alias_refcount.copy()
         try:
             extra_select, order_by, group_by = self.pre_sql_setup()
-            if with_limits and self.query.low_mark == self.query.high_mark:
-                return '', ()
 
             # The do_offset flag indicates whether we need to construct
             # the SQL needed to use limit/offset w/SQL Server.
