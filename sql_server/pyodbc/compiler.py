@@ -230,7 +230,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         if self.return_id and self.connection.features.can_return_id_from_insert:
             result.insert(0, 'SET NOCOUNT ON')
             result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
-            result.append('SELECT CAST(SCOPE_IDENTITY() AS BIGINT)')
+            result.append('SELECT CAST(SCOPE_IDENTITY() AS integer)')
             return [(" ".join(result), tuple(param_rows[0]))]
 
         if can_bulk:

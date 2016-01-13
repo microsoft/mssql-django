@@ -256,7 +256,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         # @@IDENTITY is not limited to a specific scope.
 
         table_name = self.quote_name(table_name)
-        cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as bigint)", [table_name])
+        cursor.execute("SELECT CAST(IDENT_CURRENT(%s) AS integer)", [table_name])
         return cursor.fetchone()[0]
 
     def lookup_cast(self, lookup_type, internal_type=None):
