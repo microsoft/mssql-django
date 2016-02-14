@@ -133,6 +133,22 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             )
             actions.append(fragment)
             post_actions.extend(other_actions)
+            # Drop unique constraint, SQL Server requires explicit deletion
+            if old_field.unique and new_field.unique:
+                constraint_names = self._constraint_names(model, [old_field.column], unique=True)
+                if strict and len(constraint_names) != 1:
+                    raise ValueError("Found wrong number (%s) of unique constraints for %s.%s" % (
+                        len(constraint_names),
+                        model._meta.db_table,
+                        old_field.column,
+                    ))
+                for constraint_name in constraint_names:
+                    self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
+            # Drop indexes, SQL Server requires explicit deletion
+            elif old_field.db_index and new_field.db_index:
+                index_names = self._constraint_names(model, [old_field.column], index=True)
+                for index_name in index_names:
+                    self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
         # When changing a column NULL constraint to NOT NULL with a given
         # default value, we need to perform 4 steps:
         #  1. Add a default for new incoming writes
@@ -243,6 +259,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 not new_field.unique and not
                 (not old_field.unique and new_field.unique)):
             self.execute(self._create_index_sql(model, [new_field], suffix="_uniq"))
+        # Restore an index, SQL Server requires explicit restoration
+        if old_type != new_type:
+            if old_field.unique and new_field.unique:
+                self.execute(self._create_unique_sql(model, [new_field.column]))
+            elif old_field.db_index and new_field.db_index:
+                self.execute(self._create_index_sql(model, [new_field]))
         # Type alteration on primary key? Then we need to alter the column
         # referring to us.
         rels_to_update = []
@@ -583,6 +605,15 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.sql_delete_pk % {
                     "table": self.quote_name(model._meta.db_table),
                     "name": self.quote_name(pk_name),
+                }
+            )
+        # Drop check constraint, SQL Server requires explicit deletion
+        check_names = self._constraint_names(model, [field.column], check=True)
+        for check_name in check_names:
+            self.execute(
+                self.sql_delete_check % {
+                    "table": self.quote_name(model._meta.db_table),
+                    "name": self.quote_name(check_name),
                 }
             )
         # Delete the column
