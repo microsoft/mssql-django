@@ -607,13 +607,22 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     "name": self.quote_name(pk_name),
                 }
             )
-        # Drop check constraint, SQL Server requires explicit deletion
+        # Drop check constraints, SQL Server requires explicit deletion
         check_names = self._constraint_names(model, [field.column], check=True)
         for check_name in check_names:
             self.execute(
                 self.sql_delete_check % {
                     "table": self.quote_name(model._meta.db_table),
                     "name": self.quote_name(check_name),
+                }
+            )
+        # Drop unique constraints, SQL Server requires explicit deletion
+        unique_names = self._constraint_names(model, [field.column], unique=True)
+        for unique_name in unique_names:
+            self.execute(
+                self.sql_delete_unique % {
+                    "table": self.quote_name(model._meta.db_table),
+                    "name": self.quote_name(unique_name),
                 }
             )
         # Delete the column
