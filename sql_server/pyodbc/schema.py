@@ -205,6 +205,22 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     },
                     [],
                 ))
+                # Drop unique constraint, SQL Server requires explicit deletion
+                if old_field.unique and new_field.unique:
+                    constraint_names = self._constraint_names(model, [old_field.column], unique=True)
+                    if strict and len(constraint_names) != 1:
+                        raise ValueError("Found wrong number (%s) of unique constraints for %s.%s" % (
+                            len(constraint_names),
+                            model._meta.db_table,
+                            old_field.column,
+                        ))
+                    for constraint_name in constraint_names:
+                        self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
+                # Drop indexes, SQL Server requires explicit deletion
+                elif old_field.db_index and new_field.db_index:
+                    index_names = self._constraint_names(model, [old_field.column], index=True)
+                    for index_name in index_names:
+                        self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
             new_field.has_default() and
@@ -260,7 +276,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 (not old_field.unique and new_field.unique)):
             self.execute(self._create_index_sql(model, [new_field], suffix="_uniq"))
         # Restore an index, SQL Server requires explicit restoration
-        if old_type != new_type:
+        if old_type != new_type or (old_field.null and not new_field.null):
             if old_field.unique and new_field.unique:
                 self.execute(self._create_unique_sql(model, [new_field.column]))
             elif old_field.db_index and new_field.db_index:
