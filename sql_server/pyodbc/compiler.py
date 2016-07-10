@@ -87,10 +87,6 @@ class SQLCompiler(compiler.SQLCompiler):
 
             result.append(', '.join(out_cols))
 
-            result.append('FROM')
-            result.extend(from_)
-            params.extend(f_params)
-
             if self.query.select_for_update and self.connection.features.has_select_for_update:
                 if self.connection.get_autocommit():
                     raise TransactionManagementError(
@@ -103,7 +99,11 @@ class SQLCompiler(compiler.SQLCompiler):
                 nowait = self.query.select_for_update_nowait
                 if nowait and not self.connection.features.has_select_for_update_nowait:
                     raise DatabaseError('NOWAIT is not supported on this database backend.')
-                result.append(self.connection.ops.for_update_sql(nowait=nowait))
+                from_.insert(1, self.connection.ops.for_update_sql(nowait=nowait))
+
+            result.append('FROM')
+            result.extend(from_)
+            params.extend(f_params)
 
             if where:
                 result.append('WHERE %s' % where)
