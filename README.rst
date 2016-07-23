@@ -22,9 +22,11 @@ Features
    Azure SQL Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
 -  Passes most of the tests of the Django test suite.
--  Compatible with *SQL Server* , *SQL Server Native Client* ,
-   *Micosoft ODBC Driver 11 for SQL Server on Windows* and
-   *FreeTDS* ODBC drivers.
+-  Compatible with
+   `Micosoft ODBC Driver for SQL Server <https://msdn.microsoft.com/library/mt654048(v=sql.1).aspx>`__,
+   `SQL Server Native Client <https://msdn.microsoft.com/library/ms130892(v=sql.120).aspx>`__,
+   `SQL Server <https://msdn.microsoft.com/library/aa968814(vs.85).aspx>`__
+   and `FreeTDS <http://www.freetds.org/>`__ ODBC drivers.
 
 Dependencies
 ------------
