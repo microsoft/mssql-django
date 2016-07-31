@@ -1,7 +1,6 @@
 """
 MS SQL Server database backend for Django.
 """
-import datetime
 import os
 import re
 import time
