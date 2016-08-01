@@ -1,8 +1,45 @@
+from django.db.models.aggregates import Avg, Count, StdDev, Variance
 from django.db.models.expressions import Ref, Value
+from django.db.models.functions import ConcatPair, Length, Substr
 from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
 from django.db.utils import DatabaseError
 from django.utils import six
+
+
+def _as_sql_agv(self, compiler, connection):
+    return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
+
+def _as_sql_concatpair(self, compiler, connection):
+    if connection.sql_server_version < 2012:
+        node = self.coalesce()
+        node.arg_joiner = ' + '
+        return node.as_sql(compiler, connection, template='%(expressions)s')
+    else:
+        return self.as_sql(compiler, connection)
+
+def _as_sql_count(self, compiler, connection):
+    return self.as_sql(compiler, connection, function='COUNT_BIG')
+
+def _as_sql_length(self, compiler, connection):
+    return self.as_sql(compiler, connection, function='LEN')
+
+def _as_sql_stddev(self, compiler, connection):
+    function = 'STDEV'
+    if self.function == 'STDDEV_POP':
+        function = '%sP' % function
+    return self.as_sql(compiler, connection, function=function)
+
+def _as_sql_substr(self, compiler, connection):
+    if len(self.get_source_expressions()) < 3:
+        self.get_source_expressions().append(Value(2**31-1))
+    return self.as_sql(compiler, connection)
+
+def _as_sql_variance(self, compiler, connection):
+    function = 'VAR'
+    if self.function == 'VAR_POP':
+        function = '%sP' % function
+    return self.as_sql(compiler, connection, function=function)
 
 
 class SQLCompiler(compiler.SQLCompiler):
@@ -168,27 +205,24 @@ class SQLCompiler(compiler.SQLCompiler):
         return super(SQLCompiler, self).compile(node, select_format)
 
     def _as_microsoft(self, node):
-        if hasattr(node, 'function'):
-            if node.function == 'AVG':
-                node.template = '%(function)s(CONVERT(float, %(field)s))'
-            elif node.function == 'CONCAT':
-                if self.connection.sql_server_version < 2012:
-                    node.arg_joiner = ' + '
-                    node.template = '%(expressions)s'
-                    node = node.coalesce()
-            elif node.function == 'LENGTH':
-                node.function = 'LEN'
-            elif node.function == 'STDDEV_SAMP':
-                node.function = 'STDEV'
-            elif node.function == 'STDDEV_POP':
-                node.function = 'STDEVP'
-            elif node.function == 'SUBSTRING':
-                if len(node.get_source_expressions()) < 3:
-                    node.get_source_expressions().append(Value(2**31-1))
-            elif node.function == 'VAR_SAMP':
-                node.function = 'VAR'
-            elif node.function == 'VAR_POP':
-                node.function = 'VARP'
+        as_microsoft = None
+        if isinstance(node, Avg):
+            as_microsoft = _as_sql_agv
+        elif isinstance(node, ConcatPair):
+            as_microsoft = _as_sql_concatpair
+        elif isinstance(node, Count):
+            as_microsoft = _as_sql_count
+        elif isinstance(node, Length):
+            as_microsoft = _as_sql_length
+        elif isinstance(node, StdDev):
+            as_microsoft = _as_sql_stddev
+        elif isinstance(node, Substr):
+            as_microsoft = _as_sql_substr
+        elif isinstance(node, Variance):
+            as_microsoft = _as_sql_variance
+        if as_microsoft:
+            node = node.copy()
+            node.as_microsoft = six.create_bound_method(as_microsoft, node)
         return node
 
 
