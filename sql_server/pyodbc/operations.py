@@ -394,6 +394,17 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         return "BEGIN TRANSACTION"
 
+    def subtract_temporals(self, internal_type, lhs, rhs):
+        lhs_sql, lhs_params = lhs
+        rhs_sql, rhs_params = rhs
+        if internal_type == 'DateField':
+            sql = "CAST(DATEDIFF(day, %(rhs)s, %(lhs)s) AS bigint) * 86400 * 1000000"
+            params = rhs_params + lhs_params
+        else:
+            sql = "CAST(DATEDIFF(second, %(rhs)s, %(lhs)s) AS bigint) * 1000000 + DATEPART(microsecond, %(lhs)s) - DATEPART(microsecond, %(rhs)s)"
+            params = rhs_params + lhs_params * 2 + rhs_params
+        return  sql % {'lhs':lhs_sql, 'rhs':rhs_sql}, params
+
     def tablespace_sql(self, tablespace, inline=False):
         """
         Returns the SQL that will be appended to tables or rows to define

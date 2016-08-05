@@ -9,12 +9,14 @@ from django.db.backends.base.introspection import (
 FieldInfo = namedtuple('FieldInfo', FieldInfo._fields + ('default',))
 
 SQL_AUTOFIELD = -777555
+SQL_BIGAUTOFIELD = -777444
 
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
     # Map type codes to Django Field types.
     data_types_reverse = {
         SQL_AUTOFIELD:                  'AutoField',
+        SQL_BIGAUTOFIELD:               'BigAutoField',
         Database.SQL_BIGINT:            'BigIntegerField',
         #Database.SQL_BINARY:            ,
         Database.SQL_BIT:               'BooleanField',
@@ -87,8 +89,11 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         If set to True, the function will check each of the table's fields for the
         IDENTITY property (the IDENTITY property is the MSSQL equivalent to an AutoField).
 
-        When a field is found with an IDENTITY property, it is given a custom field number
+        When an integer field is found with an IDENTITY property, it is given a custom field number
         of SQL_AUTOFIELD, which maps to the 'AutoField' value in the DATA_TYPES_REVERSE dict.
+
+        When a bigint field is found with an IDENTITY property, it is given a custom field number
+        of SQL_BIGAUTOFIELD, which maps to the 'BigAutoField' value in the DATA_TYPES_REVERSE dict.
         """
 
         # map pyodbc's cursor.columns to db-api cursor description
@@ -96,7 +101,10 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         items = []
         for column in columns:
             if identity_check and self._is_auto_field(cursor, table_name, column[0]):
-                column[1] = SQL_AUTOFIELD
+                if column[1] == Database.SQL_BIGINT:
+                    column[1] = SQL_BIGAUTOFIELD
+                else:
+                    column[1] = SQL_AUTOFIELD
             if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
                 column[1] = Database.SQL_WCHAR
             items.append(FieldInfo(*column))

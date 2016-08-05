@@ -7,7 +7,7 @@ import time
 
 from django.core.exceptions import ImproperlyConfigured
 from django import VERSION
-if VERSION[:3] < (1,9,9) or VERSION[:2] >= (1,10):
+if VERSION[:3] < (1,10,0) or VERSION[:2] >= (1,11):
     raise ImproperlyConfigured("Django %d.%d.%d is not supported." % VERSION[:3])
 
 try:
@@ -70,6 +70,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     # If a column type is set to None, it won't be included in the output.
     data_types = {
         'AutoField':         'int IDENTITY (1, 1)',
+        'BigAutoField':      'bigint IDENTITY (1, 1)',
         'BigIntegerField':   'bigint',
         'BinaryField':       'varbinary(max)',
         'BooleanField':      'bit',

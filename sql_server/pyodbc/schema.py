@@ -43,9 +43,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_alter_column_null = "ALTER COLUMN %(column)s %(type)s NULL"
     sql_alter_column_type = "ALTER COLUMN %(column)s %(type)s"
     sql_create_column = "ALTER TABLE %(table)s ADD %(column)s %(definition)s"
-    sql_create_fk = "ALTER TABLE %(table)s ADD CONSTRAINT %(name)s " \
-                    "FOREIGN KEY (%(column)s) " \
-                    "REFERENCES %(to_table)s (%(to_column)s)"
     sql_delete_column = "ALTER TABLE %(table)s DROP COLUMN %(column)s"
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
     sql_delete_table = "DROP TABLE %(table)s"
@@ -171,6 +168,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 actions.append((
                     self.sql_alter_column_default % {
                         "column": self.quote_name(new_field.column),
+                        "type": new_type,
                         "default": self.prepare_default(new_default),
                     },
                     [],
@@ -179,6 +177,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 actions.append((
                     self.sql_alter_column_default % {
                         "column": self.quote_name(new_field.column),
+                        "type": new_type,
                         "default": "%s",
                     },
                     [new_default],
@@ -362,6 +361,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         "table": self.quote_name(model._meta.db_table),
                         "changes": self.sql_alter_column_no_default % {
                             "name": self.quote_name(next(iter(row))),
+                            "type": new_type,
                         }
                     }
                     self.execute(sql)
@@ -482,7 +482,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 definition,
             ))
             # Autoincrement SQL (for backends with post table definition variant)
-            if field.get_internal_type() == "AutoField":
+            if field.get_internal_type() in ("AutoField", "BigAutoField"):
                 autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
                 if autoinc_sql:
                     self.deferred_sql.extend(autoinc_sql)
@@ -542,7 +542,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         """
         result = None
         # Log the command we're running, then run it
-        logger.debug("%s; (params %r)" % (sql, params))
+        logger.debug("%s; (params %r)", sql, params, extra={'params': params, 'sql': sql})
         if self.collect_sql:
             ending = "" if sql.endswith(";") else ";"
             if params is not None:

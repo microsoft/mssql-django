@@ -17,6 +17,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     has_select_for_update = True
     has_select_for_update_nowait = True
     has_zoneinfo_database = pytz is not None
+    ignores_quoted_identifier_case = True
     requires_literal_defaults = True
     requires_sqlparse_for_splitting = False
     supports_1000_query_parameters = False
@@ -27,6 +28,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_sequence_reset = False
     supports_subqueries_in_group_by = False
     supports_tablespaces = True
+    supports_temporal_subtraction = True
     supports_timezones = False
     supports_transactions = True
     uses_savepoints = True

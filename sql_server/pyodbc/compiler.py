@@ -1,3 +1,5 @@
+from itertools import chain
+
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
 from django.db.models.expressions import Ref, Value
 from django.db.models.functions import ConcatPair, Greatest, Least, Length, Substr
@@ -13,8 +15,7 @@ def _as_sql_agv(self, compiler, connection):
 def _as_sql_concatpair(self, compiler, connection):
     if connection.sql_server_version < 2012:
         node = self.coalesce()
-        node.arg_joiner = ' + '
-        return node.as_sql(compiler, connection, template='%(expressions)s')
+        return node.as_sql(compiler, connection, arg_joiner=' + ', template='%(expressions)s')
     else:
         return self.as_sql(compiler, connection)
 
@@ -25,17 +26,15 @@ def _as_sql_greatest(self, compiler, connection):
     # SQL Server does not provide GREATEST function,
     # so we emulate it with a table value constructor
     # https://msdn.microsoft.com/en-us/library/dd776382.aspx
-    self.arg_joiner = '), ('
     template='(SELECT MAX(value) FROM (VALUES (%(expressions)s)) AS _%(function)s(value))'
-    return self.as_sql(compiler, connection, template=template)
+    return self.as_sql(compiler, connection, arg_joiner='), (', template=template)
 
 def _as_sql_least(self, compiler, connection):
     # SQL Server does not provide LEAST function,
     # so we emulate it with a table value constructor
     # https://msdn.microsoft.com/en-us/library/dd776382.aspx
-    self.arg_joiner = '), ('
     template='(SELECT MIN(value) FROM (VALUES (%(expressions)s)) AS _%(function)s(value))'
-    return self.as_sql(compiler, connection, template=template)
+    return self.as_sql(compiler, connection, arg_joiner='), (', template=template)
 
 def _as_sql_length(self, compiler, connection):
     return self.as_sql(compiler, connection, function='LEN')
@@ -275,8 +274,9 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         if self.return_id and self.connection.features.can_return_id_from_insert:
             result.insert(0, 'SET NOCOUNT ON')
             result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
-            result.append('SELECT CAST(SCOPE_IDENTITY() AS int)')
-            return [(" ".join(result), tuple(param_rows[0]))]
+            params = [param_rows[0]]
+            result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+            return [(" ".join(result), tuple(chain.from_iterable(params)))]
 
         if can_bulk:
             result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
