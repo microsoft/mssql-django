@@ -1,6 +1,7 @@
 import datetime
 import time
 import uuid
+import warnings
 
 from django.conf import settings
 from django.db.backends.base.operations import BaseDatabaseOperations
@@ -33,6 +34,15 @@ class DatabaseOperations(BaseDatabaseOperations):
         now = datetime.datetime.now()
         delta = zone.localize(now, is_dst=False).utcoffset()
         return delta.days * 86400 + delta.seconds
+
+    def _warn_legacy_driver(self, sqltype):
+        warnings.warn(
+            'A %s value was received as a string. This is because you '
+            'are now using a legacy ODBC driver which does not support '
+            'this data type while your database has been migrated using it. '
+            'You should upgrade your ODBC driver for consistency with your '
+            'database migration.' % sqltype,
+            RuntimeWarning)
 
     def bulk_batch_size(self, fields, objs):
         """
@@ -95,13 +105,23 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def convert_datefield_value(self, value, expression, connection, context):
         if value is not None:
-            if self.connection.use_legacy_datetime:
+            # WDAC and old FreeTDS receive a date value as a string
+            # http://blogs.msdn.com/b/sqlnativeclient/archive/2008/02/27/microsoft-sql-server-native-client-and-microsoft-sql-server-2008-native-client.aspx
+            if isinstance(value, string_types):
+                self._warn_legacy_driver('date')
+                value = datetime.date(*map(lambda x: int(x), value.split('-')))
+            elif self.connection.use_legacy_datetime:
                 if isinstance(value, datetime.datetime):
                     value = value.date() # extract date
         return value
 
     def convert_datetimefield_value(self, value, expression, connection, context):
         if value is not None:
+            # WDAC and old FreeTDS receive a datetime2 value as a string
+            # http://blogs.msdn.com/b/sqlnativeclient/archive/2008/02/27/microsoft-sql-server-native-client-and-microsoft-sql-server-2008-native-client.aspx
+            if isinstance(value, string_types):
+                self._warn_legacy_driver('datetime2')
+                value = datetime.datetime.strptime(value[:26], '%Y-%m-%d %H:%M:%S.%f')
             if settings.USE_TZ:
                 value = timezone.make_aware(value, timezone.utc)
         return value
@@ -113,7 +133,12 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def convert_timefield_value(self, value, expression, connection, context):
         if value is not None:
-            if self.connection.use_legacy_datetime:
+            # WDAC and old FreeTDS receive a time value as a string
+            # http://blogs.msdn.com/b/sqlnativeclient/archive/2008/02/27/microsoft-sql-server-native-client-and-microsoft-sql-server-2008-native-client.aspx
+            if isinstance(value, string_types):
+                self._warn_legacy_driver('time')
+                value = datetime.time(*map(lambda x: int(x), value[:15].replace('.', ':').split(':')))
+            elif self.connection.use_legacy_datetime:
                 if (isinstance(value, datetime.datetime) and value.year == 1900 and value.month == value.day == 1):
                     value = value.time() # extract time
         return value
