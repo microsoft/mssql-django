@@ -4,7 +4,7 @@ import datetime
 from django.db.backends.base.schema import (
     BaseDatabaseSchemaEditor, logger, _related_non_m2m_objects,
 )
-from django.db.models.fields import AutoField
+from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.fields.related import ManyToManyField
 from django.utils import six
 from django.utils.text import force_text
@@ -57,10 +57,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                      old_db_params, new_db_params, strict=False):
         """Actually perform a "physical" (non-ManyToMany) field update."""
 
-        # the backend doesn't support altering from/to AutoField
+        # the backend doesn't support altering from/to (Big)AutoField
         # because of the limited capability of SQL Server to edit IDENTITY property
-        if isinstance(old_field, AutoField) or isinstance(new_field, AutoField):
-            raise NotImplementedError("the backend doesn't support altering from/to AutoField.")
+        for t in (AutoField, BigAutoField):
+            if isinstance(old_field, t) or isinstance(new_field, t):
+                raise NotImplementedError("the backend doesn't support altering from/to %s." % t.__name__)
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
         if old_field.remote_field and old_field.db_constraint:
