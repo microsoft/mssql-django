@@ -304,7 +304,11 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
 
 class SQLDeleteCompiler(compiler.SQLDeleteCompiler, SQLCompiler):
-    pass
+    def as_sql(self):
+        sql, params = super(SQLDeleteCompiler, self).as_sql()
+        if sql:
+            sql = '; '.join(['SET NOCOUNT OFF', sql])
+        return sql, params
 
 
 class SQLUpdateCompiler(compiler.SQLUpdateCompiler, SQLCompiler):
