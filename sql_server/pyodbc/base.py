@@ -148,6 +148,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         11: 2012,
         12: 2014,
         13: 2016,
+        14: 2017,
     }
 
     # https://azure.microsoft.com/en-us/documentation/articles/sql-database-develop-csharp-retry-windows/
