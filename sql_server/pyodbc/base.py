@@ -7,7 +7,7 @@ import time
 
 from django.core.exceptions import ImproperlyConfigured
 from django import VERSION
-if VERSION[:3] < (1,10,0) or VERSION[:2] >= (1,11):
+if VERSION[:3] < (1,10,4) or VERSION[:2] >= (1,11):
     raise ImproperlyConfigured("Django %d.%d.%d is not supported." % VERSION[:3])
 
 try:
