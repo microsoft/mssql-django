@@ -1,5 +1,3 @@
-import time
-
 from django.db.backends.base.creation import BaseDatabaseCreation
 
 
@@ -14,8 +12,6 @@ class DatabaseCreation(BaseDatabaseCreation):
         # to do so, because it's not allowed to delete a database while being
         # connected to it.
         with self.connection._nodb_connection.cursor() as cursor:
-            # Wait to avoid "database is being accessed by other users" errors.
-            time.sleep(1)
             to_azure_sql_db = self.connection.to_azure_sql_db
             if not to_azure_sql_db:
                 cursor.execute("ALTER DATABASE %s SET SINGLE_USER WITH ROLLBACK IMMEDIATE"

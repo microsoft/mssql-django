@@ -12,6 +12,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     can_introspect_small_integer_field = True
     can_return_id_from_insert = True
     can_use_chunked_reads = False
+    for_update_after_from = True
     has_bulk_insert = True
     has_real_datatype = True
     has_select_for_update = True

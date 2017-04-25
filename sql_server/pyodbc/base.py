@@ -7,7 +7,7 @@ import time
 
 from django.core.exceptions import ImproperlyConfigured
 from django import VERSION
-if VERSION[:3] < (1,10,4) or VERSION[:2] >= (1,11):
+if VERSION[:3] < (1,11,0) or VERSION[:2] >= (1,12):
     raise ImproperlyConfigured("Django %d.%d.%d is not supported." % VERSION[:3])
 
 try:
@@ -31,12 +31,12 @@ if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
     if not settings.DATABASE_CONNECTION_POOLING:
         Database.pooling = False
 
-from sql_server.pyodbc.client import DatabaseClient
-from sql_server.pyodbc.creation import DatabaseCreation
-from sql_server.pyodbc.features import DatabaseFeatures
-from sql_server.pyodbc.introspection import DatabaseIntrospection
-from sql_server.pyodbc.operations import DatabaseOperations
-from sql_server.pyodbc.schema import DatabaseSchemaEditor
+from .client import DatabaseClient
+from .creation import DatabaseCreation
+from .features import DatabaseFeatures
+from .introspection import DatabaseIntrospection
+from .operations import DatabaseOperations
+from .schema import DatabaseSchemaEditor
 
 EDITION_AZURE_SQL_DB = 5
 
@@ -137,6 +137,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     Database = Database
     SchemaEditorClass = DatabaseSchemaEditor
+    # Classes instantiated in __init__().
+    client_class = DatabaseClient
+    creation_class = DatabaseCreation
+    features_class = DatabaseFeatures
+    introspection_class = DatabaseIntrospection
+    ops_class = DatabaseOperations
 
     _codes_for_networkerror = (
         '08S01',
@@ -209,7 +215,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         self.introspection = DatabaseIntrospection(self)
         self.validation = BaseDatabaseValidation(self)
 
-    def create_cursor(self):
+    def create_cursor(self, name=None):
         return CursorWrapper(self.connection.cursor(), self)
 
     def get_connection_params(self):

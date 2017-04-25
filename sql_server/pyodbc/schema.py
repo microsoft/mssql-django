@@ -6,6 +6,7 @@ from django.db.backends.base.schema import (
 )
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.fields.related import ManyToManyField
+from django.db.transaction import TransactionManagementError
 from django.utils import six
 from django.utils.text import force_text
 
@@ -38,7 +39,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                                           " fkc.referenced_object_id = ro.object_id " \
                                           "WHERE ro.name = %(table)s"
     sql_alter_column_default = "ADD DEFAULT %(default)s FOR %(column)s"
-    sql_alter_column_no_default = "DROP CONSTRAINT %(name)s"
+    sql_alter_column_no_default = "DROP CONSTRAINT %(column)s"
     sql_alter_column_not_null = "ALTER COLUMN %(column)s %(type)s NOT NULL"
     sql_alter_column_null = "ALTER COLUMN %(column)s %(type)s NULL"
     sql_alter_column_type = "ALTER COLUMN %(column)s %(type)s"
@@ -99,9 +100,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 for fk_name in rel_fk_names:
                     self.execute(self._delete_constraint_sql(self.sql_delete_fk, new_rel.related_model, fk_name))
         # Removed an index? (no strict check, as multiple indexes are possible)
-        if (old_field.db_index and not new_field.db_index and
-                not old_field.unique and not
-                (not new_field.unique and old_field.unique)):
+        # Remove indexes if db_index switched to False or a unique constraint
+        # will now be used in lieu of an index. The following lines from the
+        # truth table show all True cases; the rest are False:
+        #
+        # old_field.db_index | old_field.unique | new_field.db_index | new_field.unique
+        # ------------------------------------------------------------------------------
+        # True               | False            | False              | False
+        # True               | False            | False              | True
+        # True               | False            | True               | True
+        if old_field.db_index and not old_field.unique and (not new_field.db_index or new_field.unique):
             # Find the index for this field
             index_names = self._constraint_names(model, [old_field.column], index=True)
             for index_name in index_names:
@@ -247,10 +255,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if not old_field.unique and new_field.unique:
             self.execute(self._create_unique_sql(model, [new_field.column]))
         # Added an index?
-        if (not old_field.db_index and new_field.db_index and
-                not new_field.unique and not
-                (not old_field.unique and new_field.unique)):
-            self.execute(self._create_index_sql(model, [new_field], suffix="_uniq"))
+        # constraint will no longer be used in lieu of an index. The following
+        # lines from the truth table show all True cases; the rest are False:
+        #
+        # old_field.db_index | old_field.unique | new_field.db_index | new_field.unique
+        # ------------------------------------------------------------------------------
+        # False              | False            | True               | False
+        # False              | True             | True               | False
+        # True               | True             | True               | False
+        if (not old_field.db_index or old_field.unique) and new_field.db_index and not new_field.unique:
+            self.execute(self._create_index_sql(model, [new_field]))
         # Restore an index, SQL Server requires explicit restoration
         if old_type != new_type or (old_field.null and not new_field.null):
             unique_columns = []
@@ -355,8 +369,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     sql = self.sql_alter_column % {
                         "table": self.quote_name(model._meta.db_table),
                         "changes": self.sql_alter_column_no_default % {
-                            "name": self.quote_name(next(iter(row))),
-                            "type": new_type,
+                            "column": self.quote_name(next(iter(row))),
                         }
                     }
                     self.execute(sql)
@@ -442,7 +455,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         self.execute(sql, params)
         # Drop the default if we need to
         # (Django usually does not use in-database defaults)
-        if not self.skip_default(field) and field.default is not None:
+        if not self.skip_default(field) and self.effective_default(field) is not None:
             # SQL Server requires the name of the default constraint
             result = self.execute(
                 self._sql_select_default_constraint_name % {
@@ -456,13 +469,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     sql = self.sql_alter_column % {
                         "table": self.quote_name(model._meta.db_table),
                         "changes": self.sql_alter_column_no_default % {
-                            "name": self.quote_name(next(iter(row))),
+                            "column": self.quote_name(next(iter(row))),
                         }
                     }
                     self.execute(sql)
         # Add an index, if required
-        if self._field_should_be_indexed(model, field):
-            self.deferred_sql.append(self._create_index_sql(model, [field]))
+        self.deferred_sql.extend(self._field_indexes_sql(model, field))
         # Add any FK constraints later
         if field.remote_field and self.connection.features.supports_foreign_keys and field.db_constraint:
             self.deferred_sql.append(self._create_fk_sql(model, field, "_fk_%(to_table)s_%(to_column)s"))
@@ -559,7 +571,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 sql = self.sql_alter_column % {
                     "table": self.quote_name(table),
                     "changes": self.sql_alter_column_no_default % {
-                        "name": self.quote_name(constraint),
+                        "column": self.quote_name(constraint),
                     }
                 }
                 self.execute(sql)
@@ -567,11 +579,18 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Delete the table
         super(DatabaseSchemaEditor, self).delete_model(model)
 
-    def execute(self, sql, params=[], has_result=False):
+    def execute(self, sql, params=(), has_result=False):
         """
         Executes the given SQL statement, with optional parameters.
         """
         result = None
+        # Don't perform the transactional DDL check if SQL is being collected
+        # as it's not going to be executed anyway.
+        if not self.collect_sql and self.connection.in_atomic_block and not self.connection.features.can_rollback_ddl:
+            raise TransactionManagementError(
+                "Executing DDL statements while in a transaction on databases "
+                "that can't perform a rollback is prohibited."
+            )
         # Log the command we're running, then run it
         logger.debug("%s; (params %r)", sql, params, extra={'params': params, 'sql': sql})
         if self.collect_sql:

@@ -1,12 +1,9 @@
-from collections import namedtuple
-
 import pyodbc as Database
 
 from django.db.backends.base.introspection import (
     BaseDatabaseIntrospection, FieldInfo, TableInfo,
 )
-
-FieldInfo = namedtuple('FieldInfo', FieldInfo._fields + ('default',))
+from django.db.models.indexes import Index
 
 SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
@@ -139,10 +136,13 @@ WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
 
     def get_indexes(self, cursor, table_name):
         """
+        Deprecated in Django 1.11, use get_constraints instead.
         Returns a dictionary of fieldname -> infodict for the given table,
         where each infodict is in the format:
             {'primary_key': boolean representing whether it's the primary key,
              'unique': boolean representing whether it's a unique index}
+
+        Only single-column indexes are introspected.
         """
         # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
         # TABLE_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms181757.aspx
@@ -227,6 +227,8 @@ AND t.name = %s"""
          * foreign_key: (table, column) of target, or None
          * check: True if check constraint, False otherwise
          * index: True if index, False otherwise.
+         * orders: The order (ASC/DESC) defined for the columns of indexes
+         * type: The type of the index (btree, hash, etc.)
         """
         constraints = {}
         # Loop over the key table, collecting things as constraints
@@ -318,6 +320,9 @@ AND t.name = %s"""
                 i.name AS index_name,
                 i.is_unique,
                 i.is_primary_key,
+                i.type,
+                i.type_desc,
+                ic.is_descending_key,
                 c.name AS column_name
             FROM
                 sys.tables AS t
@@ -338,7 +343,7 @@ AND t.name = %s"""
                 ic.index_column_id ASC
         """, [table_name])
         indexes = {}
-        for index, unique, primary, column in cursor.fetchall():
+        for index, unique, primary, type_, desc, order, column in cursor.fetchall():
             if index not in indexes:
                 indexes[index] = {
                     "columns": [],
@@ -347,8 +352,11 @@ AND t.name = %s"""
                     "foreign_key": None,
                     "check": False,
                     "index": True,
+                    "orders": [],
+                    "type": Index.suffix if type_ in (1,2) else desc.lower(),
                 }
             indexes[index]["columns"].append(column)
+            indexes[index]["orders"].append("DESC" if order == 1 else "ASC")
         for index, constraint in indexes.items():
             if index not in constraints:
                 constraints[index] = constraint

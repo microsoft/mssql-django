@@ -5,19 +5,23 @@ import warnings
 
 from django.conf import settings
 from django.db.backends.base.operations import BaseDatabaseOperations
+from django.db.models.expressions import Exists
 from django.db.models.functions import Greatest, Least
 from django.utils import timezone
 from django.utils.encoding import force_text
 from django.utils.six import string_types
 
-try:
-    import pytz
-except ImportError:
-    pytz = None
+import pytz
 
 
 class DatabaseOperations(BaseDatabaseOperations):
     compiler_module = 'sql_server.pyodbc.compiler'
+
+    def _convert_field_to_tz(self, field_name, tzname):
+        if settings.USE_TZ and not tzname == 'UTC':
+            offset = self._get_utcoffset(tzname)
+            field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
+        return field_name, []
 
     def _get_utcoffset(self, tzname):
         """
@@ -25,10 +29,6 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         # SQL Server has no built-in support for tz database
         # see http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
-        if pytz is None:
-            from django.core.exceptions import ImproperlyConfigured
-            raise ImproperlyConfigured("This query requires pytz, "
-                                       "but it isn't installed.")
         zone = pytz.timezone(tzname)
         # no way to take DST into account at this point
         now = datetime.datetime.now()
@@ -83,6 +83,13 @@ class DatabaseOperations(BaseDatabaseOperations):
                     raise NotImplementedError(
                         'SQL Server has no support for %s function.' %
                         f.function)
+        # SQL Server doesn't allow to use EXISTS in a selection list
+        unsupported_expressions = (Exists, )
+        for e in unsupported_expressions:
+            if isinstance(expression, e):
+                raise NotImplementedError(
+                    "the backend doesn't support %s expression." %
+                    e.__name__)
 
     def combine_duration_expression(self, connector, sub_expressions):
         lhs, rhs = sub_expressions
@@ -101,6 +108,10 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         if connector == '^':
             return 'POWER(%s)' % ','.join(sub_expressions)
+        elif connector == '<<':
+            return '%s * (2 * %s)' % tuple(sub_expressions)
+        elif connector == '>>':
+            return '%s / (2 * %s)' % tuple(sub_expressions)
         return super(DatabaseOperations, self).combine_expression(connector, sub_expressions)
 
     def convert_datefield_value(self, value, expression, connection, context):
@@ -185,28 +196,28 @@ class DatabaseOperations(BaseDatabaseOperations):
             return "CONVERT(datetime, CONVERT(varchar(12), %s, 112))" % field_name
 
     def datetime_cast_date_sql(self, field_name, tzname):
-        if settings.USE_TZ and not tzname == 'UTC':
-            offset = self._get_utcoffset(tzname)
-            field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
+        field_name, params = self._convert_field_to_tz(field_name, tzname)
         if self.connection.use_legacy_datetime:
             sql = 'CONVERT(datetime, CONVERT(char(10), %s, 101), 101)' % field_name
         else:
             sql = 'CAST(%s AS date)' % field_name
-        return sql, []
+        return sql, params
+
+    def datetime_cast_time_sql(self, field_name, tzname):
+        field_name, params = self._convert_field_to_tz(field_name, tzname)
+        if self.connection.use_legacy_datetime:
+            sql = 'CONVERT(datetime, %s)' % field_name
+        else:
+            sql = 'CAST(%s AS time)' % field_name
+        return sql, params
 
     def datetime_extract_sql(self, lookup_type, field_name, tzname):
-        if settings.USE_TZ and not tzname == 'UTC':
-            offset = self._get_utcoffset(tzname)
-            field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
-        params = []
+        field_name, params = self._convert_field_to_tz(field_name, tzname)
         sql = self.date_extract_sql(lookup_type, field_name)
         return sql, params
 
     def datetime_trunc_sql(self, lookup_type, field_name, tzname):
-        if settings.USE_TZ and not tzname == 'UTC':
-            offset = self._get_utcoffset(tzname)
-            field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
-        params = []
+        field_name, params = self._convert_field_to_tz(field_name, tzname)
         sql = ''
         if lookup_type in ('year', 'month', 'day'):
             sql = self.date_trunc_sql(lookup_type, field_name)
@@ -218,21 +229,33 @@ class DatabaseOperations(BaseDatabaseOperations):
             sql = "CONVERT(datetime, CONVERT(varchar, %s, 20))" % field_name
         return sql, params
 
-    def for_update_sql(self, nowait=False):
+    def for_update_sql(self, nowait=False, skip_locked=False):
         """
         Returns the FOR UPDATE SQL clause to lock rows for an update operation.
         """
-        if nowait:
+        if skip_locked:
+            return 'WITH (NOLOCK)'
+        elif nowait:
             return 'WITH (NOWAIT, ROWLOCK, UPDLOCK)'
         else:
             return 'WITH (ROWLOCK, UPDLOCK)'
 
     def format_for_duration_arithmetic(self, sql):
-        if self.connection.use_legacy_datetime:
-            fmt = 'DATEADD(second, %s / 1000000%%s, DATEADD(millisecond, %s / 1000 %%%%%%%% 1000%%s, CAST(%%s AS datetime)))'
+        if sql == '%s':
+            # use DATEADD only once because Django prepares only one parameter for this 
+            if self.connection.use_legacy_datetime:
+                fmt = 'DATEADD(second, %s / 1000000%%s, CAST(%%s AS datetime))'
+            else:
+                fmt = 'DATEADD(second, %s / 1000000%%s, CAST(%%s AS datetime2))'
+            sql = '%%s'
         else:
-            fmt = 'DATEADD(second, %s / 1000000%%s, DATEADD(microsecond, %s %%%%%%%% 1000000%%s, CAST(%%s AS datetime2)))'
-        return fmt % (sql, sql)
+            # use DATEADD twice to avoid arithmetic overflow for number part
+            if self.connection.use_legacy_datetime:
+                fmt = 'DATEADD(second, %s / 1000000%%s, DATEADD(millisecond, %s / 1000 %%%%%%%% 1000%%s, CAST(%%s AS datetime)))'
+            else:
+                fmt = 'DATEADD(second, %s / 1000000%%s, DATEADD(microsecond, %s %%%%%%%% 1000000%%s, CAST(%%s AS datetime2)))'
+            sql = (sql, sql)
+        return fmt % sql
 
     def fulltext_search_sql(self, field_name):
         """
@@ -391,7 +414,6 @@ class DatabaseOperations(BaseDatabaseOperations):
                              style.SQL_FIELD(self.quote_name(table)) ) for table in tables])
 
             if self.connection.to_azure_sql_db and self.connection.sql_server_version < 2014:
-                import warnings
                 warnings.warn("Resetting identity columns is not supported " \
                               "on this versios of Azure SQL Database.",
                               RuntimeWarning)
@@ -477,6 +499,25 @@ class DatabaseOperations(BaseDatabaseOperations):
             else:
                 value = datetime.datetime(1900, 1, 1, value.hour, value.minute, value.second)
         return value
+
+    def time_trunc_sql(self, lookup_type, field_name):
+        if self.connection.use_legacy_datetime:
+            sql = self.datetime_trunc_sql(lookup_type, field_name, 'UTC')
+        #elif self.connection.sql_server_version >= 2012:
+        #    fields = {
+        #        'hour': 'DATEPART(hour, %s)' % field_name,
+        #        'minute': 'DATEPART(minute, %s)' % field_name if lookup_type != 'hour' else '0',
+        #        'second': 'DATEPART(second, %s)' % field_name if lookup_type == 'second' else '0',
+        #    }
+        #    sql = 'TIMEFROMPARTS(%(hour)s, %(minute)s, %(second)s, 0, 0)' % fields
+        else:
+            if lookup_type == 'hour':
+                sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 3) + ':00:00')" % field_name
+            elif lookup_type == 'minute':
+                sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 6) + ':00')" % field_name
+            elif lookup_type == 'second':
+                sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 9))" % field_name
+        return sql
 
     def year_lookup_bounds_for_date_field(self, value):
         """

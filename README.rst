@@ -17,7 +17,7 @@ Microsoft SQL Server and Azure SQL Database.
 Features
 --------
 
--  Supports Django 1.10.4
+-  Supports Django 1.11.0
 -  Supports Microsoft SQL Server 2005, 2008/2008R2, 2012, 2014, 2016 and
    Azure SQL Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
@@ -31,7 +31,7 @@ Features
 Dependencies
 ------------
 
--  Django 1.10.4
+-  Django 1.11.0
 -  pyodbc 3.0 or newer
 
 Installation
@@ -234,16 +234,17 @@ Limitations
 The following features are currently not supported:
 
 - Altering a model field from or to AutoField at migration
+- `Exists <https://docs.djangoproject.com/en/1.11/ref/models/expressions/#django.db.models.Exists>`__ subqueries
 
 Notice
 ------
 
-This version of *django-pyodbc-azure* only supports Django 1.10.
+This version of *django-pyodbc-azure* only supports Django 1.11.
 If you want to use it on older versions of Django,
-specify an appropriate version number (1.9.x.x for Django 1.9)
+specify an appropriate version number (1.10.x.x for Django 1.10)
 at installation like this: ::
 
-    pip install "django-pyodbc-azure<1.10"
+    pip install "django-pyodbc-azure<1.11"
 
 License
 -------
