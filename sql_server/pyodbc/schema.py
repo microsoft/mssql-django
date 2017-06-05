@@ -4,6 +4,7 @@ import datetime
 from django.db.backends.base.schema import (
     BaseDatabaseSchemaEditor, logger, _related_non_m2m_objects,
 )
+from django.db.models import Index
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.fields.related import ManyToManyField
 from django.db.transaction import TransactionManagementError
@@ -111,8 +112,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # True               | False            | True               | True
         if old_field.db_index and not old_field.unique and (not new_field.db_index or new_field.unique):
             # Find the index for this field
-            index_names = self._constraint_names(model, [old_field.column], index=True)
+            meta_index_names = {index.name for index in model._meta.indexes}
+            # Retrieve only BTREE indexes since this is what's created with
+            # db_index=True.
+            index_names = self._constraint_names(model, [old_field.column], index=True, type_=Index.suffix)
             for index_name in index_names:
+                if index_name in meta_index_names:
+                    # The only way to check if an index was created with
+                    # db_index=True or with Index(['field'], name='foo')
+                    # is to look at its name (refs #28053).
+                    continue
                 self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
         # Change check constraints?
         if old_db_params['check'] != new_db_params['check'] and old_db_params['check']:
