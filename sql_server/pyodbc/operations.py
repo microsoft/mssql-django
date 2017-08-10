@@ -134,7 +134,7 @@ class DatabaseOperations(BaseDatabaseOperations):
                 self._warn_legacy_driver('datetime2')
                 value = datetime.datetime.strptime(value[:26], '%Y-%m-%d %H:%M:%S.%f')
             if settings.USE_TZ:
-                value = timezone.make_aware(value, timezone.utc)
+                value = timezone.make_aware(value, self.connection.timezone)
         return value
 
     def convert_floatfield_value(self, value, expression, connection, context):
@@ -480,7 +480,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             return None
         if settings.USE_TZ and timezone.is_aware(value):
             # pyodbc donesn't support datetimeoffset
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            value = value.astimezone(self.connection.timezone).replace(tzinfo=None)
         if not self.connection.features.supports_microsecond_precision:
             value = value.replace(microsecond=0)
         return value
