@@ -234,11 +234,11 @@ class DatabaseOperations(BaseDatabaseOperations):
         Returns the FOR UPDATE SQL clause to lock rows for an update operation.
         """
         if skip_locked:
-            return 'WITH (NOLOCK)'
+            return 'WITH (ROWLOCK, UPDLOCK, READPAST, FORCESEEK)'
         elif nowait:
-            return 'WITH (NOWAIT, ROWLOCK, UPDLOCK)'
+            return 'WITH (NOWAIT, ROWLOCK, UPDLOCK, FORCESEEK)'
         else:
-            return 'WITH (ROWLOCK, UPDLOCK)'
+            return 'WITH (ROWLOCK, UPDLOCK, FORCESEEK)'
 
     def format_for_duration_arithmetic(self, sql):
         if sql == '%s':
