@@ -1,7 +1,7 @@
 from itertools import chain
 
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
-from django.db.models.expressions import OrderBy, Ref, Value
+from django.db.models.expressions import Exists, OrderBy, Ref, Value
 from django.db.models.functions import ConcatPair, Greatest, Least, Length, Substr
 from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
@@ -38,6 +38,14 @@ def _as_sql_least(self, compiler, connection):
 
 def _as_sql_length(self, compiler, connection):
     return self.as_sql(compiler, connection, function='LEN')
+
+def _as_sql_exists(self, compiler, connection, template=None, **extra_context):
+    # MS SQL doesn't allow EXISTS() in the SELECT list, so wrap it with a
+    # CASE WHEN expression. Change the template since the When expression
+    # requires a left hand side (column) to compare against.
+    sql, params = self.as_sql(compiler, connection, template, **extra_context)
+    sql = 'CASE WHEN {} THEN 1 ELSE 0 END'.format(sql)
+    return sql, params
 
 def _as_sql_order_by(self, compiler, connection):
     template = None
@@ -246,6 +254,8 @@ class SQLCompiler(compiler.SQLCompiler):
             as_microsoft = _as_sql_least
         elif isinstance(node, Length):
             as_microsoft = _as_sql_length
+        elif isinstance(node, Exists):
+            as_microsoft = _as_sql_exists
         elif isinstance(node, OrderBy):
             as_microsoft = _as_sql_order_by
         elif isinstance(node, StdDev):

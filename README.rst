@@ -234,7 +234,6 @@ Limitations
 The following features are currently not supported:
 
 - Altering a model field from or to AutoField at migration
-- `Exists <https://docs.djangoproject.com/en/1.11/ref/models/expressions/#django.db.models.Exists>`__ subqueries
 
 Notice
 ------

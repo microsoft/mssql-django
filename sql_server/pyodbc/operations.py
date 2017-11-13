@@ -5,7 +5,6 @@ import warnings
 
 from django.conf import settings
 from django.db.backends.base.operations import BaseDatabaseOperations
-from django.db.models.expressions import Exists
 from django.db.models.functions import Greatest, Least
 from django.utils import timezone
 from django.utils.encoding import force_text
@@ -83,13 +82,6 @@ class DatabaseOperations(BaseDatabaseOperations):
                     raise NotImplementedError(
                         'SQL Server has no support for %s function.' %
                         f.function)
-        # SQL Server doesn't allow to use EXISTS in a selection list
-        unsupported_expressions = (Exists, )
-        for e in unsupported_expressions:
-            if isinstance(expression, e):
-                raise NotImplementedError(
-                    "the backend doesn't support %s expression." %
-                    e.__name__)
 
     def combine_duration_expression(self, connector, sub_expressions):
         lhs, rhs = sub_expressions
