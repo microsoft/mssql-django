@@ -66,6 +66,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
         if old_field.remote_field and old_field.db_constraint:
+            if not new_field.db_constraint:
+                index_names = self._constraint_names(model, [old_field.column], index=True)
+                for index_name in index_names:
+                    self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
+
             fk_names = self._constraint_names(model, [old_field.column], foreign_key=True)
             if strict and len(fk_names) != 1:
                 raise ValueError("Found wrong number (%s) of foreign key constraints for %s.%s" % (
