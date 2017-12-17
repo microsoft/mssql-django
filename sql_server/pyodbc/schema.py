@@ -479,6 +479,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         "table": self.quote_name(model._meta.db_table),
                         "changes": self.sql_alter_column_no_default % {
                             "column": self.quote_name(next(iter(row))),
+                            "type": db_params['type'],
                         }
                     }
                     self.execute(sql)
