@@ -78,6 +78,9 @@ class SQLCompiler(compiler.SQLCompiler):
         refcounts_before = self.query.alias_refcount.copy()
         try:
             extra_select, order_by, group_by = self.pre_sql_setup()
+            for_update_part = None
+            combinator = self.query.combinator
+            features = self.connection.features
 
             # The do_offset flag indicates whether we need to construct
             # the SQL needed to use limit/offset w/SQL Server.
@@ -89,23 +92,17 @@ class SQLCompiler(compiler.SQLCompiler):
             supports_offset_clause = self.connection.sql_server_version >= 2012
             do_offset_emulation = do_offset and not supports_offset_clause
 
-            distinct_fields = self.get_distinct()
-
-            # This must come after 'select', 'ordering', and 'distinct' -- see
-            # docstring of get_from_clause() for details.
-            from_, f_params = self.get_from_clause()
-
-            for_update_part = None
-            where, w_params = self.compile(self.where) if self.where is not None else ("", [])
-            having, h_params = self.compile(self.having) if self.having is not None else ("", [])
-
-            combinator = self.query.combinator
-            features = self.connection.features
             if combinator:
                 if not getattr(features, 'supports_select_{}'.format(combinator)):
                     raise DatabaseError('{} not supported on this database backend.'.format(combinator))
                 result, params = self.get_combinator_sql(combinator, self.query.combinator_all)
             else:
+                distinct_fields = self.get_distinct()
+                # This must come after 'select', 'ordering', and 'distinct' -- see
+                # docstring of get_from_clause() for details.
+                from_, f_params = self.get_from_clause()
+                where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+                having, h_params = self.compile(self.having) if self.having is not None else ("", [])
                 params = []
                 result = ['SELECT']
     
