@@ -17,7 +17,7 @@ Microsoft SQL Server and Azure SQL Database.
 Features
 --------
 
--  Supports Django 1.11.1
+-  Supports Django 1.11.8
 -  Supports Microsoft SQL Server 2005, 2008/2008R2, 2012, 2014, 2016 and
    Azure SQL Database
 -  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
@@ -31,7 +31,7 @@ Features
 Dependencies
 ------------
 
--  Django 1.11.1
+-  Django 1.11.8
 -  pyodbc 3.0 or newer
 
 Installation
