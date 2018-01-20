@@ -221,7 +221,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def get_connection_params(self):
         settings_dict = self.settings_dict
         if settings_dict['NAME'] == '':
-            from django.core.exceptions import ImproperlyConfigured
             raise ImproperlyConfigured(
                 "settings.DATABASES is improperly configured. "
                 "Please supply the NAME value.")
@@ -242,19 +241,20 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         driver = options.get('driver', default_driver)
         dsn = options.get('dsn', None)
 
-        # unixODBC uses string 'FreeTDS'; iODBC requires full path to lib
-        if driver == 'FreeTDS' or driver.endswith('/libtdsodbc.so'):
-            driver_is_freetds = True
-        else:
-            driver_is_freetds = False
-
         # Microsoft driver names assumed here are:
         # * SQL Server
         # * SQL Native Client
         # * SQL Server Native Client 10.0/11.0
-        # * ODBC Driver 11 for SQL Server
+        # * ODBC Driver 11/13 for SQL Server
         ms_drivers = re.compile('.*SQL (Server$|(Server )?Native Client)')
 
+        # available ODBC connection string keywords:
+        # (Microsoft drivers for Windows)
+        # https://docs.microsoft.com/en-us/sql/relational-databases/native-client/applications/using-connection-string-keywords-with-sql-server-native-client
+        # (Microsoft drivers for Linux/Mac)
+        # https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns
+        # (FreeTDS)
+        # http://www.freetds.org/userguide/odbcconnattr.htm
         cstr_parts = {}
         if dsn:
             cstr_parts['DSN'] = dsn
@@ -262,8 +262,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
             cstr_parts['DRIVER'] = driver
 
-            if ms_drivers.match(driver) or driver_is_freetds and \
-                options.get('host_is_server', False):
+            if ms_drivers.match(driver):
+                if port:
+                    host = ','.join((host,port))
+                cstr_parts['SERVER'] = host
+            elif options.get('host_is_server', False):
                 if port:
                     cstr_parts['PORT'] = str(port)
                 cstr_parts['SERVER'] = host
