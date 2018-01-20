@@ -1,9 +1,12 @@
+import warnings
+
 import pyodbc as Database
 
 from django.db.backends.base.introspection import (
     BaseDatabaseIntrospection, FieldInfo, TableInfo,
 )
 from django.db.models.indexes import Index
+from django.utils.deprecation import RemovedInDjango21Warning
 
 SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
@@ -144,6 +147,10 @@ WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
 
         Only single-column indexes are introspected.
         """
+        warnings.warn(
+            "get_indexes() is deprecated in favor of get_constraints().",
+            RemovedInDjango21Warning, stacklevel=2
+        )
         # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
         # TABLE_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms181757.aspx
 
