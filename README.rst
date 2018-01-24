@@ -17,22 +17,21 @@ Microsoft SQL Server and Azure SQL Database.
 Features
 --------
 
--  Supports Django 1.11.9
--  Supports Microsoft SQL Server 2005, 2008/2008R2, 2012, 2014, 2016, 2017 and
+-  Supports Django 2.0.1
+-  Supports Microsoft SQL Server 2008/2008R2, 2012, 2014, 2016, 2017 and
    Azure SQL Database
--  Supports LIMIT+OFFSET and offset w/o LIMIT emulation.
--  Passes most of the tests of the Django test suite.
+-  Supports LIMIT+OFFSET and offset w/o LIMIT emulation
+-  Passes most of the tests of the Django test suite
 -  Compatible with
-   `Micosoft ODBC Driver for SQL Server <https://msdn.microsoft.com/library/mt654048(v=sql.1).aspx>`__,
-   `SQL Server Native Client <https://msdn.microsoft.com/library/ms130892(v=sql.120).aspx>`__,
-   `SQL Server <https://msdn.microsoft.com/library/aa968814(vs.85).aspx>`__
+   `Micosoft ODBC Driver for SQL Server <https://docs.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server>`__,
+   `SQL Server Native Client <https://msdn.microsoft.com/en-us/library/ms131321(v=sql.120).aspx>`__,
    and `FreeTDS <http://www.freetds.org/>`__ ODBC drivers.
 
 Dependencies
 ------------
 
--  Django 1.11.9
--  pyodbc 3.0 or newer
+-  Django 2.0.1
+-  pyodbc 4.0 or newer
 
 Installation
 ------------
@@ -124,9 +123,9 @@ Dictionary. Current available keys are:
 
 -  driver
 
-   String. ODBC Driver to use (``"ODBC Driver 11 for SQL Server"`` etc).
-   See http://msdn.microsoft.com/en-us/library/ms130892.aspx. Default is
-   ``"SQL Server"`` on Windows and ``"FreeTDS"`` on other platforms.
+   String. ODBC Driver to use (``"ODBC Driver 13 for SQL Server"``,
+   ``"SQL Server Native Client 11.0"``, ``"FreeTDS"`` etc).
+   Default is ``"ODBC Driver 13 for SQL Server"``.
 
 -  dsn
 
@@ -167,16 +166,6 @@ Dictionary. Current available keys are:
    collation specifier is added to your lookup SQL (the default
    collation of your database will be used). For Chinese language you
    can set it to ``"Chinese_PRC_CI_AS"``.
-
--  use_legacy_datetime
-
-   Boolean. ``DateField``, ``TimeField`` and ``DateTimeField`` of models
-   are mapped to SQL Server's legacy ``datetime`` type if the value is ``True``
-   (the same behavior as the original ``django-pyodbc``). Otherwise, they
-   are mapped to new dedicated data types (``date``, ``time``, ``datetime2``).
-   Default value is ``False``, and note that the feature is always activated
-   when you use SQL Server 2005, or the outdated ODBC drivers (``"FreeTDS"``
-   with TDS protocol v7.2 or earlier/``"SQL Server"``/``"SQL Native Client"``).
 
 -  connection_timeout
 
@@ -238,12 +227,12 @@ The following features are currently not supported:
 Notice
 ------
 
-This version of *django-pyodbc-azure* only supports Django 1.11.
+This version of *django-pyodbc-azure* only supports Django 2.0.
 If you want to use it on older versions of Django,
-specify an appropriate version number (1.10.x.x for Django 1.10)
+specify an appropriate version number (1.11.x.x for Django 1.11)
 at installation like this: ::
 
-    pip install "django-pyodbc-azure<1.11"
+    pip install "django-pyodbc-azure<2.0"
 
 License
 -------

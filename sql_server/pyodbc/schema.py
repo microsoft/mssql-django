@@ -4,12 +4,14 @@ import datetime
 from django.db.backends.base.schema import (
     BaseDatabaseSchemaEditor, logger, _related_non_m2m_objects,
 )
+from django.db.backends.ddl_references import (
+    Statement,
+)
 from django.db.models import Index
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.fields.related import ManyToManyField
 from django.db.transaction import TransactionManagementError
-from django.utils import six
-from django.utils.text import force_text
+from django.utils.encoding import force_text
 
 
 class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
@@ -51,9 +53,74 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_rename_column = "EXEC sp_rename '%(table)s.%(old_column)s', %(new_column)s, 'COLUMN'"
     sql_rename_table = "EXEC sp_rename %(old_table)s, %(new_table)s"
 
-    def _alter_column_type_sql(self, table, old_field, new_field, new_type):
+    def _alter_column_default_sql(self, model, old_field, new_field, drop=False):
+        """
+        Hook to specialize column default alteration.
+
+        Return a (sql, params) fragment to add or drop (depending on the drop
+        argument) a default to new_field's column.
+        """
+        new_default = self.effective_default(new_field)
+        default = '%s'
+        params = [new_default]
+        column = self.quote_name(new_field.column)
+
+        if drop:
+            params = []
+            # SQL Server requires the name of the default constraint
+            result = self.execute(
+                self._sql_select_default_constraint_name % {
+                    "table": self.quote_value(model._meta.db_table),
+                    "column": self.quote_value(new_field.column),
+                },
+                has_result=True
+            )
+            if result:
+                for row in result:
+                    column = self.quote_name(next(iter(row)))
+        elif self.connection.features.requires_literal_defaults:
+            # Some databases (Oracle) can't take defaults as a parameter
+            # If this is the case, the SchemaEditor for that database should
+            # implement prepare_default().
+            default = self.prepare_default(new_default)
+            params = []
+
+        new_db_params = new_field.db_parameters(connection=self.connection)
+        sql = self.sql_alter_column_no_default if drop else self.sql_alter_column_default
+        return (
+            sql % {
+                'column': column,
+                'type': new_db_params['type'],
+                'default': default,
+            },
+            params,
+        )
+
+    def _alter_column_null_sql(self, model, old_field, new_field):
+        """
+        Hook to specialize column null alteration.
+
+        Return a (sql, params) fragment to set a column to null or non-null
+        as required by new_field, or None if no changes are required.
+        """
+        if (self.connection.features.interprets_empty_strings_as_nulls and
+                new_field.get_internal_type() in ("CharField", "TextField")):
+            # The field is nullable in the database anyway, leave it alone.
+            return
+        else:
+            new_db_params = new_field.db_parameters(connection=self.connection)
+            sql = self.sql_alter_column_null if new_field.null else self.sql_alter_column_not_null
+            return (
+                sql % {
+                    'column': self.quote_name(new_field.column),
+                    'type': new_db_params['type'],
+                },
+                [],
+            )
+
+    def _alter_column_type_sql(self, model, old_field, new_field, new_type):
         new_type = self._set_field_new_type_null_status(old_field, new_type)
-        return super(DatabaseSchemaEditor, self)._alter_column_type_sql(table, old_field, new_field, new_type)
+        return super()._alter_column_type_sql(model, old_field, new_field, new_type)
 
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
@@ -143,15 +210,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Have they renamed the column?
         if old_field.column != new_field.column:
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
+            # Rename all references to the renamed column.
+            for sql in self.deferred_sql:
+                if isinstance(sql, Statement):
+                    sql.rename_column_references(model._meta.db_table, old_field.column, new_field.column)
         # Next, start accumulating actions to do
         actions = []
         null_actions = []
         post_actions = []
         # Type change?
         if old_type != new_type:
-            fragment, other_actions = self._alter_column_type_sql(
-                model._meta.db_table, old_field, new_field, new_type
-            )
+            fragment, other_actions = self._alter_column_type_sql(model, old_field, new_field, new_type)
             actions.append(fragment)
             post_actions.extend(other_actions)
             # Drop unique constraint, SQL Server requires explicit deletion
@@ -168,58 +237,24 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         old_default = self.effective_default(old_field)
         new_default = self.effective_default(new_field)
         needs_database_default = (
+            old_field.null and
+            not new_field.null and
             old_default != new_default and
             new_default is not None and
             not self.skip_default(new_field)
         )
         if needs_database_default:
-            if self.connection.features.requires_literal_defaults:
-                # Some databases can't take defaults as a parameter (oracle)
-                # If this is the case, the individual schema backend should
-                # implement prepare_default
-                actions.append((
-                    self.sql_alter_column_default % {
-                        "column": self.quote_name(new_field.column),
-                        "type": new_type,
-                        "default": self.prepare_default(new_default),
-                    },
-                    [],
-                ))
-            else:
-                actions.append((
-                    self.sql_alter_column_default % {
-                        "column": self.quote_name(new_field.column),
-                        "type": new_type,
-                        "default": "%s",
-                    },
-                    [new_default],
-                ))
+            actions.append(self._alter_column_default_sql(model, old_field, new_field))
         # Nullability change?
         if old_field.null != new_field.null:
-            if (self.connection.features.interprets_empty_strings_as_nulls and
-                    new_field.get_internal_type() in ("CharField", "TextField")):
-                # The field is nullable in the database anyway, leave it alone
-                pass
-            elif new_field.null:
-                null_actions.append((
-                    self.sql_alter_column_null % {
-                        "column": self.quote_name(new_field.column),
-                        "type": new_type,
-                    },
-                    [],
-                ))
-            else:
-                null_actions.append((
-                    self.sql_alter_column_not_null % {
-                        "column": self.quote_name(new_field.column),
-                        "type": new_type,
-                    },
-                    [],
-                ))
-                # Drop unique constraint, SQL Server requires explicit deletion
-                self._delete_unique_constraints(model, old_field, new_field, strict)
-                # Drop indexes, SQL Server requires explicit deletion
-                self._delete_indexes(model, old_field, new_field)
+            fragment = self._alter_column_null_sql(model, old_field, new_field)
+            if fragment:
+                null_actions.append(fragment)
+                if not new_field.null:
+                    # Drop unique constraint, SQL Server requires explicit deletion
+                    self._delete_unique_constraints(model, old_field, new_field, strict)
+                    # Drop indexes, SQL Server requires explicit deletion
+                    self._delete_indexes(model, old_field, new_field)
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
             new_field.has_default() and
@@ -314,19 +349,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # will always come along and replace it.
         if not old_field.primary_key and new_field.primary_key:
             # First, drop the old PK
-            constraint_names = self._constraint_names(model, primary_key=True)
-            if strict and len(constraint_names) != 1:
-                raise ValueError("Found wrong number (%s) of PK constraints for %s" % (
-                    len(constraint_names),
-                    model._meta.db_table,
-                ))
-            for constraint_name in constraint_names:
-                self.execute(self._delete_constraint_sql(self.sql_delete_pk, model, constraint_name))
+            self._delete_primary_key(model, strict)
             # Make the new one
             self.execute(
                 self.sql_create_pk % {
                     "table": self.quote_name(model._meta.db_table),
-                    "name": self.quote_name(self._create_index_name(model, [new_field.column], suffix="_pk")),
+                    "name": self.quote_name(
+                        self._create_index_name(model._meta.db_table, [new_field.column], suffix="_pk")
+                    ),
                     "columns": self.quote_name(new_field.column),
                 }
             )
@@ -337,7 +367,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             rel_db_params = new_rel.field.db_parameters(connection=self.connection)
             rel_type = rel_db_params['type']
             fragment, other_actions = self._alter_column_type_sql(
-                new_rel.related_model._meta.db_table, old_rel.field, new_rel.field, rel_type
+                new_rel.related_model, old_rel.field, new_rel.field, rel_type
             )
             self.execute(
                 self.sql_alter_column % {
@@ -363,7 +393,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.execute(
                 self.sql_create_check % {
                     "table": self.quote_name(model._meta.db_table),
-                    "name": self.quote_name(self._create_index_name(model, [new_field.column], suffix="_check")),
+                    "name": self.quote_name(
+                        self._create_index_name(model._meta.db_table, [new_field.column], suffix="_check")
+                    ),
                     "column": self.quote_name(new_field.column),
                     "check": new_db_params['check'],
                 }
@@ -371,23 +403,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Drop the default if we need to
         # (Django usually does not use in-database defaults)
         if needs_database_default:
-            # SQL Server requires the name of the default constraint
-            result = self.execute(
-                self._sql_select_default_constraint_name % {
-                    "table": self.quote_value(model._meta.db_table),
-                    "column": self.quote_value(new_field.column),
-                },
-                has_result=True
-            )
-            if result:
-                for row in result:
-                    sql = self.sql_alter_column % {
-                        "table": self.quote_name(model._meta.db_table),
-                        "changes": self.sql_alter_column_no_default % {
-                            "column": self.quote_name(next(iter(row))),
-                        }
-                    }
-                    self.execute(sql)
+            changes_sql, params = self._alter_column_default_sql(model, old_field, new_field, drop=True)
+            sql = self.sql_alter_column % {
+                "table": self.quote_name(model._meta.db_table),
+                "changes": changes_sql,
+            }
+            self.execute(sql, params)
         # Reset connection if required
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
@@ -430,7 +451,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _rename_field_sql(self, table, old_field, new_field, new_type):
         new_type = self._set_field_new_type_null_status(old_field, new_type)
-        return super(DatabaseSchemaEditor, self)._rename_field_sql(table, old_field, new_field, new_type)
+        return super()._rename_field_sql(table, old_field, new_field, new_type)
 
     def _set_field_new_type_null_status(self, field, new_type):
         """
@@ -445,9 +466,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def add_field(self, model, field):
         """
-        Creates a field on a model.
-        Usually involves adding a column, but may involve adding a
-        table instead (for M2M fields)
+        Create a field on a model. Usually involves adding a column, but may
+        involve adding a table instead (for M2M fields).
         """
         # Special-case implicit M2M tables
         if field.many_to_many and field.remote_field.through._meta.auto_created:
@@ -471,24 +491,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Drop the default if we need to
         # (Django usually does not use in-database defaults)
         if not self.skip_default(field) and self.effective_default(field) is not None:
-            # SQL Server requires the name of the default constraint
-            result = self.execute(
-                self._sql_select_default_constraint_name % {
-                    "table": self.quote_value(model._meta.db_table),
-                    "column": self.quote_value(field.column),
-                },
-                has_result=True
-            )
-            if result:
-                for row in result:
-                    sql = self.sql_alter_column % {
-                        "table": self.quote_name(model._meta.db_table),
-                        "changes": self.sql_alter_column_no_default % {
-                            "column": self.quote_name(next(iter(row))),
-                            "type": db_params['type'],
-                        }
-                    }
-                    self.execute(sql)
+            changes_sql, params = self._alter_column_default_sql(model, None, field, drop=True)
+            sql = self.sql_alter_column % {
+                "table": self.quote_name(model._meta.db_table),
+                "changes": changes_sql,
+            }
+            self.execute(sql, params)
         # Add an index, if required
         self.deferred_sql.extend(self._field_indexes_sql(model, field))
         # Add any FK constraints later
@@ -516,7 +524,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if db_params['check']:
                 # SQL Server requires a name for the check constraint
                 definition += self._sql_check_constraint % {
-                    "name": self._create_index_name(model, [field.column], suffix="_check"),
+                    "name": self._create_index_name(model._meta.db_table, [field.column], suffix="_check"),
                     "check": db_params['check']
                 }
             # Autoincrement SQL (for backends with inline variant)
@@ -528,13 +536,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if field.remote_field and field.db_constraint:
                 to_table = field.remote_field.model._meta.db_table
                 to_column = field.remote_field.model._meta.get_field(field.remote_field.field_name).column
-                if self.connection.features.supports_foreign_keys:
-                    self.deferred_sql.append(self._create_fk_sql(model, field, "_fk_%(to_table)s_%(to_column)s"))
-                elif self.sql_create_inline_fk:
+                if self.sql_create_inline_fk:
                     definition += " " + self.sql_create_inline_fk % {
                         "to_table": self.quote_name(to_table),
                         "to_column": self.quote_name(to_column),
                     }
+                elif self.connection.features.supports_foreign_keys:
+                    self.deferred_sql.append(self._create_fk_sql(model, field, "_fk_%(to_table)s_%(to_column)s"))
             # Add the SQL to our big list
             column_sqls.append("%s %s" % (
                 self.quote_name(field.column),
@@ -593,7 +601,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(sql)
 
         # Delete the table
-        super(DatabaseSchemaEditor, self).delete_model(model)
+        super().delete_model(model)
+        # Remove all deferred statements referencing the deleted table.
+        for sql in list(self.deferred_sql):
+            if isinstance(sql, Statement) and sql.references_table(model._meta.db_table):
+                self.deferred_sql.remove(sql)
 
     def execute(self, sql, params=(), has_result=False):
         """
@@ -607,6 +619,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 "Executing DDL statements while in a transaction on databases "
                 "that can't perform a rollback is prohibited."
             )
+        # Account for non-string statement objects.
+        sql = str(sql)
         # Log the command we're running, then run it
         logger.debug("%s; (params %r)", sql, params, extra={'params': params, 'sql': sql})
         if self.collect_sql:
@@ -638,17 +652,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for particularly tricky backends (defaults are not user-defined, though,
         so this is safe).
         """
-        if isinstance(value, datetime.datetime):
-            if self.connection.use_legacy_datetime:
-                # exclude utc offset from the value
-                return "'%s'" % value.replace(tzinfo=None)
-            else:
-                return "'%s'" % value
-        elif isinstance(value, (datetime.date, datetime.time)):
+        if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
             return "'%s'" % value
-        elif isinstance(value, six.string_types):
+        elif isinstance(value, str):
             return "'%s'" % value.replace("'", "''")
-        elif isinstance(value, six.buffer_types):
+        elif isinstance(value, (bytes, bytearray, memoryview)):
             return "0x%s" % force_text(binascii.hexlify(value))
         elif isinstance(value, bool):
             return "1" if value else "0"
@@ -709,3 +717,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Reset connection if required
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
+        # Remove all deferred statements referencing the deleted table.
+        for sql in list(self.deferred_sql):
+            if isinstance(sql, Statement) and sql.references_column(model._meta.db_table, field.column):
+                self.deferred_sql.remove(sql)

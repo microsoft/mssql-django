@@ -1,12 +1,12 @@
+import types
 from itertools import chain
 
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
 from django.db.models.expressions import Exists, OrderBy, Ref, Value
-from django.db.models.functions import ConcatPair, Greatest, Least, Length, Substr
+from django.db.models.functions import ConcatPair, Greatest, Least, Length, StrIndex, Substr
 from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
-from django.db.utils import DatabaseError
-from django.utils import six
+from django.db.utils import DatabaseError, NotSupportedError
 
 
 def _as_sql_agv(self, compiler, connection):
@@ -61,6 +61,12 @@ def _as_sql_stddev(self, compiler, connection):
         function = '%sP' % function
     return self.as_sql(compiler, connection, function=function)
 
+def _as_sql_strindex(self, compiler, connection):
+    self.source_expressions.reverse()
+    sql = self.as_sql(compiler, connection, function='CHARINDEX')
+    self.source_expressions.reverse()
+    return sql
+
 def _as_sql_substr(self, compiler, connection):
     if len(self.get_source_expressions()) < 3:
         self.get_source_expressions().append(Value(2**31-1))
@@ -77,7 +83,7 @@ class SQLCompiler(compiler.SQLCompiler):
 
     def as_sql(self, with_limits=True, with_col_aliases=False):
         """
-        Creates the SQL for this query. Returns the SQL string and list of
+        Create the SQL for this query. Return the SQL string and list of
         parameters.
 
         If 'with_limits' is False, any limit/offset information is not included
@@ -102,7 +108,7 @@ class SQLCompiler(compiler.SQLCompiler):
 
             if combinator:
                 if not getattr(features, 'supports_select_{}'.format(combinator)):
-                    raise DatabaseError('{} not supported on this database backend.'.format(combinator))
+                    raise NotSupportedError('{} is not supported on this database backend.'.format(combinator))
                 result, params = self.get_combinator_sql(combinator, self.query.combinator_all)
             else:
                 distinct_fields = self.get_distinct()
@@ -164,16 +170,28 @@ class SQLCompiler(compiler.SQLCompiler):
                     if self.connection.get_autocommit():
                         raise TransactionManagementError('select_for_update cannot be used outside of a transaction.')
 
+                    if with_limits and not self.connection.features.supports_select_for_update_with_limit:
+                        raise NotSupportedError(
+                            'LIMIT/OFFSET is not supported with '
+                            'select_for_update on this database backend.'
+                        )
                     nowait = self.query.select_for_update_nowait
                     skip_locked = self.query.select_for_update_skip_locked
-                    # If it's a NOWAIT/SKIP LOCKED query but the backend
-                    # doesn't support it, raise a DatabaseError to prevent a
+                    of = self.query.select_for_update_of
+                    # If it's a NOWAIT/SKIP LOCKED/OF query but the backend
+                    # doesn't support it, raise NotSupportedError to prevent a
                     # possible deadlock.
                     if nowait and not self.connection.features.has_select_for_update_nowait:
-                        raise DatabaseError('NOWAIT is not supported on this database backend.')
+                        raise NotSupportedError('NOWAIT is not supported on this database backend.')
                     elif skip_locked and not self.connection.features.has_select_for_update_skip_locked:
-                        raise DatabaseError('SKIP LOCKED is not supported on this database backend.')
-                    for_update_part = self.connection.ops.for_update_sql(nowait=nowait, skip_locked=skip_locked)
+                        raise NotSupportedError('SKIP LOCKED is not supported on this database backend.')
+                    elif of and not self.connection.features.has_select_for_update_of:
+                        raise NotSupportedError('FOR UPDATE OF is not supported on this database backend.')
+                    for_update_part = self.connection.ops.for_update_sql(
+                        nowait=nowait,
+                        skip_locked=skip_locked,
+                        of=self.get_select_for_update_of_arguments(),
+                    )
 
                 if for_update_part and self.connection.features.for_update_after_from:
                     from_.insert(1, for_update_part)
@@ -228,6 +246,31 @@ class SQLCompiler(compiler.SQLCompiler):
                     if do_limit:
                         result.append('FETCH FIRST %d ROWS ONLY' % (high_mark - low_mark))
 
+            if self.query.subquery and extra_select:
+                # If the query is used as a subquery, the extra selects would
+                # result in more columns than the left-hand side expression is
+                # expecting. This can happen when a subquery uses a combination
+                # of order_by() and distinct(), forcing the ordering expressions
+                # to be selected as well. Wrap the query in another subquery
+                # to exclude extraneous selects.
+                sub_selects = []
+                sub_params = []
+                for select, _, alias in self.select:
+                    if alias:
+                        sub_selects.append("%s.%s" % (
+                            self.connection.ops.quote_name('subquery'),
+                            self.connection.ops.quote_name(alias),
+                        ))
+                    else:
+                        select_clone = select.relabeled_clone({select.alias: 'subquery'})
+                        subselect, subparams = select_clone.as_sql(self, self.connection)
+                        sub_selects.append(subselect)
+                        sub_params.extend(subparams)
+                return 'SELECT %s FROM (%s) subquery' % (
+                    ', '.join(sub_selects),
+                    ' '.join(result),
+                ), sub_params + params
+
             return ' '.join(result), tuple(params)
         finally:
             # Finally do cleanup - get rid of the joins we created above.
@@ -235,7 +278,7 @@ class SQLCompiler(compiler.SQLCompiler):
 
     def compile(self, node, select_format=False):
         node = self._as_microsoft(node)
-        return super(SQLCompiler, self).compile(node, select_format)
+        return super().compile(node, select_format)
 
     def _as_microsoft(self, node):
         as_microsoft = None
@@ -257,13 +300,15 @@ class SQLCompiler(compiler.SQLCompiler):
             as_microsoft = _as_sql_order_by
         elif isinstance(node, StdDev):
             as_microsoft = _as_sql_stddev
+        elif isinstance(node, StrIndex):
+            as_microsoft = _as_sql_strindex
         elif isinstance(node, Substr):
             as_microsoft = _as_sql_substr
         elif isinstance(node, Variance):
             as_microsoft = _as_sql_variance
         if as_microsoft:
             node = node.copy()
-            node.as_microsoft = six.create_bound_method(as_microsoft, node)
+            node.as_microsoft = types.MethodType(as_microsoft, node)
         return node
 
 
@@ -334,7 +379,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
 class SQLDeleteCompiler(compiler.SQLDeleteCompiler, SQLCompiler):
     def as_sql(self):
-        sql, params = super(SQLDeleteCompiler, self).as_sql()
+        sql, params = super().as_sql()
         if sql:
             sql = '; '.join(['SET NOCOUNT OFF', sql])
         return sql, params
@@ -342,7 +387,7 @@ class SQLDeleteCompiler(compiler.SQLDeleteCompiler, SQLCompiler):
 
 class SQLUpdateCompiler(compiler.SQLUpdateCompiler, SQLCompiler):
     def as_sql(self):
-        sql, params = super(SQLUpdateCompiler, self).as_sql()
+        sql, params = super().as_sql()
         if sql:
             sql = '; '.join(['SET NOCOUNT OFF', sql])
         return sql, params

@@ -7,7 +7,8 @@ import time
 
 from django.core.exceptions import ImproperlyConfigured
 from django import VERSION
-if VERSION[:3] < (1,11,9) or VERSION[:2] >= (2,0):
+
+if VERSION[:3] < (2,0,1) or VERSION[:2] >= (2,1):
     raise ImproperlyConfigured("Django %d.%d.%d is not supported." % VERSION[:3])
 
 try:
@@ -15,16 +16,18 @@ try:
 except ImportError as e:
     raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
 
-pyodbc_ver = tuple(map(int, Database.version.split('.')[:2]))
-if pyodbc_ver < (3, 0):
-    raise ImproperlyConfigured("pyodbc 3.0 or newer is required; you have %s" % Database.version)
+from django.utils.version import get_version_tuple
+
+pyodbc_ver = get_version_tuple(Database.version)
+if pyodbc_ver < (4,0):
+    raise ImproperlyConfigured("pyodbc 4.0 or newer is required; you have %s" % Database.version)
 
 from django.conf import settings
+from django.db import NotSupportedError
 from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.backends.base.validation import BaseDatabaseValidation
 from django.utils.encoding import smart_str
 from django.utils.functional import cached_property
-from django.utils.six import binary_type, text_type
 from django.utils.timezone import utc
 
 if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
@@ -64,6 +67,7 @@ def encode_value(v):
 
 class DatabaseWrapper(BaseDatabaseWrapper):
     vendor = 'microsoft'
+    display_name = 'SQL Server'
     # This dictionary maps Field objects to their associated MS SQL column
     # types, as strings. Column-type strings can contain format strings; they'll
     # be interpolated against the values of Field.__dict__ before being output.
@@ -75,7 +79,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'BinaryField':       'varbinary(max)',
         'BooleanField':      'bit',
         'CharField':         'nvarchar(%(max_length)s)',
-        'CommaSeparatedIntegerField': 'nvarchar(%(max_length)s)',
         'DateField':         'date',
         'DateTimeField':     'datetime2',
         'DecimalField':      'numeric(%(max_digits)s, %(decimal_places)s)',
@@ -149,7 +152,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         '08S02',
     )
     _sql_server_versions = {
-        9: 2005,
         10: 2008,
         11: 2012,
         12: 2014,
@@ -171,7 +173,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     )
 
     def __init__(self, *args, **kwargs):
-        super(DatabaseWrapper, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         opts = self.settings_dict["OPTIONS"]
 
@@ -189,9 +191,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.driver_charset = 'utf-8'
         else:
             self.driver_charset = opts.get('driver_charset', None)
-
-        # data type compatibility to databases created by old django-pyodbc
-        self.use_legacy_datetime = opts.get('use_legacy_datetime', False)
 
         # interval to wait for recovery from network error
         interval = opts.get('connection_recovery_interval_msec', 0.0)
@@ -236,17 +235,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         password = conn_params.get('PASSWORD', None)
         port = conn_params.get('PORT', None)
 
-        default_driver = 'SQL Server' if os.name == 'nt' else 'FreeTDS'
         options = conn_params.get('OPTIONS', {})
-        driver = options.get('driver', default_driver)
+        driver = options.get('driver', 'ODBC Driver 13 for SQL Server')
         dsn = options.get('dsn', None)
 
         # Microsoft driver names assumed here are:
-        # * SQL Server
-        # * SQL Native Client
         # * SQL Server Native Client 10.0/11.0
         # * ODBC Driver 11/13 for SQL Server
-        ms_drivers = re.compile('.*SQL (Server$|(Server )?Native Client)')
+        ms_drivers = re.compile('^ODBC Driver .* for SQL Server$|^SQL Server Native Client')
 
         # available ODBC connection string keywords:
         # (Microsoft drivers for Windows)
@@ -284,9 +280,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         cstr_parts['DATABASE'] = database
 
-        if ms_drivers.match(driver) and not driver == 'SQL Server':
-            self.supports_mars = True
-        if self.supports_mars:
+        if ms_drivers.match(driver) and os.name == 'nt':
             cstr_parts['MARS_Connection'] = 'yes'
 
         connstr = encode_connection_string(cstr_parts)
@@ -327,36 +321,25 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def init_connection_state(self):
         drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
-        driver_is_freetds = drv_name.startswith('LIBTDSODBC')
-        driver_is_sqlsrv32 = drv_name == 'SQLSRV32.DLL'
 
-        if driver_is_freetds:
-            self.supports_mars = False
+        if drv_name.startswith('LIBTDSODBC'):
             try:
                 drv_ver = self.connection.getinfo(Database.SQL_DRIVER_VER)
-                ver = tuple(map(int, drv_ver.split('.')[:2]))
+                ver = get_version_tuple(drv_ver.split('.')[:2])
                 if ver < (0, 95):
-                    # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
-                    # in multi-statement, so we need to commit the above SQL sentence(s)
-                    # to avoid this
-                    self.connection.commit()
+                    raise ImproperlyConfigured(
+                        "FreeTDS 0.95 or newer is required.")
             except:
                 # unknown driver version
                 pass
-        elif driver_is_sqlsrv32:
-            self.supports_mars = False
 
-        ms_drv_names = re.compile('^(LIB)?(SQLN?CLI|MSODBCSQL)')
+        ms_drv_names = re.compile('^(LIB)?(SQLNCLI|MSODBCSQL)')
 
-        if driver_is_sqlsrv32 or ms_drv_names.match(drv_name):
+        if ms_drv_names.match(drv_name):
             self.driver_charset = None
-
-        # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-        if self.supports_mars and ms_drv_names.match(drv_name):
+            # http://msdn.microsoft.com/en-us/library/ms131686.aspx
+            self.supports_mars = True
             self.features.can_use_chunked_reads = True
-
-        if self.sql_server_version < 2008:
-            self.features.has_bulk_insert = False
 
         settings_dict = self.settings_dict
         cursor = self.create_cursor()
@@ -370,17 +353,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         cursor.execute('SET DATEFORMAT ymd; SET DATEFIRST %s' % datefirst)
 
         # http://blogs.msdn.com/b/sqlnativeclient/archive/2008/02/27/microsoft-sql-server-native-client-and-microsoft-sql-server-2008-native-client.aspx
-        try:
-            val = cursor.execute('SELECT SYSDATETIME()').fetchone()[0]
-            if isinstance(val, text_type):
-                # the driver doesn't support the modern datetime types
-                self.use_legacy_datetime = True
-        except:
-            # the server doesn't support the modern datetime types
-            self.use_legacy_datetime = True
-        if self.use_legacy_datetime:
-            self._use_legacy_datetime()
-            self.features.supports_microsecond_precision = False
+        val = cursor.execute('SELECT SYSDATETIME()').fetchone()[0]
+        if isinstance(val, str):
+            raise ImproperlyConfigured(
+                "The database driver doesn't support modern datatime types.")
 
     def is_usable(self):
         try:
@@ -401,7 +377,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             ver = cursor.fetchone()[0]
             ver = int(ver.split('.')[0])
             if not ver in self._sql_server_versions:
-                raise NotImplementedError('SQL Server v%d is not supported.' % ver)
+                raise NotSupportedError('SQL Server v%d is not supported.' % ver)
             return self._sql_server_versions[ver]
 
     @cached_property
@@ -446,7 +422,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def _savepoint_rollback(self, sid):
         with self.cursor() as cursor:
-            # FreeTDS v0.95 requires TRANCOUNT that is greater than 0
+            # FreeTDS requires TRANCOUNT that is greater than 0
             cursor.execute('SELECT @@TRANCOUNT')
             trancount = cursor.fetchone()[0]
             if trancount > 0:
@@ -456,14 +432,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         with self.wrap_database_errors:
             allowed = not autocommit
             if not allowed:
-                # FreeTDS v0.95 requires TRANCOUNT that is greater than 0
+                # FreeTDS requires TRANCOUNT that is greater than 0
                 allowed = self._get_trancount() > 0
             if allowed:
                 self.connection.autocommit = autocommit
-
-    def _use_legacy_datetime(self):
-        for field in ('DateField', 'DateTimeField', 'TimeField'):
-            self.data_types[field] = 'datetime'
 
     def check_constraints(self, table_names=None):
         self._execute_foreach('ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL',
@@ -502,7 +474,7 @@ class CursorWrapper(object):
             self.cursor.close()
 
     def format_sql(self, sql, params):
-        if self.driver_charset and isinstance(sql, text_type):
+        if self.driver_charset and isinstance(sql, str):
             # FreeTDS (and other ODBC drivers?) doesn't support Unicode
             # yet, so we need to encode the SQL clause itself in utf-8
             sql = smart_str(sql, self.driver_charset)
@@ -517,7 +489,7 @@ class CursorWrapper(object):
         fp = []
         if params is not None:
             for p in params:
-                if isinstance(p, text_type):
+                if isinstance(p, str):
                     if self.driver_charset:
                         # FreeTDS (and other ODBC drivers?) doesn't support Unicode
                         # yet, so we need to encode parameters in utf-8
@@ -525,7 +497,7 @@ class CursorWrapper(object):
                     else:
                         fp.append(p)
 
-                elif isinstance(p, binary_type):
+                elif isinstance(p, bytes):
                     fp.append(p)
 
                 elif isinstance(p, type(True)):
@@ -568,16 +540,16 @@ class CursorWrapper(object):
     def format_row(self, row):
         """
         Decode data coming from the database if needed and convert rows to tuples
-        (pyodbc Rows are not sliceable).
+        (pyodbc Rows are not hashable).
         """
         if self.driver_charset:
             for i in range(len(row)):
                 f = row[i]
                 # FreeTDS (and other ODBC drivers?) doesn't support Unicode
                 # yet, so we need to decode utf-8 data coming from the DB
-                if isinstance(f, binary_type):
+                if isinstance(f, bytes):
                     row[i] = f.decode(self.driver_charset)
-        return row
+        return tuple(row)
 
     def fetchone(self):
         row = self.cursor.fetchone()
@@ -585,7 +557,8 @@ class CursorWrapper(object):
             row = self.format_row(row)
         # Any remaining rows in the current set must be discarded
         # before changing autocommit mode when you use FreeTDS
-        self.cursor.nextset()
+        if not self.connection.supports_mars:
+            self.cursor.nextset()
         return row
 
     def fetchmany(self, chunk):

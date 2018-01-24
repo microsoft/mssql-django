@@ -46,7 +46,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
     ignored_tables = []
 
     def get_field_type(self, data_type, description):
-        field_type = super(DatabaseIntrospection, self).get_field_type(data_type, description)
+        field_type = super().get_field_type(data_type, description)
         # the max nvarchar length is described as 0 or 2**30-1
         # (it depends on the driver)
         size = description.internal_size
@@ -109,6 +109,17 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                 column[1] = Database.SQL_WCHAR
             items.append(FieldInfo(*column))
         return items
+
+    def get_sequences(self, cursor, table_name, table_fields=()):
+        cursor.execute("""
+            SELECT c.name FROM sys.columns c
+            INNER JOIN sys.tables t ON c.object_id = t.object_id
+            WHERE t.name = %s AND c.is_identity = 1""",
+            [table_name])
+        # SQL Server allows only one identity column per table
+        # https://docs.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
+        row = cursor.fetchone()
+        return [{'table': table_name, 'column': row[0]}] if row else []
 
     def get_relations(self, cursor, table_name):
         """
