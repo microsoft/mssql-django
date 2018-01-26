@@ -29,7 +29,7 @@ setup(
     packages=['sql_server', 'sql_server.pyodbc'],
     install_requires=[
         'Django>=2.0.1,<2.1',
-        'pyodbc>=4.0',
+        'pyodbc>=3.0',
     ],
     classifiers=CLASSIFIERS,
     keywords='azure django',

@@ -19,8 +19,8 @@ except ImportError as e:
 from django.utils.version import get_version_tuple
 
 pyodbc_ver = get_version_tuple(Database.version)
-if pyodbc_ver < (4,0):
-    raise ImproperlyConfigured("pyodbc 4.0 or newer is required; you have %s" % Database.version)
+if pyodbc_ver < (3,0):
+    raise ImproperlyConfigured("pyodbc 3.0 or newer is required; you have %s" % Database.version)
 
 from django.conf import settings
 from django.db import NotSupportedError
