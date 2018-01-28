@@ -89,7 +89,7 @@ class DatabaseOperations(BaseDatabaseOperations):
     def convert_datetimefield_value(self, value, expression, connection):
         if value is not None:
             if settings.USE_TZ:
-                value = timezone.make_aware(value, timezone.utc)
+                value = timezone.make_aware(value, self.connection.timezone)
         return value
 
     def convert_floatfield_value(self, value, expression, connection):
@@ -157,7 +157,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def for_update_sql(self, nowait=False, skip_locked=False, of=()):
         if skip_locked:
-            return 'WITH (NOLOCK)'
+            return 'WITH (ROWLOCK, UPDLOCK, READPAST)'
         elif nowait:
             return 'WITH (NOWAIT, ROWLOCK, UPDLOCK)'
         else:
@@ -393,7 +393,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             return None
         if settings.USE_TZ and timezone.is_aware(value):
             # pyodbc donesn't support datetimeoffset
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            value = value.astimezone(self.connection.timezone).replace(tzinfo=None)
         return value
 
     def time_trunc_sql(self, lookup_type, field_name):
