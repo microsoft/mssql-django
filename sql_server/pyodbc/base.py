@@ -395,20 +395,40 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         return DatabaseSchemaEditor(self, *args, **kwargs)
 
     @cached_property
-    def sql_server_version(self):
-        with self.temporary_connection() as cursor:
-            cursor.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar)")
-            ver = cursor.fetchone()[0]
-            ver = int(ver.split('.')[0])
-            if not ver in self._sql_server_versions:
-                raise NotImplementedError('SQL Server v%d is not supported.' % ver)
-            return self._sql_server_versions[ver]
+    def sql_server_version(self, _known_versions={}):
+        """
+        Get the SQL server version
+
+        The _known_versions default dictionary is created on the class. This is
+        intentional - it allows us to cache this property's value across instances.
+        Therefore, when Django creates a new database connection using the same
+        alias, we won't need query the server again.
+        """
+        if self.alias not in _known_versions:
+            with self.temporary_connection() as cursor:
+                cursor.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar)")
+                ver = cursor.fetchone()[0]
+                ver = int(ver.split('.')[0])
+                if not ver in self._sql_server_versions:
+                    raise NotImplementedError('SQL Server v%d is not supported.' % ver)
+                _known_versions[self.alias] = self._sql_server_versions[ver]
+        return _known_versions[self.alias]
 
     @cached_property
-    def to_azure_sql_db(self):
-        with self.temporary_connection() as cursor:
-            cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
-            return cursor.fetchone()[0] == EDITION_AZURE_SQL_DB
+    def to_azure_sql_db(self, _known_azures={}):
+        """
+        Whether this connection is to a Microsoft Azure database server
+
+        The _known_azures default dictionary is created on the class. This is
+        intentional - it allows us to cache this property's value across instances.
+        Therefore, when Django creates a new database connection using the same
+        alias, we won't need query the server again.
+        """
+        if self.alias not in _known_azures:
+            with self.temporary_connection() as cursor:
+                cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
+                _known_azures[self.alias] = cursor.fetchone()[0] == EDITION_AZURE_SQL_DB
+        return _known_azures[self.alias]
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
