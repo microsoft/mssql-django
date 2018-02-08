@@ -128,6 +128,16 @@ Dictionary. Current available keys are:
    See http://msdn.microsoft.com/en-us/library/ms130892.aspx. Default is
    ``"SQL Server"`` on Windows and ``"FreeTDS"`` on other platforms.
 
+-  isolation_level
+
+   String. Sets `transaction isolation level
+   <https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql>`__
+   for each database session. Valid values for this entry are
+   ``READ UNCOMMITTED``, ``READ COMMITTED``, ``REPEATABLE READ``,
+   ``SNAPSHOT``, and ``SERIALIZABLE``. Default is ``None`` which means
+   no isolation levei is set to a database session and SQL Server default
+   will be used.
+
 -  dsn
 
    String. A named DSN can be used instead of ``HOST``.

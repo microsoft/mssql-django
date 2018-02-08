@@ -361,11 +361,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         settings_dict = self.settings_dict
         cursor = self.create_cursor()
 
+        options = settings_dict.get('OPTIONS', {})
+        isolation_level = options.get('isolation_level', None)
+        if isolation_level:
+            cursor.execute('SET TRANSACTION ISOLATION LEVEL %s' % isolation_level)
+
         # Set date format for the connection. Also, make sure Sunday is
         # considered the first day of the week (to be consistent with the
         # Django convention for the 'week_day' Django lookup) if the user
         # hasn't told us otherwise
-        options = settings_dict.get('OPTIONS', {})
         datefirst = options.get('datefirst', 7)
         cursor.execute('SET DATEFORMAT ymd; SET DATEFIRST %s' % datefirst)
 
