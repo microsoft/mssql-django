@@ -8,10 +8,10 @@ django-pyodbc-azure
     :target: http://opensource.org/licenses/BSD-3-Clause
 
 *django-pyodbc-azure* is a modern fork of
-`django-pyodbc <https://github.com/avidal/django-pyodbc>`__, a
-`Django <http://djangoproject.com/>`__ Microsoft SQL Server external
+`django-pyodbc <https://code.google.com/archive/p/django-pyodbc/>`__, a
+`Django <https://www.djangoproject.com/>`__ Microsoft SQL Server external
 DB backend that uses ODBC by employing the
-`pyodbc <https://code.google.com/p/pyodbc/>`__ library. It supports
+`pyodbc <https://github.com/mkleehammer/pyodbc>`__ library. It supports
 Microsoft SQL Server and Azure SQL Database.
 
 Features
@@ -244,18 +244,3 @@ specify an appropriate version number (1.10.x.x for Django 1.10)
 at installation like this: ::
 
     pip install "django-pyodbc-azure<1.11"
-
-License
--------
-
-New BSD LICENSE
-
-Credits
--------
-
--  `Ramiro Morales <https://people.djangoproject.com/ramiro/>`__
--  `Filip Wasilewski <http://code.djangoproject.com/ticket/5246>`__
--  `Wei guangjing <https://people.djangoproject.com/vcc/>`__
--  `mamcx <http://code.djangoproject.com/ticket/5062>`__
--  `Alex Vidal <http://github.com/avidal/>`__
--  `Michiya Takahashi <http://github.com/michiya/>`__
