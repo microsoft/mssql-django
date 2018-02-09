@@ -26,7 +26,7 @@ class DatabaseClient(BaseDatabaseClient):
             args = [self.executable_name]
             if server:
                 if port:
-                    server = ','.join((server, port))
+                    server = ','.join((server, str(port)))
                 args += ["-S", server]
             if user:
                 args += ["-U", user]

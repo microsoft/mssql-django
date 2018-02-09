@@ -260,7 +260,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
             if ms_drivers.match(driver):
                 if port:
-                    host = ','.join((host,port))
+                    host = ','.join((host, str(port)))
                 cstr_parts['SERVER'] = host
             elif options.get('host_is_server', False):
                 if port:
