@@ -295,6 +295,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         timeout = options.get('connection_timeout', 0)
         retries = options.get('connection_retries', 5)
         backoff_time = options.get('connection_retry_backoff_time', 5)
+        query_timeout = options.get('query_timeout', 0)
 
         conn = None
         retry_count = 0
@@ -317,6 +318,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 if not need_to_retry:
                     raise
 
+        conn.timeout = query_timeout
         return conn
 
     def init_connection_state(self):

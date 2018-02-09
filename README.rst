@@ -192,6 +192,11 @@ Dictionary. Current available keys are:
    Integer. Sets the back off time in seconds for reries of
    the database connection process. Default value is ``5``.
 
+-  query_timeout
+
+   Integer. Sets the timeout in seconds for the database query.
+   Default value is ``0`` which disables the timeout.
+
 backend-specific settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
