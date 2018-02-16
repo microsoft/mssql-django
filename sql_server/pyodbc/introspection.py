@@ -62,7 +62,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns a list of table and view names in the current database.
         """
-        sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES'
+        sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = SCHEMA_NAME()'
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
         return [TableInfo(row[0], types.get(row[1]))
@@ -126,14 +126,14 @@ SELECT e.COLUMN_NAME AS column_name,
   d.COLUMN_NAME AS referenced_column_name
 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS a
 INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS AS b
-  ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME
+  ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME AND a.TABLE_SCHEMA = b.CONSTRAINT_SCHEMA
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE AS c
-  ON b.UNIQUE_CONSTRAINT_NAME = c.CONSTRAINT_NAME
+  ON b.UNIQUE_CONSTRAINT_NAME = c.CONSTRAINT_NAME AND b.CONSTRAINT_SCHEMA = c.CONSTRAINT_SCHEMA
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
-  ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME
+  ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME AND c.CONSTRAINT_SCHEMA = d.CONSTRAINT_SCHEMA
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
-  ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME
-WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
+  ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME AND a.TABLE_SCHEMA = e.TABLE_SCHEMA
+WHERE a.TABLE_SCHEMA = SCHEMA_NAME() AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         cursor.execute(sql, (table_name,))
         return dict([[item[0], (item[2], item[1])] for item in cursor.fetchall()])
 
@@ -156,15 +156,20 @@ WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
 
         pk_uk_sql = """
 SELECT d.COLUMN_NAME, c.CONSTRAINT_TYPE FROM (
-SELECT a.CONSTRAINT_NAME, a.CONSTRAINT_TYPE
+SELECT a.CONSTRAINT_NAME, a.CONSTRAINT_TYPE, a.TABLE_SCHEMA
 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS a
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS b
-  ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME AND a.TABLE_NAME = b.TABLE_NAME
-WHERE a.TABLE_NAME = %s AND (CONSTRAINT_TYPE = 'PRIMARY KEY' OR CONSTRAINT_TYPE = 'UNIQUE')
-GROUP BY a.CONSTRAINT_TYPE, a.CONSTRAINT_NAME
+  ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME
+  AND a.TABLE_SCHEMA = b.TABLE_SCHEMA
+  AND a.TABLE_NAME = b.TABLE_NAME
+WHERE a.TABLE_SCHEMA = SCHEMA_NAME()
+  AND a.TABLE_NAME = %s
+  AND (CONSTRAINT_TYPE = 'PRIMARY KEY' OR CONSTRAINT_TYPE = 'UNIQUE')
+GROUP BY a.CONSTRAINT_TYPE, a.CONSTRAINT_NAME, a.TABLE_SCHEMA
 HAVING(COUNT(a.CONSTRAINT_NAME)) = 1) AS c
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
-  ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME"""
+  ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME
+  AND c.TABLE_SCHEMA = d.TABLE_SCHEMA"""
 
         field_names = [item[0] for item in self.get_table_description(cursor, table_name, identity_check=False)]
         indexes, results = {}, {}
@@ -190,6 +195,7 @@ WHERE ix.object_id IN (
   HAVING count(1) = 1)
 AND ix.is_primary_key = 0
 AND ix.is_unique_constraint = 0
+AND t.schema_id = SCHEMA_ID()
 AND t.name = %s"""
 
         cursor.execute(ix_sql, (table_name,))
@@ -217,7 +223,7 @@ AND t.name = %s"""
             INNER JOIN sys.columns c ON c.object_id = t.object_id AND c.column_id = fk.parent_column_id
             INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
             INNER JOIN sys.columns rc ON rc.object_id = rt.object_id AND rc.column_id = fk.referenced_column_id
-            WHERE t.name = %s""", [table_name])
+            WHERE t.schema_id = SCHEMA_ID() AND t.name = %s""", [table_name])
         key_columns.extend([tuple(row) for row in cursor.fetchall()])
         return key_columns
 
@@ -280,6 +286,7 @@ AND t.name = %s"""
                 kc.table_name = fk.table_name AND
                 kc.column_name = fk.column_name
             WHERE
+                kc.table_schema = SCHEMA_NAME() AND
                 kc.table_name = %s
             ORDER BY kc.ordinal_position ASC
         """, [table_name])
@@ -306,6 +313,7 @@ AND t.name = %s"""
                 kc.constraint_name = c.constraint_name
             WHERE
                 c.constraint_type = 'CHECK' AND
+                kc.table_schema = SCHEMA_NAME() AND
                 kc.table_name = %s
         """, [table_name])
         for constraint, column in cursor.fetchall():
@@ -344,6 +352,7 @@ AND t.name = %s"""
                 ic.object_id = c.object_id AND
                 ic.column_id = c.column_id
             WHERE
+                t.schema_id = SCHEMA_ID() AND
                 t.name = %s
             ORDER BY
                 i.index_id ASC,
