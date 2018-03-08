@@ -299,7 +299,9 @@ AND t.name = %s"""
             WHERE
                 kc.table_schema = SCHEMA_NAME() AND
                 kc.table_name = %s
-            ORDER BY kc.ordinal_position ASC
+            ORDER BY
+                kc.constraint_name ASC,
+                kc.ordinal_position ASC
         """, [table_name])
         for constraint, column, kind, ref_table, ref_column in cursor.fetchall():
             # If we're the first column, make the record
