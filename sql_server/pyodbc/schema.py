@@ -68,7 +68,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         fks_dropped = set()
         if old_field.remote_field and old_field.db_constraint:
             # Drop index, SQL Server requires explicit deletion
-            if not new_field.db_constraint:
+            if not hasattr(new_field, 'db_constraint') or not new_field.db_constraint:
                 index_names = self._constraint_names(model, [old_field.column], index=True)
                 for index_name in index_names:
                     self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
