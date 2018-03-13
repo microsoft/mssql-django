@@ -189,7 +189,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # True               | False            | False              | False
         # True               | False            | False              | True
         # True               | False            | True               | True
-        if old_field.db_index and not old_field.unique and (not new_field.db_index or new_field.unique):
+        if (old_field.db_index and not old_field.unique and (not new_field.db_index or new_field.unique)) or (
+            # Drop indexes on nvarchar columns that are changing to a different type
+            # SQL Server requires explicit deletion
+            (old_field.db_index or old_field.unique) and (
+            (old_type.startswith('nvarchar') and not new_type.startswith('nvarchar'))
+        )):
             # Find the index for this field
             meta_index_names = {index.name for index in model._meta.indexes}
             # Retrieve only BTREE indexes since this is what's created with
@@ -322,7 +327,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if (not old_field.db_index or old_field.unique) and new_field.db_index and not new_field.unique:
             self.execute(self._create_index_sql(model, [new_field]))
         # Restore an index, SQL Server requires explicit restoration
-        if old_type != new_type or (old_field.null and not new_field.null):
+        if (old_type != new_type or (old_field.null and not new_field.null)) and (
+            old_field.column == new_field.column
+        ):
             unique_columns = []
             if old_field.unique and new_field.unique:
                 unique_columns.append([old_field.column])
