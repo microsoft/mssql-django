@@ -208,7 +208,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     continue
                 self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
         # Change check constraints?
-        if old_db_params['check'] != new_db_params['check'] and old_db_params['check']:
+        if (old_db_params['check'] != new_db_params['check'] and old_db_params['check']) or (
+            # SQL Server requires explicit deletion befor altering column type with the same constraint
+            old_db_params['check'] == new_db_params['check'] and old_db_params['check'] and
+            old_db_params['type'] != new_db_params['type']
+        ):
             constraint_names = self._constraint_names(model, [old_field.column], check=True)
             if strict and len(constraint_names) != 1:
                 raise ValueError("Found wrong number (%s) of check constraints for %s.%s" % (
@@ -402,7 +406,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 if not rel.many_to_many and rel.field.db_constraint:
                     self.execute(self._create_fk_sql(rel.related_model, rel.field, "_fk"))
         # Does it have check constraints we need to add?
-        if old_db_params['check'] != new_db_params['check'] and new_db_params['check']:
+        if (old_db_params['check'] != new_db_params['check'] and new_db_params['check']) or (
+            # SQL Server requires explicit creation after altering column type with the same constraint
+            old_db_params['check'] == new_db_params['check'] and new_db_params['check'] and
+            old_db_params['type'] != new_db_params['type']
+        ):
             self.execute(
                 self.sql_create_check % {
                     "table": self.quote_name(model._meta.db_table),
