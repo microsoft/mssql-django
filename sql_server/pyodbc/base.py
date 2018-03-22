@@ -327,7 +327,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if drv_name.startswith('LIBTDSODBC'):
             try:
                 drv_ver = self.connection.getinfo(Database.SQL_DRIVER_VER)
-                ver = get_version_tuple(drv_ver.split('.')[:2])
+                ver = get_version_tuple(drv_ver)[:2]
                 if ver < (0, 95):
                     raise ImproperlyConfigured(
                         "FreeTDS 0.95 or newer is required.")
