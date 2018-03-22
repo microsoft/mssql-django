@@ -4,6 +4,7 @@ from django.db.models.aggregates import Avg, Count, StdDev, Variance
 from django.db.models.expressions import Exists, OrderBy, Ref, Value
 from django.db.models.functions import ConcatPair, Greatest, Least, Length, Substr
 from django.db.models.sql import compiler
+from django.db.models.sql.constants import GET_ITERATOR_CHUNK_SIZE
 from django.db.transaction import TransactionManagementError
 from django.db.utils import DatabaseError
 from django.utils import six
@@ -71,6 +72,35 @@ def _as_sql_variance(self, compiler, connection):
     if self.function == 'VAR_POP':
         function = '%sP' % function
     return self.as_sql(compiler, connection, function=function)
+
+def _cursor_iter(cursor, sentinel, col_count):
+    """
+    Yields blocks of rows from a cursor and ensures the cursor is closed when
+    done.
+    """
+    if cursor.db.supports_mars:
+        # same as the original Django implementation
+        try:
+            for rows in iter((lambda: cursor.fetchmany(GET_ITERATOR_CHUNK_SIZE)),
+                             sentinel):
+                yield [r[0:col_count] for r in rows]
+        finally:
+            cursor.close()
+    else:
+        # retrieve all chunks from the cursor and close it before yielding
+        # so that we can open an another cursor over an iteration
+        # (for drivers such as FreeTDS)
+        chunks = []
+        try:
+            for rows in iter((lambda: cursor.fetchmany(GET_ITERATOR_CHUNK_SIZE)),
+                             sentinel):
+                chunks.append(rows)
+        finally:
+            cursor.close()
+        for rows in chunks:
+            yield [r[0:col_count] for r in rows]
+
+compiler.cursor_iter = _cursor_iter
 
 
 class SQLCompiler(compiler.SQLCompiler):
