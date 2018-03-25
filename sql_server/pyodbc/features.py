@@ -13,6 +13,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     can_return_id_from_insert = True
     can_use_chunked_reads = False
     for_update_after_from = True
+    greatest_least_ignores_nulls = True
     has_bulk_insert = True
     has_real_datatype = True
     has_select_for_update = True
