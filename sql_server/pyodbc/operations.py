@@ -490,6 +490,8 @@ class DatabaseOperations(BaseDatabaseOperations):
                 value = datetime.datetime(*(time.strptime(value, '%H:%M:%S')[:6]))
             else:
                 value = datetime.datetime(1900, 1, 1, value.hour, value.minute, value.second)
+        else:
+            value = super(DatabaseOperations, self).adapt_timefield_value(value)
         return value
 
     def time_trunc_sql(self, lookup_type, field_name):
