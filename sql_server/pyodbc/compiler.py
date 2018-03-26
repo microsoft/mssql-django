@@ -78,6 +78,33 @@ def _as_sql_variance(self, compiler, connection):
         function = '%sP' % function
     return self.as_sql(compiler, connection, function=function)
 
+def _cursor_iter(cursor, sentinel, col_count, itersize):
+    """
+    Yields blocks of rows from a cursor and ensures the cursor is closed when
+    done.
+    """
+    if cursor.db.supports_mars:
+        # same as the original Django implementation
+        try:
+            for rows in iter((lambda: cursor.fetchmany(itersize)), sentinel):
+                yield rows if col_count is None else [r[:col_count] for r in rows]
+        finally:
+            cursor.close()
+    else:
+        # retrieve all chunks from the cursor and close it before yielding
+        # so that we can open an another cursor over an iteration
+        # (for drivers such as FreeTDS)
+        chunks = []
+        try:
+            for rows in iter((lambda: cursor.fetchmany(itersize)), sentinel):
+                chunks.append(rows if col_count is None else [r[:col_count] for r in rows])
+        finally:
+            cursor.close()
+        for rows in chunks:
+            yield rows
+
+compiler.cursor_iter = _cursor_iter
+
 
 class SQLCompiler(compiler.SQLCompiler):
 
