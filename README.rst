@@ -17,7 +17,7 @@ Microsoft SQL Server and Azure SQL Database.
 Features
 --------
 
--  Supports Django 2.0.4
+-  Supports Django 2.0.6
 -  Supports Microsoft SQL Server 2008/2008R2, 2012, 2014, 2016, 2017 and
    Azure SQL Database
 -  Passes most of the tests of the Django test suite
@@ -29,7 +29,7 @@ Features
 Dependencies
 ------------
 
--  Django 2.0.4
+-  Django 2.0.6
 -  pyodbc 3.0 or newer
 
 Installation
