@@ -2,7 +2,7 @@ import binascii
 import datetime
 
 from django.db.backends.base.schema import (
-    BaseDatabaseSchemaEditor, logger, _related_non_m2m_objects,
+    BaseDatabaseSchemaEditor, logger, _is_relevant_relation, _related_non_m2m_objects,
 )
 from django.db.backends.ddl_references import (
     Statement,
