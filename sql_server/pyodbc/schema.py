@@ -317,7 +317,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             for sql, params in post_actions:
                 self.execute(sql, params)
         # Added a unique?
-        if not old_field.unique and new_field.unique:
+        if (not old_field.unique and new_field.unique) or (
+            old_field.primary_key and not new_field.primary_key and new_field.unique
+        ):
             self.execute(self._create_unique_sql(model, [new_field.column]))
         # Added an index?
         # constraint will no longer be used in lieu of an index. The following
