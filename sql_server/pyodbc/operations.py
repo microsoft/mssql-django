@@ -104,7 +104,9 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def date_extract_sql(self, lookup_type, field_name):
         if lookup_type == 'week_day':
-            return "DATEPART(dw, %s)" % field_name
+            return "DATEPART(weekday, %s)" % field_name
+        elif lookup_type == 'week':
+            return "DATEPART(iso_week, %s)" % field_name
         else:
             return "DATEPART(%s, %s)" % (lookup_type, field_name)
 
