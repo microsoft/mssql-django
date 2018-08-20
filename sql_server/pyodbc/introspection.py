@@ -1,12 +1,9 @@
-import warnings
-
 import pyodbc as Database
 
 from django.db.backends.base.introspection import (
     BaseDatabaseIntrospection, FieldInfo, TableInfo,
 )
 from django.db.models.indexes import Index
-from django.utils.deprecation import RemovedInDjango21Warning
 
 SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
@@ -147,79 +144,6 @@ INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
 WHERE a.TABLE_SCHEMA = SCHEMA_NAME() AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         cursor.execute(sql, (table_name,))
         return dict([[item[0], (item[2], item[1])] for item in cursor.fetchall()])
-
-    def get_indexes(self, cursor, table_name):
-        """
-        Deprecated in Django 1.11, use get_constraints instead.
-        Returns a dictionary of fieldname -> infodict for the given table,
-        where each infodict is in the format:
-            {'primary_key': boolean representing whether it's the primary key,
-             'unique': boolean representing whether it's a unique index}
-
-        Only single-column indexes are introspected.
-        """
-        warnings.warn(
-            "get_indexes() is deprecated in favor of get_constraints().",
-            RemovedInDjango21Warning, stacklevel=2
-        )
-        # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
-        # TABLE_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms181757.aspx
-
-        pk_uk_sql = """
-SELECT d.COLUMN_NAME, c.CONSTRAINT_TYPE FROM (
-SELECT a.CONSTRAINT_NAME, a.CONSTRAINT_TYPE, a.TABLE_SCHEMA
-FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS a
-INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS b
-  ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME
-  AND a.TABLE_SCHEMA = b.TABLE_SCHEMA
-  AND a.TABLE_NAME = b.TABLE_NAME
-WHERE a.TABLE_SCHEMA = SCHEMA_NAME()
-  AND a.TABLE_NAME = %s
-  AND (CONSTRAINT_TYPE = 'PRIMARY KEY' OR CONSTRAINT_TYPE = 'UNIQUE')
-GROUP BY a.CONSTRAINT_TYPE, a.CONSTRAINT_NAME, a.TABLE_SCHEMA
-HAVING(COUNT(a.CONSTRAINT_NAME)) = 1) AS c
-INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
-  ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME
-  AND c.TABLE_SCHEMA = d.TABLE_SCHEMA"""
-
-        field_names = [item[0] for item in self.get_table_description(cursor, table_name, identity_check=False)]
-        indexes, results = {}, {}
-        cursor.execute(pk_uk_sql, (table_name,))
-        data = cursor.fetchall()
-        if data:
-            results.update(data)
-
-        # non-unique, non-compound indexes, only in SS2005?
-        ix_sql = """
-SELECT DISTINCT c.name
-FROM sys.columns c
-INNER JOIN sys.index_columns ic
-  ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-INNER JOIN sys.indexes ix
-  ON ix.object_id = ic.object_id AND ix.index_id = ic.index_id
-INNER JOIN sys.tables t
-  ON t.object_id = ix.object_id
-WHERE ix.object_id IN (
-  SELECT ix.object_id
-  FROM sys.indexes ix
-  GROUP BY ix.object_id, ix.index_id
-  HAVING count(1) = 1)
-AND ix.is_primary_key = 0
-AND ix.is_unique_constraint = 0
-AND t.schema_id = SCHEMA_ID()
-AND t.name = %s"""
-
-        cursor.execute(ix_sql, (table_name,))
-        for column in [r[0] for r in cursor.fetchall()]:
-            if column not in results:
-                results[column] = 'IX'
-
-        for field in field_names:
-            val = results.get(field, None)
-            if val:
-                indexes[field] = dict(primary_key=(val=='PRIMARY KEY'), unique=(val=='UNIQUE'))
-
-        return indexes
 
     def get_key_columns(self, cursor, table_name):
         """

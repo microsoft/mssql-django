@@ -127,6 +127,8 @@ class DatabaseOperations(BaseDatabaseOperations):
             return "CONVERT(datetime2, CONVERT(varchar, DATEPART(year, %s)) + '/' + CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3)) + '/01')" % (field_name, field_name)
         if lookup_type == 'month':
             return "CONVERT(datetime2, CONVERT(varchar, DATEPART(year, %s)) + '/' + CONVERT(varchar, DATEPART(month, %s)) + '/01')" % (field_name, field_name)
+        if lookup_type == 'week':
+            return "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, CONVERT(datetime2, CONVERT(varchar(12), %s, 112)))" % (field_name, field_name)
         if lookup_type == 'day':
             return "CONVERT(datetime2, CONVERT(varchar(12), %s, 112))" % field_name
 
@@ -147,7 +149,7 @@ class DatabaseOperations(BaseDatabaseOperations):
     def datetime_trunc_sql(self, lookup_type, field_name, tzname):
         field_name = self._convert_field_to_tz(field_name, tzname)
         sql = ''
-        if lookup_type in ('year', 'quarter', 'month', 'day'):
+        if lookup_type in ('year', 'quarter', 'month', 'week', 'day'):
             sql = self.date_trunc_sql(lookup_type, field_name)
         elif lookup_type == 'hour':
             sql = "CONVERT(datetime2, SUBSTRING(CONVERT(varchar, %s, 20), 0, 14) + ':00:00')" % field_name
@@ -261,6 +263,14 @@ class DatabaseOperations(BaseDatabaseOperations):
         NotImplementedError exception can be raised.
         """
         raise NotImplementedError('SQL Server has no built-in regular expression support.')
+
+    def limit_offset_sql(self, low_mark, high_mark):
+        """Return LIMIT/OFFSET SQL clause."""
+        limit, offset = self._get_limit_offset_params(low_mark, high_mark)
+        return '%s%s' % (
+            (' OFFSET %d ROWS' % offset) if offset else '',
+            (' FETCH FIRST %d ROWS ONLY' % limit) if limit else '',
+        )
 
     def last_executed_query(self, cursor, sql, params):
         """
