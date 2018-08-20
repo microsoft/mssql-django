@@ -157,7 +157,9 @@ class DatabaseOperations(BaseDatabaseOperations):
         the SQL that extracts a value from the given date field field_name.
         """
         if lookup_type == 'week_day':
-            return "DATEPART(dw, %s)" % field_name
+            return "DATEPART(weekday, %s)" % field_name
+        elif lookup_type == 'week' and self.connection.sql_server_version >= 2008:
+            return "DATEPART(iso_week, %s)" % field_name
         else:
             return "DATEPART(%s, %s)" % (lookup_type, field_name)
 
