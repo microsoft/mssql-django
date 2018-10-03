@@ -209,13 +209,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     ops[op] = '%s COLLATE %s' % (sql, collation)
             self.operators.update(ops)
 
-        self.features = self.features_class(self)
-        self.ops = self.ops_class(self)
-        self.client = self.client_class(self)
-        self.creation = self.creation_class(self)
-        self.introspection = self.introspection_class(self)
-        self.validation = self.validation_class(self)
-
     def create_cursor(self, name=None):
         return CursorWrapper(self.connection.cursor(), self)
 
