@@ -207,13 +207,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     ops[op] = '%s COLLATE %s' % (sql, collation)
             self.operators.update(ops)
 
-        self.features = DatabaseFeatures(self)
-        self.ops = DatabaseOperations(self)
-        self.client = DatabaseClient(self)
-        self.creation = DatabaseCreation(self)
-        self.introspection = DatabaseIntrospection(self)
-        self.validation = BaseDatabaseValidation(self)
-
     def create_cursor(self, name=None):
         return CursorWrapper(self.connection.cursor(), self)
 
@@ -371,10 +364,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             return False
         else:
             return True
-
-    def schema_editor(self, *args, **kwargs):
-        "Returns a new instance of this backend's SchemaEditor"
-        return DatabaseSchemaEditor(self, *args, **kwargs)
 
     @cached_property
     def sql_server_version(self, _known_versions={}):
