@@ -50,5 +50,5 @@ install:
   - export PYTHONPATH=$PYTHONPATH:$TRAVIS_BUILD_DIR/django
 
 script:
-  - pip install -r requirements/py3.txt
+  - pip install -r django/tests/requirements/py3.txt
   - ./test.sh
