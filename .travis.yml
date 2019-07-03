@@ -46,7 +46,7 @@ matrix:
 install:
   - python -m pip install --upgrade pip wheel setuptools
   - pip install -e .["tests$DB_PACKAGES"]
-  - git clone --branch=stable/2.1.x https://github.com/django/django.git "$TRAVIS_BUILD_DIR/../django" --depth=1
+  - git clone --branch=stable/2.2.x https://github.com/django/django.git "$TRAVIS_BUILD_DIR/../django" --depth=1
   - export PYTHONPATH=$PYTHONPATH:$TRAVIS_BUILD_DIR
 
 script:
