@@ -19,7 +19,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     requires_literal_defaults = True
     requires_sqlparse_for_splitting = False
     supports_index_on_text_field = False
-    supports_nullable_unique_constraints = False
+    supports_nullable_unique_constraints = True
     supports_paramstyle_pyformat = False
     supports_partially_nullable_unique_constraints = False
     supports_regex_backreferencing = False

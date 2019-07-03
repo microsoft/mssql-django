@@ -12,32 +12,32 @@ SQL_BIGAUTOFIELD = -777444
 class DatabaseIntrospection(BaseDatabaseIntrospection):
     # Map type codes to Django Field types.
     data_types_reverse = {
-        SQL_AUTOFIELD:                  'AutoField',
-        SQL_BIGAUTOFIELD:               'BigAutoField',
-        Database.SQL_BIGINT:            'BigIntegerField',
-        #Database.SQL_BINARY:            ,
-        Database.SQL_BIT:               'BooleanField',
-        Database.SQL_CHAR:              'CharField',
-        Database.SQL_DECIMAL:           'DecimalField',
-        Database.SQL_DOUBLE:            'FloatField',
-        Database.SQL_FLOAT:             'FloatField',
-        Database.SQL_GUID:              'TextField',
-        Database.SQL_INTEGER:           'IntegerField',
-        Database.SQL_LONGVARBINARY:     'BinaryField',
-        #Database.SQL_LONGVARCHAR:       ,
-        Database.SQL_NUMERIC:           'DecimalField',
-        Database.SQL_REAL:              'FloatField',
-        Database.SQL_SMALLINT:          'SmallIntegerField',
-        Database.SQL_SS_TIME2:          'TimeField',
-        Database.SQL_TINYINT:           'SmallIntegerField',
-        Database.SQL_TYPE_DATE:         'DateField',
-        Database.SQL_TYPE_TIME:         'TimeField',
-        Database.SQL_TYPE_TIMESTAMP:    'DateTimeField',
-        Database.SQL_VARBINARY:         'BinaryField',
-        Database.SQL_VARCHAR:           'TextField',
-        Database.SQL_WCHAR:             'CharField',
-        Database.SQL_WLONGVARCHAR:      'TextField',
-        Database.SQL_WVARCHAR:          'TextField',
+        SQL_AUTOFIELD: 'AutoField',
+        SQL_BIGAUTOFIELD: 'BigAutoField',
+        Database.SQL_BIGINT: 'BigIntegerField',
+        # Database.SQL_BINARY:            ,
+        Database.SQL_BIT: 'BooleanField',
+        Database.SQL_CHAR: 'CharField',
+        Database.SQL_DECIMAL: 'DecimalField',
+        Database.SQL_DOUBLE: 'FloatField',
+        Database.SQL_FLOAT: 'FloatField',
+        Database.SQL_GUID: 'TextField',
+        Database.SQL_INTEGER: 'IntegerField',
+        Database.SQL_LONGVARBINARY: 'BinaryField',
+        # Database.SQL_LONGVARCHAR:       ,
+        Database.SQL_NUMERIC: 'DecimalField',
+        Database.SQL_REAL: 'FloatField',
+        Database.SQL_SMALLINT: 'SmallIntegerField',
+        Database.SQL_SS_TIME2: 'TimeField',
+        Database.SQL_TINYINT: 'SmallIntegerField',
+        Database.SQL_TYPE_DATE: 'DateField',
+        Database.SQL_TYPE_TIME: 'TimeField',
+        Database.SQL_TYPE_TIMESTAMP: 'DateTimeField',
+        Database.SQL_VARBINARY: 'BinaryField',
+        Database.SQL_VARCHAR: 'TextField',
+        Database.SQL_WCHAR: 'CharField',
+        Database.SQL_WLONGVARCHAR: 'TextField',
+        Database.SQL_WVARCHAR: 'TextField',
     }
 
     ignored_tables = []
@@ -48,10 +48,10 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         # (it depends on the driver)
         size = description.internal_size
         if field_type == 'CharField':
-            if size == 0 or size >= 2**30-1:
+            if size == 0 or size >= 2**30 - 1:
                 field_type = "TextField"
         elif field_type == 'TextField':
-            if size > 0 and size < 2**30-1:
+            if size > 0 and size < 2**30 - 1:
                 field_type = 'CharField'
         return field_type
 
@@ -72,11 +72,11 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         # COLUMNPROPERTY: http://msdn2.microsoft.com/en-us/library/ms174968.aspx
 
-        #from django.db import connection
-        #cursor.execute("SELECT COLUMNPROPERTY(OBJECT_ID(%s), %s, 'IsIdentity')",
+        # from django.db import connection
+        # cursor.execute("SELECT COLUMNPROPERTY(OBJECT_ID(%s), %s, 'IsIdentity')",
         #                 (connection.ops.quote_name(table_name), column_name))
         cursor.execute("SELECT COLUMNPROPERTY(OBJECT_ID(%s), %s, 'IsIdentity')",
-                         (self.connection.ops.quote_name(table_name), column_name))
+                       (self.connection.ops.quote_name(table_name), column_name))
         return cursor.fetchall()[0][0]
 
     def get_table_description(self, cursor, table_name, identity_check=True):
@@ -112,7 +112,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
             SELECT c.name FROM sys.columns c
             INNER JOIN sys.tables t ON c.object_id = t.object_id
             WHERE t.schema_id = SCHEMA_ID() AND t.name = %s AND c.is_identity = 1""",
-            [table_name])
+                       [table_name])
         # SQL Server allows only one identity column per table
         # https://docs.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
         row = cursor.fetchone()
@@ -306,7 +306,7 @@ WHERE a.TABLE_SCHEMA = SCHEMA_NAME() AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE
                     "check": False,
                     "index": True,
                     "orders": [],
-                    "type": Index.suffix if type_ in (1,2) else desc.lower(),
+                    "type": Index.suffix if type_ in (1, 2) else desc.lower(),
                 }
             indexes[index]["columns"].append(column)
             indexes[index]["orders"].append("DESC" if order == 1 else "ASC")

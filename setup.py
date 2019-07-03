@@ -3,7 +3,7 @@ try:
 except ImportError:
     from distutils.core import setup
 
-CLASSIFIERS=[
+CLASSIFIERS = [
     'Development Status :: 4 - Beta',
     'License :: OSI Approved :: BSD License',
     'Framework :: Django',
@@ -29,6 +29,9 @@ setup(
         'Django>=2.1.0,<2.2',
         'pyodbc>=3.0',
     ],
+    extras_require={
+        'tests': ['dj-database-url==0.5.0'],
+    },
     classifiers=CLASSIFIERS,
     keywords='azure django',
 )

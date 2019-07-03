@@ -1,0 +1,151 @@
+sudo: required
+language: python
+cache: pip
+
+branches:
+  only:
+    - azure-2.1
+
+templates:
+  mssql: &mssql DB_PACKAGES="" DATABASE_URL="mssql://SA:MyPassword42@localhost:1433/default?isolation_level=read committed&driver=ODBC Driver 17 for SQL Server" DATABASE_URL_OTHER="mssql://SA:MyPassword42@localhost:1433/other?isolation_level=read committed&driver=ODBC Driver 17 for SQL Server"
+
+matrix:
+  include:
+    - env: FLAKE8
+      python: "3.6"
+      install: pip install flake8==3.7.1
+      script: flake8
+
+    - python: "3.6"
+      dist: trusty
+      services: docker
+      before_install:
+        - docker pull mcr.microsoft.com/mssql/server:2017-latest-ubuntu
+        - docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2017-latest-ubuntu
+        - curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+        - curl https://packages.microsoft.com/config/ubuntu/14.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+        - sudo apt-get update
+        - sudo ACCEPT_EULA=Y apt-get install msodbcsql17
+      env:
+        - *mssql
+
+    - os: windows
+      language: sh
+      python: "3.6"
+      services: docker
+      before_install:
+        - docker pull christianacca/mssql-server-windows-express:1803
+        - docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d christianacca/mssql-server-windows-express:1803
+        - wget https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/msodbcsql_17.3.1.1_x64.msi
+        - powershell "Start-Process msiexec.exe -Wait -ArgumentList '/I msodbcsql_17.3.1.1_x64.msi /qn /norestart IACCEPTMSODBCSQLLICENSETERMS=YES'"
+        - choco install python3 --version 3.6.6
+        - export PATH="/c/Python36:/c/Python36/Scripts:$PATH"
+      env:
+        - *mssql
+
+install:
+  - python -m pip install --upgrade pip wheel setuptools
+  - pip install -e .["tests$DB_PACKAGES"]
+  - git clone --branch=stable/2.1.x https://github.com/django/django.git "$TRAVIS_BUILD_DIR/../django" --depth=1
+  - export PYTHONPATH=$PYTHONPATH:$TRAVIS_BUILD_DIR
+
+script:
+  - cd "$TRAVIS_BUILD_DIR/../django/tests"
+  - pip install -r requirements/py3.txt
+  - ./runtests.py --settings=testapp.settings \
+    aggregation
+    aggregation_regress
+    annotations
+    backends basic
+    bulk_create constraints
+    custom_columns
+    custom_lookups
+    custom_managers
+    custom_methods
+    custom_migration_operations
+    custom_pk
+    datatypes
+    dates
+    datetimes
+    db_functions
+    db_typecasts
+    db_utils
+    dbshell
+    defer
+    defer_regress
+    delete
+    delete_regress
+    distinct_on_fields
+    empty
+    empty_models
+    expressions
+    expressions_case
+    expressions_window
+    extra_regress
+    field_deconstruction
+    field_defaults
+    field_subclassing
+    filtered_relation
+    fixtures
+    fixtures_model_package
+    fixtures_regress
+    force_insert_update
+    foreign_object
+    from_db_value
+    generic_relations
+    generic_relations_regress
+    get_earliest_or_latest
+    get_object_or_404
+    get_or_create
+    indexes
+    inspectdb
+    introspection
+    invalid_model_tests
+    known_related_objects
+    lookup
+    m2m_and_m2o
+    m2m_intermediary
+    m2m_multiple
+    m2m_recursive
+    m2m_regress
+    m2m_signals
+    m2m_through
+    m2m_through_regress
+    m2o_recursive
+    managers_regress
+    many_to_many
+    many_to_one
+    many_to_one_null
+    max_lengths
+    migrate_signals
+    migration_test_data_persistance
+    migrations
+    migrations2
+    model_fields
+    model_indexes
+    model_options
+    mutually_referential
+    nested_foreign_keys
+    null_fk
+    null_fk_ordering
+    null_queries
+    one_to_one
+    or_lookups
+    order_with_respect_to
+    ordering
+    pagination
+    prefetch_related
+    queries
+    queryset_pickle
+    raw_query
+    reverse_lookup
+    save_delete_hooks
+    schema
+    select_for_update
+    select_related
+    select_related_onetoone
+    select_related_regress
+    transaction_hooks
+    transactions
+    update
+    update_only_fields

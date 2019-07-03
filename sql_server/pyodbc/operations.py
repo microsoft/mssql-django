@@ -121,14 +121,19 @@ class DatabaseOperations(BaseDatabaseOperations):
         return sql
 
     def date_trunc_sql(self, lookup_type, field_name):
+        CONVERT_YEAR = 'CONVERT(varchar, DATEPART(year, %s))' % field_name
+        CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
+        CONVERT_MONTH = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
+
         if lookup_type == 'year':
-            return "CONVERT(datetime2, CONVERT(varchar, DATEPART(year, %s)) + '/01/01')" % field_name
+            return "CONVERT(datetime2, %s + '/01/01')" % CONVERT_YEAR
         if lookup_type == 'quarter':
-            return "CONVERT(datetime2, CONVERT(varchar, DATEPART(year, %s)) + '/' + CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3)) + '/01')" % (field_name, field_name)
+            return "CONVERT(datetime2, %s + '/' + %s + '/01')" % (CONVERT_YEAR, CONVERT_QUARTER)
         if lookup_type == 'month':
-            return "CONVERT(datetime2, CONVERT(varchar, DATEPART(year, %s)) + '/' + CONVERT(varchar, DATEPART(month, %s)) + '/01')" % (field_name, field_name)
+            return "CONVERT(datetime2, %s + '/' + %s + '/01')" % (CONVERT_YEAR, CONVERT_MONTH)
         if lookup_type == 'week':
-            return "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, CONVERT(datetime2, CONVERT(varchar(12), %s, 112)))" % (field_name, field_name)
+            CONVERT = "CONVERT(datetime2, CONVERT(varchar(12), %s, 112))" % field_name
+            return "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, %s)" % (CONVERT, field_name)
         if lookup_type == 'day':
             return "CONVERT(datetime2, CONVERT(varchar(12), %s, 112))" % field_name
 
@@ -169,7 +174,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def format_for_duration_arithmetic(self, sql):
         if sql == '%s':
-            # use DATEADD only once because Django prepares only one parameter for this 
+            # use DATEADD only once because Django prepares only one parameter for this
             fmt = 'DATEADD(second, %s / 1000000%%s, CAST(%%s AS datetime2))'
             sql = '%%s'
         else:
@@ -244,7 +249,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         not quote the given name if it's already been quoted.
         """
         if name.startswith('[') and name.endswith(']'):
-            return name # Quoting once is enough.
+            return name  # Quoting once is enough.
         return '[%s]' % name
 
     def random_function_sql(self):
@@ -331,15 +336,16 @@ class DatabaseOperations(BaseDatabaseOperations):
                     elem['start_id'] = 1
                 elem.update(seq)
                 seqs.append(elem)
-            cursor.execute("SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')")
+            cursor.execute(
+                "SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')")
             fks = cursor.fetchall()
-            sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' % \
-                    (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
+            sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' %
+                        (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
             sql_list.extend(['%s %s %s;' % (style.SQL_KEYWORD('DELETE'), style.SQL_KEYWORD('FROM'),
-                             style.SQL_FIELD(self.quote_name(table)) ) for table in tables])
+                                            style.SQL_FIELD(self.quote_name(table))) for table in tables])
 
             if self.connection.to_azure_sql_db and self.connection.sql_server_version < 2014:
-                warnings.warn("Resetting identity columns is not supported " \
+                warnings.warn("Resetting identity columns is not supported "
                               "on this versios of Azure SQL Database.",
                               RuntimeWarning)
             else:
@@ -352,10 +358,10 @@ class DatabaseOperations(BaseDatabaseOperations):
                     style.SQL_FIELD('%d' % seq['start_id']),
                     style.SQL_KEYWORD('WITH'),
                     style.SQL_KEYWORD('NO_INFOMSGS'),
-                    ) for seq in seqs])
+                ) for seq in seqs])
 
-            sql_list.extend(['ALTER TABLE %s CHECK CONSTRAINT %s;' % \
-                    (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks])
+            sql_list.extend(['ALTER TABLE %s CHECK CONSTRAINT %s;' %
+                             (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks])
             return sql_list
         else:
             return []
@@ -375,7 +381,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         else:
             sql = "CAST(DATEDIFF(second, %(rhs)s, %(lhs)s) AS bigint) * 1000000 + DATEPART(microsecond, %(lhs)s) - DATEPART(microsecond, %(rhs)s)"
             params = rhs_params + lhs_params * 2 + rhs_params
-        return  sql % {'lhs':lhs_sql, 'rhs':rhs_sql}, params
+        return sql % {'lhs': lhs_sql, 'rhs': rhs_sql}, params
 
     def tablespace_sql(self, tablespace, inline=False):
         """
@@ -409,7 +415,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         return value
 
     def time_trunc_sql(self, lookup_type, field_name):
-        #if self.connection.sql_server_version >= 2012:
+        # if self.connection.sql_server_version >= 2012:
         #    fields = {
         #        'hour': 'DATEPART(hour, %s)' % field_name,
         #        'minute': 'DATEPART(minute, %s)' % field_name if lookup_type != 'hour' else '0',

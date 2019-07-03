@@ -15,7 +15,7 @@ class DatabaseCreation(BaseDatabaseCreation):
             to_azure_sql_db = self.connection.to_azure_sql_db
             if not to_azure_sql_db:
                 cursor.execute("ALTER DATABASE %s SET SINGLE_USER WITH ROLLBACK IMMEDIATE"
-                                % self.connection.ops.quote_name(test_database_name))
+                               % self.connection.ops.quote_name(test_database_name))
             cursor.execute("DROP DATABASE %s"
                            % self.connection.ops.quote_name(test_database_name))
 

@@ -8,3 +8,7 @@ Thumbs.db
 *.egg-info
 
 tests/local_settings.py
+
+# Virtual Env
+/venv/
+.idea/

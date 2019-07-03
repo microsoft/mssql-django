@@ -3,6 +3,7 @@ import subprocess
 
 from django.db.backends.base.client import BaseDatabaseClient
 
+
 class DatabaseClient(BaseDatabaseClient):
     executable_name = 'sqlcmd'
 
@@ -33,7 +34,7 @@ class DatabaseClient(BaseDatabaseClient):
                 if password:
                     args += ["-P", password]
             else:
-                args += ["-E"] # Try trusted connection instead
+                args += ["-E"]  # Try trusted connection instead
             if db:
                 args += ["-d", db]
             if defaults_file:

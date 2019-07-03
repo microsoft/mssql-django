@@ -9,7 +9,6 @@ from django.db.backends.ddl_references import (
 )
 from django.db.models import Index
 from django.db.models.fields import AutoField, BigAutoField
-from django.db.models.fields.related import ManyToManyField
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_text
 
@@ -52,6 +51,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_delete_table = "DROP TABLE %(table)s"
     sql_rename_column = "EXEC sp_rename '%(table)s.%(old_column)s', %(new_column)s, 'COLUMN'"
     sql_rename_table = "EXEC sp_rename %(old_table)s, %(new_table)s"
+    sql_create_unique_null = "CREATE UNIQUE INDEX %(name)s ON %(table)s(%(columns)s) " \
+                             "WHERE %(columns)s IS NOT NULL"
 
     def _alter_column_default_sql(self, model, old_field, new_field, drop=False):
         """
@@ -190,11 +191,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # True               | False            | False              | True
         # True               | False            | True               | True
         if (old_field.db_index and not old_field.unique and (not new_field.db_index or new_field.unique)) or (
-            # Drop indexes on nvarchar columns that are changing to a different type
-            # SQL Server requires explicit deletion
-            (old_field.db_index or old_field.unique) and (
-            (old_type.startswith('nvarchar') and not new_type.startswith('nvarchar'))
-        )):
+                # Drop indexes on nvarchar columns that are changing to a different type
+                # SQL Server requires explicit deletion
+                (old_field.db_index or old_field.unique) and (
+                    (old_type.startswith('nvarchar') and not new_type.startswith('nvarchar'))
+                )):
             # Find the index for this field
             meta_index_names = {index.name for index in model._meta.indexes}
             # Retrieve only BTREE indexes since this is what's created with
@@ -320,7 +321,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self._delete_primary_key(model, strict)
         # Added a unique?
         if self._unique_should_be_added(old_field, new_field):
-            self.execute(self._create_unique_sql(model, [new_field.column]))
+            if not new_field.many_to_many and new_field.null:
+                self.execute(
+                    self._create_index_sql(
+                        model, [new_field], sql=self.sql_create_unique_null, suffix="_uniq"
+                    )
+                )
+            else:
+                self.execute(self._create_unique_sql(model, [new_field.column]))
         # Added an index?
         # constraint will no longer be used in lieu of an index. The following
         # lines from the truth table show all True cases; the rest are False:
@@ -496,6 +504,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # It might not actually have a column behind it
         if definition is None:
             return
+
+        if not field.many_to_many and field.null and field.unique:
+            definition = definition.replace(' UNIQUE', '')
+            self.deferred_sql.append(self._create_index_sql(
+                model, [field], sql=self.sql_create_unique_null, suffix="_uniq"
+            ))
+
         # Check constraints can go on the column SQL here
         db_params = field.db_parameters(connection=self.connection)
         if db_params['check']:
@@ -538,6 +553,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             definition, extra_params = self.column_sql(model, field)
             if definition is None:
                 continue
+
+            if not field.many_to_many and field.null and field.unique:
+                definition = definition.replace(' UNIQUE', '')
+                self.deferred_sql.append(self._create_index_sql(
+                    model, [field], sql=self.sql_create_unique_null, suffix="_uniq"
+                ))
+
             # Check constraints can go on the column SQL here
             db_params = field.db_parameters(connection=self.connection)
             if db_params['check']:
@@ -607,7 +629,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self._sql_select_foreign_key_constraints % {
                 "table": self.quote_value(model._meta.db_table),
             },
-            has_result = True
+            has_result=True
         )
         if result:
             for table, constraint in result:
