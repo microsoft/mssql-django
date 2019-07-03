@@ -1,0 +1,22 @@
+version: "3.3"
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ..:/code
+    environment:
+      DATABASE_URL: "mssql://SA:MyPassword42@db:1433/default?isolation_level=read committed&driver=ODBC Driver 17 for SQL Server"
+      DATABASE_URL_OTHER: "mssql://SA:MyPassword42@db:1433/other?isolation_level=read committed&driver=ODBC Driver 17 for SQL Server"
+    depends_on:
+      - db
+
+  db:
+    image: "mcr.microsoft.com/mssql/server:2017-latest-ubuntu"
+    environment:
+      ACCEPT_EULA: Y
+      SA_PASSWORD: MyPassword42
+    ports:
+      - 1433:1433
