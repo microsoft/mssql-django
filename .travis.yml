@@ -4,7 +4,7 @@ cache: pip
 
 branches:
   only:
-    - azure-2.1
+    - master
 
 templates:
   mssql: &mssql DB_PACKAGES="" DATABASE_URL="mssql://SA:MyPassword42@localhost:1433/default?isolation_level=read committed&driver=ODBC Driver 17 for SQL Server" DATABASE_URL_OTHER="mssql://SA:MyPassword42@localhost:1433/other?isolation_level=read committed&driver=ODBC Driver 17 for SQL Server"
