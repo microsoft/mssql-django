@@ -44,6 +44,7 @@ matrix:
         - powershell "Start-Process msiexec.exe -Wait -ArgumentList '/I msodbcsql_17.3.1.1_x64.msi /qn /norestart IACCEPTMSODBCSQLLICENSETERMS=YES'"
         - choco install python3 --version 3.6.6
         - export PATH="/c/Python36:/c/Python36/Scripts:$PATH"
+        - pip install "django>=2.2,<2.3"
       env:
         - *mssql
 
