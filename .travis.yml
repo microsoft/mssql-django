@@ -9,6 +9,10 @@ branches:
 templates:
   mssql: &mssql DATABASE_URL="mssql://SA:MyPassword42@localhost:1433/default?isolation_level=read committed&driver=ODBC Driver 17 for SQL Server" DATABASE_URL_OTHER="mssql://SA:MyPassword42@localhost:1433/other?isolation_level=read committed&driver=ODBC Driver 17 for SQL Server"
 
+env:
+  global:
+    - PYTHONPATH=$PYTHONPATH:$TRAVIS_BUILD_DIR/django
+
 matrix:
   include:
     - env: FLAKE8
@@ -47,7 +51,6 @@ install:
   - python -m pip install --upgrade pip wheel setuptools
   - pip install -e .["tests"]
   - git clone --branch=stable/2.2.x https://github.com/django/django.git --depth=1
-  - export PYTHONPATH=$PYTHONPATH:$TRAVIS_BUILD_DIR/django
 
 script:
   - pip install -r django/tests/requirements/py3.txt
