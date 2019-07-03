@@ -8,8 +8,7 @@ Features
 --------
 
 -  Supports Django 2.2
--  Supports Microsoft SQL Server 2008/2008R2, 2012, 2014, 2016, 2017 and
-   Azure SQL Database
+-  Supports Microsoft SQL Server 2008/2008R2, 2012, 2014, 2016, 2017
 -  Passes most of the tests of the Django test suite
 -  Compatible with
    `Micosoft ODBC Driver for SQL Server <https://docs.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server>`__,
@@ -56,8 +55,7 @@ in DATABASES control the behavior of the backend:
 
 -  HOST
 
-   String. SQL Server instance in ``"server\instance"`` (on-premise) or
-   ``"server.database.windows.net"`` (Azure SQL Database) format.
+   String. SQL Server instance in ``"server\instance"`` format.
 
 -  PORT
 
@@ -66,8 +64,7 @@ in DATABASES control the behavior of the backend:
 
 -  USER
 
-   String. Database user name in ``"user"`` (on-premise) or
-   ``"user@server"`` (Azure SQL Database) format.
+   String. Database user name in ``"user"`` format.
    If not given then MS Integrated Security will be used.
 
 -  PASSWORD
