@@ -2,3 +2,4 @@ include LICENSE
 include MANIFEST.in
 include README.rst
 recursive-include sql_server *.py
+recursive-exclude docker *
