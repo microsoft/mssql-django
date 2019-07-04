@@ -25,8 +25,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         Returns UTC offset for given time zone in seconds
         """
-        # SQL Server has no built-in support for tz database
-        # see http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
+        # SQL Server has no built-in support for tz database, see:
+        # http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
         zone = pytz.timezone(tzname)
         # no way to take DST into account at this point
         now = datetime.datetime.now()
@@ -179,7 +179,8 @@ class DatabaseOperations(BaseDatabaseOperations):
             sql = '%%s'
         else:
             # use DATEADD twice to avoid arithmetic overflow for number part
-            fmt = 'DATEADD(second, %s / 1000000%%s, DATEADD(microsecond, %s %%%%%%%% 1000000%%s, CAST(%%s AS datetime2)))'
+            MICROSECOND = "DATEADD(microsecond, %s %%%%%%%% 1000000%%s, CAST(%%s AS datetime2))"
+            fmt = 'DATEADD(second, %s / 1000000%%s, {})'.format(MICROSECOND)
             sql = (sql, sql)
         return fmt % sql
 
@@ -336,8 +337,10 @@ class DatabaseOperations(BaseDatabaseOperations):
                     elem['start_id'] = 1
                 elem.update(seq)
                 seqs.append(elem)
+            COLUMNS = "TABLE_NAME, CONSTRAINT_NAME"
+            WHERE = "CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')"
             cursor.execute(
-                "SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')")
+                "SELECT {} FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE {}".format(COLUMNS, WHERE))
             fks = cursor.fetchall()
             sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' %
                         (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
@@ -379,7 +382,9 @@ class DatabaseOperations(BaseDatabaseOperations):
             sql = "CAST(DATEDIFF(day, %(rhs)s, %(lhs)s) AS bigint) * 86400 * 1000000"
             params = rhs_params + lhs_params
         else:
-            sql = "CAST(DATEDIFF(second, %(rhs)s, %(lhs)s) AS bigint) * 1000000 + DATEPART(microsecond, %(lhs)s) - DATEPART(microsecond, %(rhs)s)"
+            SECOND = "DATEDIFF(second, %(rhs)s, %(lhs)s)"
+            MICROSECOND = "DATEPART(microsecond, %(lhs)s) - DATEPART(microsecond, %(rhs)s)"
+            sql = "CAST({} AS bigint) * 1000000 + {}".format(SECOND, MICROSECOND)
             params = rhs_params + lhs_params * 2 + rhs_params
         return sql % {'lhs': lhs_sql, 'rhs': rhs_sql}, params
 

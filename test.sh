@@ -8,8 +8,10 @@ python django/tests/runtests.py --settings=testapp.settings \
     aggregation \
     aggregation_regress \
     annotations \
-    backends basic \
-    bulk_create constraints \
+    backends \
+    basic \
+    bulk_create \
+    constraints \
     custom_columns \
     custom_lookups \
     custom_managers \
