@@ -1,3 +1,9 @@
+# TODO:
+#
+# * m2m_through_regress
+# * many_to_one_null
+
+
 python django/tests/runtests.py --settings=testapp.settings \
     aggregation \
     aggregation_regress \
@@ -56,12 +62,10 @@ python django/tests/runtests.py --settings=testapp.settings \
     m2m_regress \
     m2m_signals \
     m2m_through \
-    # m2m_through_regress \
     m2o_recursive \
     managers_regress \
     many_to_many \
     many_to_one \
-    # many_to_one_null \
     max_lengths \
     migrate_signals \
     migration_test_data_persistance \
