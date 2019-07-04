@@ -1,5 +1,6 @@
 sudo: required
 language: python
+dist: xenial
 cache: pip
 
 branches:
@@ -21,13 +22,12 @@ matrix:
       script: flake8
 
     - python: "3.7"
-      dist: trusty
       services: docker
       before_install:
         - docker pull mcr.microsoft.com/mssql/server:2017-latest-ubuntu
         - docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2017-latest-ubuntu
         - curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-        - curl https://packages.microsoft.com/config/ubuntu/14.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+        - curl https://packages.microsoft.com/config/ubuntu/16.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
         - sudo apt-get update
         - sudo ACCEPT_EULA=Y apt-get install msodbcsql17
       env:
