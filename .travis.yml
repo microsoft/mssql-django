@@ -16,11 +16,11 @@ env:
 matrix:
   include:
     - env: FLAKE8
-      python: "3.6"
+      python: "3.7"
       install: pip install flake8==3.7.1
       script: flake8
 
-    - python: "3.6"
+    - python: "3.7"
       dist: trusty
       services: docker
       before_install:
@@ -35,15 +35,15 @@ matrix:
 
     - os: windows
       language: sh
-      python: "3.6"
+      python: "3.7"
       services: docker
       before_install:
         - docker pull christianacca/mssql-server-windows-express:1803
         - docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d christianacca/mssql-server-windows-express:1803
         - wget https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/msodbcsql_17.3.1.1_x64.msi
         - powershell "Start-Process msiexec.exe -Wait -ArgumentList '/I msodbcsql_17.3.1.1_x64.msi /qn /norestart IACCEPTMSODBCSQLLICENSETERMS=YES'"
-        - choco install python3 --version 3.6.6
-        - export PATH="/c/Python36:/c/Python36/Scripts:$PATH"
+        - choco install python3 --version 3.7.2
+        - export PATH="/c/Python37:/c/Python37/Scripts:$PATH"
         - pip install "django>=2.2,<2.3"
       env:
         - *mssql
