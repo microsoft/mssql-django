@@ -55,4 +55,5 @@ install:
 
 script:
   - pip install -r django/tests/requirements/py3.txt
+  - python manage.py test
   - ./test.sh

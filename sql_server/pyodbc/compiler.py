@@ -2,7 +2,7 @@ import types
 from itertools import chain
 
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
-from django.db.models.expressions import Exists, OrderBy, Ref, Value
+from django.db.models.expressions import Exists, OrderBy, Ref, Subquery, Value
 from django.db.models.functions import (
     Chr, ConcatPair, Greatest, Least, Length, LPad, Repeat, RPad, StrIndex, Substr, Trim
 )
@@ -373,6 +373,10 @@ class SQLCompiler(compiler.SQLCompiler):
     def compile(self, node, select_format=False):
         node = self._as_microsoft(node)
         return super().compile(node, select_format)
+
+    def collapse_group_by(self, expressions, having):
+        expressions = super().collapse_group_by(expressions, having)
+        return [e for e in expressions if not isinstance(e, Subquery)]
 
     def _as_microsoft(self, node):
         as_microsoft = None

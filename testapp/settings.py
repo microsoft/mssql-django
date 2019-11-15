@@ -5,6 +5,13 @@ DATABASES = {
     'other': dj_database_url.config(env='DATABASE_URL_OTHER', default='sqlite:///db.sqlite'),
 }
 
+INSTALLED_APPS = (
+    'django.contrib.contenttypes',
+    'django.contrib.staticfiles',
+    'django.contrib.auth',
+    'testapp',
+)
+
 SECRET_KEY = "django_tests_secret_key"
 
 # Use a fast hasher to speed up tests.
