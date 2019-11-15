@@ -31,7 +31,6 @@ python django/tests/runtests.py --settings=testapp.settings \
     delete_regress \
     distinct_on_fields \
     empty \
-    empty_models \
     expressions \
     expressions_case \
     expressions_window \
@@ -54,7 +53,7 @@ python django/tests/runtests.py --settings=testapp.settings \
     indexes \
     inspectdb \
     introspection \
-    invalid_model_tests \
+    invalid_models_tests \
     known_related_objects \
     lookup \
     m2m_and_m2o \
@@ -70,7 +69,7 @@ python django/tests/runtests.py --settings=testapp.settings \
     many_to_one \
     max_lengths \
     migrate_signals \
-    migration_test_data_persistance \
+    migration_test_data_persistence \
     migrations \
     migrations2 \
     model_fields \
