@@ -102,6 +102,9 @@ class DatabaseOperations(BaseDatabaseOperations):
             value = uuid.UUID(value)
         return value
 
+    def convert_booleanfield_value(self, value, expression, connection):
+        return bool(value) if value in (0, 1) else value
+
     def date_extract_sql(self, lookup_type, field_name):
         if lookup_type == 'week_day':
             return "DATEPART(weekday, %s)" % field_name
@@ -201,6 +204,8 @@ class DatabaseOperations(BaseDatabaseOperations):
             converters.append(self.convert_floatfield_value)
         elif internal_type == 'UUIDField':
             converters.append(self.convert_uuidfield_value)
+        elif internal_type in ('BooleanField', 'NullBooleanField'):
+            converters.append(self.convert_booleanfield_value)
         return converters
 
     def last_insert_id(self, cursor, table_name, pk_name):
