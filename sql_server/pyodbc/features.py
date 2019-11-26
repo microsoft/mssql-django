@@ -1,4 +1,5 @@
 from django.db.backends.base.features import BaseDatabaseFeatures
+from django.utils.functional import cached_property
 
 
 class DatabaseFeatures(BaseDatabaseFeatures):
@@ -21,7 +22,6 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     requires_sqlparse_for_splitting = False
     supports_ignore_conflicts = False
     supports_index_on_text_field = False
-    supports_nullable_unique_constraints = True
     supports_paramstyle_pyformat = False
     supports_partially_nullable_unique_constraints = False
     supports_regex_backreferencing = False
@@ -32,3 +32,19 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_timezones = False
     supports_transactions = True
     uses_savepoints = True
+
+    @cached_property
+    def has_bulk_insert(self):
+        return self.connection.sql_server_version > 2005
+
+    @cached_property
+    def supports_nullable_unique_constraints(self):
+        return self.connection.sql_server_version > 2005
+
+    @cached_property
+    def supports_partial_indexes(self):
+        return self.connection.sql_server_version > 2005
+
+    @cached_property
+    def supports_functions_in_partial_indexes(self):
+        return self.connection.sql_server_version > 2005

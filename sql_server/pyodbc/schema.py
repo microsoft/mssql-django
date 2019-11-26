@@ -321,7 +321,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self._delete_primary_key(model, strict)
         # Added a unique?
         if self._unique_should_be_added(old_field, new_field):
-            if not new_field.many_to_many and new_field.null:
+            if (self.connection.features.supports_nullable_unique_constraints and
+                    not new_field.many_to_many and new_field.null):
+
                 self.execute(
                     self._create_index_sql(
                         model, [new_field], sql=self.sql_create_unique_null, suffix="_uniq"
@@ -505,7 +507,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if definition is None:
             return
 
-        if not field.many_to_many and field.null and field.unique:
+        if (self.connection.features.supports_nullable_unique_constraints and
+                not field.many_to_many and field.null and field.unique):
+
             definition = definition.replace(' UNIQUE', '')
             self.deferred_sql.append(self._create_index_sql(
                 model, [field], sql=self.sql_create_unique_null, suffix="_uniq"
@@ -554,7 +558,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if definition is None:
                 continue
 
-            if not field.many_to_many and field.null and field.unique:
+            if (self.connection.features.supports_nullable_unique_constraints and
+                    not field.many_to_many and field.null and field.unique):
+
                 definition = definition.replace(' UNIQUE', '')
                 self.deferred_sql.append(self._create_index_sql(
                     model, [field], sql=self.sql_create_unique_null, suffix="_uniq"

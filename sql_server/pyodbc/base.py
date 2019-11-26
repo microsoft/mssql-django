@@ -152,6 +152,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         '08S02',
     )
     _sql_server_versions = {
+        9: 2005,
         10: 2008,
         11: 2012,
         12: 2014,
@@ -209,6 +210,21 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def create_cursor(self, name=None):
         return CursorWrapper(self.connection.cursor(), self)
+
+    def _cursor(self):
+        new_conn = False
+
+        if self.connection is None:
+            new_conn = True
+
+        conn = super()._cursor()
+        if new_conn:
+            if self.sql_server_version <= 2005:
+                self.data_types['DateField'] = 'datetime'
+                self.data_types['DateTimeField'] = 'datetime'
+                self.data_types['TimeField'] = 'datetime'
+
+        return conn
 
     def get_connection_params(self):
         settings_dict = self.settings_dict
@@ -351,8 +367,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         datefirst = options.get('datefirst', 7)
         cursor.execute('SET DATEFORMAT ymd; SET DATEFIRST %s' % datefirst)
 
-        # http://blogs.msdn.com/b/sqlnativeclient/archive/2008/02/27/microsoft-sql-server-native-client-and-microsoft-sql-server-2008-native-client.aspx
-        val = cursor.execute('SELECT SYSDATETIME()').fetchone()[0]
+        val = self.get_system_datetime()
         if isinstance(val, str):
             raise ImproperlyConfigured(
                 "The database driver doesn't support modern datatime types.")
@@ -364,6 +379,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             return False
         else:
             return True
+
+    def get_system_datetime(self):
+        # http://blogs.msdn.com/b/sqlnativeclient/archive/2008/02/27/microsoft-sql-server-native-client-and-microsoft-sql-server-2008-native-client.aspx
+        with self.temporary_connection() as cursor:
+            if self.sql_server_version <= 2005:
+                return cursor.execute('SELECT GETDATE()').fetchone()[0]
+            else:
+                return cursor.execute('SELECT SYSDATETIME()').fetchone()[0]
 
     @cached_property
     def sql_server_version(self, _known_versions={}):
