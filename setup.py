@@ -17,7 +17,7 @@ CLASSIFIERS = [
 
 setup(
     name='django-mssql-backend',
-    version='2.4.1',
+    version='2.4.2',
     description='Django backend for Microsoft SQL Server',
     long_description=open('README.rst').read(),
     author='ES Solutions AB',

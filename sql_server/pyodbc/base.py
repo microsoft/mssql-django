@@ -97,7 +97,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'SmallIntegerField': 'smallint',
         'TextField': 'nvarchar(max)',
         'TimeField': 'time',
-        'UUIDField': 'char(36)',
+        'UUIDField': 'char(32)',
     }
     data_type_check_constraints = {
         'PositiveIntegerField': '[%(column)s] >= 0',
