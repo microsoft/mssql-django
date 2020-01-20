@@ -1,6 +1,7 @@
 import types
 from itertools import chain
 
+import django
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
 from django.db.models.expressions import Exists, OrderBy, Ref, Subquery, Value
 from django.db.models.functions import (
@@ -370,9 +371,9 @@ class SQLCompiler(compiler.SQLCompiler):
             # Finally do cleanup - get rid of the joins we created above.
             self.query.reset_refcounts(refcounts_before)
 
-    def compile(self, node, select_format=False):
+    def compile(self, node, *args, **kwargs):
         node = self._as_microsoft(node)
-        return super().compile(node, select_format)
+        return super().compile(node, *args, **kwargs)
 
     def collapse_group_by(self, expressions, having):
         expressions = super().collapse_group_by(expressions, having)
@@ -421,6 +422,25 @@ class SQLCompiler(compiler.SQLCompiler):
 
 
 class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
+    def get_returned_fields(self):
+        if django.VERSION >= (3, 0, 0):
+            return self.returning_fields
+        return self.return_id
+
+    def fix_auto(self, sql, opts, fields, qn):
+        if opts.auto_field is not None:
+            # db_column is None if not explicitly specified by model field
+            auto_field_column = opts.auto_field.db_column or opts.auto_field.column
+            columns = [f.column for f in fields]
+            if auto_field_column in columns:
+                id_insert_sql = []
+                table = qn(opts.db_table)
+                sql_format = 'SET IDENTITY_INSERT %s ON; %s; SET IDENTITY_INSERT %s OFF'
+                for q, p in sql:
+                    id_insert_sql.append((sql_format % (table, q, table), p))
+                sql = id_insert_sql
+
+        return sql
 
     def as_sql(self):
         # We don't need quote_name_unless_alias() here, since these are all
@@ -447,38 +467,28 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         # queries and generate their own placeholders. Doing that isn't
         # necessary and it should be possible to use placeholders and
         # expressions in bulk inserts too.
-        can_bulk = (not self.return_id and self.connection.features.has_bulk_insert) and self.query.fields
+        can_bulk = (not self.get_returned_fields() and self.connection.features.has_bulk_insert) and self.query.fields
 
         placeholder_rows, param_rows = self.assemble_as_sql(fields, value_rows)
 
-        if self.return_id and self.connection.features.can_return_id_from_insert:
+        if self.get_returned_fields() and self.connection.features.can_return_id_from_insert:
             result.insert(0, 'SET NOCOUNT ON')
             result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
             params = [param_rows[0]]
             result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
-            return [(" ".join(result), tuple(chain.from_iterable(params)))]
-
-        if can_bulk:
-            result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
-            sql = [(" ".join(result), tuple(p for ps in param_rows for p in ps))]
+            sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
         else:
-            sql = [
-                (" ".join(result + [values_format % ", ".join(p)]), vals)
-                for p, vals in zip(placeholder_rows, param_rows)
-            ]
+            if can_bulk:
+                result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
+                sql = [(" ".join(result), tuple(p for ps in param_rows for p in ps))]
+            else:
+                sql = [
+                    (" ".join(result + [values_format % ", ".join(p)]), vals)
+                    for p, vals in zip(placeholder_rows, param_rows)
+                ]
 
         if self.query.fields:
-            if opts.auto_field is not None:
-                # db_column is None if not explicitly specified by model field
-                auto_field_column = opts.auto_field.db_column or opts.auto_field.column
-                columns = [f.column for f in fields]
-                if auto_field_column in columns:
-                    id_insert_sql = []
-                    table = qn(opts.db_table)
-                    sql_format = 'SET IDENTITY_INSERT %s ON; %s; SET IDENTITY_INSERT %s OFF'
-                    for q, p in sql:
-                        id_insert_sql.append((sql_format % (table, q, table), p))
-                    sql = id_insert_sql
+            sql = self.fix_auto(sql, opts, fields, qn)
 
         return sql
 

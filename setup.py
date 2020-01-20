@@ -1,7 +1,4 @@
-try:
-    from setuptools import setup
-except ImportError:
-    from distutils.core import setup
+from setuptools import find_packages, setup
 
 CLASSIFIERS = [
     'License :: OSI Approved :: BSD License',
@@ -13,6 +10,8 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 3.5',
     'Programming Language :: Python :: 3.6',
     'Programming Language :: Python :: 3.7',
+    'Framework :: Django :: 2.2',
+    'Framework :: Django :: 3.0',
 ]
 
 setup(
@@ -24,13 +23,10 @@ setup(
     author_email='info@essolutions.se',
     url='https://github.com/ESSolutions/django-mssql-backend',
     license='BSD',
-    packages=['sql_server', 'sql_server.pyodbc'],
+    packages=find_packages(),
     install_requires=[
         'pyodbc>=3.0',
     ],
-    extras_require={
-        'tests': ['dj-database-url==0.5.0'],
-    },
     classifiers=CLASSIFIERS,
     keywords='django',
 )

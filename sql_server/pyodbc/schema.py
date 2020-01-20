@@ -10,7 +10,7 @@ from django.db.backends.ddl_references import (
 from django.db.models import Index
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.transaction import TransactionManagementError
-from django.utils.encoding import force_text
+from django.utils.encoding import force_str
 
 
 class Statement(DjStatement):
@@ -874,7 +874,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         elif isinstance(value, str):
             return "'%s'" % value.replace("'", "''")
         elif isinstance(value, (bytes, bytearray, memoryview)):
-            return "0x%s" % force_text(binascii.hexlify(value))
+            return "0x%s" % force_str(binascii.hexlify(value))
         elif isinstance(value, bool):
             return "1" if value else "0"
         else:

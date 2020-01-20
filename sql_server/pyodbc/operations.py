@@ -5,7 +5,7 @@ import warnings
 from django.conf import settings
 from django.db.backends.base.operations import BaseDatabaseOperations
 from django.utils import timezone
-from django.utils.encoding import force_text
+from django.utils.encoding import force_str
 
 import pytz
 
@@ -403,7 +403,7 @@ class DatabaseOperations(BaseDatabaseOperations):
     def prep_for_like_query(self, x):
         """Prepares a value for use in a LIKE query."""
         # http://msdn2.microsoft.com/en-us/library/ms179859.aspx
-        return force_text(x).replace('\\', '\\\\').replace('[', '[[]').replace('%', '[%]').replace('_', '[_]')
+        return force_str(x).replace('\\', '\\\\').replace('[', '[[]').replace('%', '[%]').replace('_', '[_]')
 
     def prep_for_iexact_query(self, x):
         """

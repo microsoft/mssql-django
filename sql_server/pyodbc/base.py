@@ -6,10 +6,6 @@ import re
 import time
 
 from django.core.exceptions import ImproperlyConfigured
-from django import VERSION
-
-if VERSION[:3] < (2, 2, 0) or VERSION[:2] >= (2, 3):
-    raise ImproperlyConfigured("Django %d.%d.%d is not supported." % VERSION[:3])
 
 try:
     import pyodbc as Database
@@ -94,6 +90,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'PositiveIntegerField': 'int',
         'PositiveSmallIntegerField': 'smallint',
         'SlugField': 'nvarchar(%(max_length)s)',
+        'SmallAutoField': 'smallint IDENTITY (1, 1)',
         'SmallIntegerField': 'smallint',
         'TextField': 'nvarchar(max)',
         'TimeField': 'time',
