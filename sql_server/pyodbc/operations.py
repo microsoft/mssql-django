@@ -126,7 +126,7 @@ class DatabaseOperations(BaseDatabaseOperations):
     def date_trunc_sql(self, lookup_type, field_name):
         CONVERT_YEAR = 'CONVERT(varchar, DATEPART(year, %s))' % field_name
         CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
-        CONVERT_MONTH = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
+        CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % field_name
 
         if lookup_type == 'year':
             return "CONVERT(datetime2, %s + '/01/01')" % CONVERT_YEAR
