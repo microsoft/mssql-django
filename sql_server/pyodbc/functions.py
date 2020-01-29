@@ -2,7 +2,7 @@ from django import VERSION
 from django.db.models import BooleanField
 from django.db.models.functions import Cast
 from django.db.models.functions.math import ATan2, Log, Ln, Round
-from django.db.models.expressions import Case, Exists, When
+from django.db.models.expressions import Case, Exists, OrderBy, When
 from django.db.models.lookups import Lookup
 
 DJANGO3 = VERSION[0] >= 3
@@ -53,6 +53,27 @@ def sqlserver_lookup(self, compiler, connection):
     return lookup.as_sql(compiler, connection)
 
 
+def sqlserver_orderby(self, compiler, connection):
+    # MSSQL doesn't allow ORDER BY EXISTS() unless it's wrapped in
+    # a CASE WHEN.
+
+    template = None
+    if self.nulls_last:
+        template = 'CASE WHEN %(expression)s IS NULL THEN 1 ELSE 0 END, %(expression)s %(ordering)s'
+    if self.nulls_first:
+        template = 'CASE WHEN %(expression)s IS NULL THEN 0 ELSE 1 END, %(expression)s %(ordering)s'
+
+    if isinstance(self.expression, Exists):
+        copy = self.copy()
+        copy.expression = Case(
+            When(self.expression, then=True),
+            default=False,
+            output_field=BooleanField(),
+        )
+        return copy.as_sql(compiler, connection, template=template)
+    return self.as_sql(compiler, connection, template=template)
+
+
 ATan2.as_microsoft = sqlserver_atan2
 Log.as_microsoft = sqlserver_log
 Ln.as_microsoft = sqlserver_ln
@@ -62,3 +83,5 @@ if DJANGO3:
     Lookup.as_microsoft = sqlserver_lookup
 else:
     Exists.as_microsoft = sqlserver_exists
+
+OrderBy.as_microsoft = sqlserver_orderby

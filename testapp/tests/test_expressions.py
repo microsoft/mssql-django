@@ -44,6 +44,15 @@ class TestExists(TestCase):
         ).get()
         self.assertEqual(author.has_post, 1)
 
+    @skipUnless(DJANGO3, "Django 3 specific tests")
+    def test_order_by_exists(self):
+        author_without_posts = Author.objects.create(name="other author")
+        authors_by_posts = Author.objects.order_by(Exists(Post.objects.filter(author=OuterRef('pk'))).desc())
+        self.assertSequenceEqual(authors_by_posts, [self.author, author_without_posts])
+
+        authors_by_posts = Author.objects.order_by(Exists(Post.objects.filter(author=OuterRef('pk'))).asc())
+        self.assertSequenceEqual(authors_by_posts, [author_without_posts, self.author])
+
 
 @skipUnlessDBFeature('supports_partially_nullable_unique_constraints')
 class TestPartiallyNullableUniqueTogether(TestCase):
