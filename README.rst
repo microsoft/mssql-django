@@ -7,7 +7,7 @@ django-mssql-backend
 Features
 --------
 
--  Supports Django 2.2
+-  Supports Django 2.2, 3.0
 -  Supports Microsoft SQL Server 2008/2008R2, 2012, 2014, 2016, 2017
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -18,7 +18,7 @@ Features
 Dependencies
 ------------
 
--  Django 2.2
+-  Django 2.2 or newer
 -  pyodbc 3.0 or newer
 
 Installation
