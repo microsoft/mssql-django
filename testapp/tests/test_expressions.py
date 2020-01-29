@@ -1,8 +1,14 @@
-from django.db.models.expressions import Exists, OuterRef, Subquery
+from unittest import skipUnless
+
+from django import VERSION
+from django.db.models import IntegerField
+from django.db.models.expressions import Case, Exists, OuterRef, Subquery, Value, When
 from django.db.utils import IntegrityError
 from django.test import TestCase, skipUnlessDBFeature
 
 from ..models import Author, Comment, Editor, Post
+
+DJANGO3 = VERSION[0] >= 3
 
 
 class TestSubquery(TestCase):
@@ -26,6 +32,17 @@ class TestExists(TestCase):
         Post.objects.annotate(
             post_exists=Exists(Post.objects.all())
         ).filter(post_exists=True).count()
+
+    @skipUnless(DJANGO3, "Django 3 specific tests")
+    def test_with_case_when(self):
+        author = Author.objects.annotate(
+            has_post=Case(
+                When(Exists(Post.objects.filter(author=OuterRef('pk')).values('pk')), then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        ).get()
+        self.assertEqual(author.has_post, 1)
 
 
 @skipUnlessDBFeature('supports_partially_nullable_unique_constraints')

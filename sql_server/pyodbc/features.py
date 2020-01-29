@@ -21,6 +21,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     ignores_quoted_identifier_case = True
     requires_literal_defaults = True
     requires_sqlparse_for_splitting = False
+    supports_boolean_expr_in_select_clause = False
     supports_ignore_conflicts = False
     supports_index_on_text_field = False
     supports_paramstyle_pyformat = False

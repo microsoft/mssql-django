@@ -3,7 +3,7 @@ from itertools import chain
 
 import django
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
-from django.db.models.expressions import Exists, OrderBy, Ref, Subquery, Value
+from django.db.models.expressions import OrderBy, Ref, Subquery, Value
 from django.db.models.functions import (
     Chr, ConcatPair, Greatest, Least, Length, LPad, Repeat, RPad, StrIndex, Substr, Trim
 )
@@ -68,15 +68,6 @@ def _as_sql_lpad(self, compiler, connection):
     template = ('LEFT(REPLICATE(%(fill_text)s, %(length)s), CASE WHEN %(length)s > LEN(%(expression)s) '
                 'THEN %(length)s - LEN(%(expression)s) ELSE 0 END) + %(expression)s')
     return template % {'expression': expression, 'length': length, 'fill_text': fill_text}, params
-
-
-def _as_sql_exists(self, compiler, connection, template=None, **extra_context):
-    # MS SQL doesn't allow EXISTS() in the SELECT list, so wrap it with a
-    # CASE WHEN expression. Change the template since the When expression
-    # requires a left hand side (column) to compare against.
-    sql, params = self.as_sql(compiler, connection, template, **extra_context)
-    sql = 'CASE WHEN {} THEN 1 ELSE 0 END'.format(sql)
-    return sql, params
 
 
 def _as_sql_order_by(self, compiler, connection):
@@ -399,8 +390,6 @@ class SQLCompiler(compiler.SQLCompiler):
             as_microsoft = _as_sql_rpad
         elif isinstance(node, LPad):
             as_microsoft = _as_sql_lpad
-        elif isinstance(node, Exists):
-            as_microsoft = _as_sql_exists
         elif isinstance(node, OrderBy):
             as_microsoft = _as_sql_order_by
         elif isinstance(node, Repeat):
