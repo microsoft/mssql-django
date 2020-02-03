@@ -8,7 +8,7 @@ Features
 --------
 
 -  Supports Django 2.2, 3.0
--  Supports Microsoft SQL Server 2008/2008R2, 2012, 2014, 2016, 2017
+-  Supports Microsoft SQL Server 2008/2008R2, 2012, 2014, 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
    `Micosoft ODBC Driver for SQL Server <https://docs.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server>`__,
