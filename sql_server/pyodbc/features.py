@@ -25,7 +25,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_ignore_conflicts = False
     supports_index_on_text_field = False
     supports_paramstyle_pyformat = False
-    supports_regex_backreferencing = False
+    supports_regex_backreferencing = True
     supports_sequence_reset = False
     supports_subqueries_in_group_by = False
     supports_tablespaces = True

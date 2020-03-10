@@ -9,6 +9,7 @@ INSTALLED_APPS = (
     'django.contrib.contenttypes',
     'django.contrib.staticfiles',
     'django.contrib.auth',
+    'sql_server.pyodbc',
     'testapp',
 )
 

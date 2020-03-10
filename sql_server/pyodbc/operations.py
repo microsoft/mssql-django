@@ -273,7 +273,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         If the feature is not supported (or part of it is not supported), a
         NotImplementedError exception can be raised.
         """
-        raise NotImplementedError('SQL Server has no built-in regular expression support.')
+        match_option = {'iregex': 0, 'regex': 1}[lookup_type]
+        return "dbo.REGEXP_LIKE(%%s, %%s, %s)=1" % (match_option,)
 
     def limit_offset_sql(self, low_mark, high_mark):
         """Return LIMIT/OFFSET SQL clause."""

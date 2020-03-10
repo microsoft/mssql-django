@@ -1,3 +1,6 @@
+import binascii
+import os
+
 from django.db.backends.base.creation import BaseDatabaseCreation
 
 
@@ -25,3 +28,68 @@ class DatabaseCreation(BaseDatabaseCreation):
         if collation:
             suffix.append('COLLATE %s' % collation)
         return ' '.join(suffix)
+
+    # The following code to add regex support in SQLServer is taken from django-mssql
+    # see https://bitbucket.org/Manfre/django-mssql
+    def enable_clr(self):
+        """ Enables clr for server if not already enabled
+        This function will not fail if current user doesn't have
+        permissions to enable clr, and clr is already enabled
+        """
+        with self._nodb_connection.cursor() as cursor:
+            # check whether clr is enabled
+            cursor.execute('''
+            SELECT value FROM sys.configurations
+            WHERE name = 'clr enabled'
+            ''')
+            res = None
+            try:
+                res = cursor.fetchone()
+            except Exception:
+                pass
+
+            if not res or not res[0]:
+                # if not enabled enable clr
+                cursor.execute("sp_configure 'clr enabled', 1")
+                cursor.execute("RECONFIGURE")
+
+                cursor.execute("sp_configure 'show advanced options', 1")
+                cursor.execute("RECONFIGURE")
+
+                cursor.execute("sp_configure 'clr strict security', 0")
+                cursor.execute("RECONFIGURE")
+
+    def install_regex_clr(self, database_name):
+        sql = '''
+USE {database_name};
+-- Drop and recreate the function if it already exists
+IF OBJECT_ID('REGEXP_LIKE') IS NOT NULL
+DROP FUNCTION [dbo].[REGEXP_LIKE]
+IF EXISTS(select * from sys.assemblies where name like 'regex_clr')
+DROP ASSEMBLY regex_clr
+;
+CREATE ASSEMBLY regex_clr
+FROM 0x{assembly_hex}
+WITH PERMISSION_SET = SAFE;
+create function [dbo].[REGEXP_LIKE]
+(
+@input nvarchar(max),
+@pattern nvarchar(max),
+@caseSensitive int
+)
+RETURNS INT  AS
+EXTERNAL NAME regex_clr.UserDefinedFunctions.REGEXP_LIKE
+        '''.format(
+            database_name=self.connection.ops.quote_name(database_name),
+            assembly_hex=self.get_regex_clr_assembly_hex(),
+        ).split(';')
+
+        self.enable_clr()
+
+        with self._nodb_connection.cursor() as cursor:
+            for s in sql:
+                cursor.execute(s)
+
+    def get_regex_clr_assembly_hex(self):
+        with open(os.path.join(os.path.dirname(__file__), 'regex_clr.dll'), 'rb') as f:
+            return binascii.hexlify(f.read()).decode('ascii')

@@ -39,6 +39,13 @@ Installation
 
     'ENGINE': 'sql_server.pyodbc'
 
+Regex Support
+-------------
+
+django-mssql-backend supports regex using a CLR .dll file. To install it, run ::
+
+    python manage.py install_regex_clr {database_name}
+
 Configuration
 -------------
 

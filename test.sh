@@ -12,7 +12,7 @@ git fetch --depth=1 origin +refs/tags/*:refs/tags/*
 git checkout $DJANGO_VERSION
 pip install -r tests/requirements/py3.txt
 
-python tests/runtests.py --settings=testapp.settings --noinput \
+python tests/runtests.py --settings=testapp.settings --noinput --keepdb \
     aggregation \
     aggregation_regress \
     annotations \
