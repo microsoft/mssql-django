@@ -580,15 +580,21 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             unique_columns.append([old_field.column])
         if unique_columns:
             for columns in unique_columns:
-                constraint_names = self._constraint_names(model, columns, unique=True)
+                constraint_names_normal = self._constraint_names(model, columns, unique=True, index=False)
+                constraint_names_index = self._constraint_names(model, columns, unique=True, index=True)
+                constraint_names = constraint_names_normal + constraint_names_index
                 if strict and len(constraint_names) != 1:
                     raise ValueError("Found wrong number (%s) of unique constraints for %s.%s" % (
                         len(constraint_names),
                         model._meta.db_table,
                         old_field.column,
                     ))
-                for constraint_name in constraint_names:
+                for constraint_name in constraint_names_normal:
                     self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
+                # Unique indexes which are not table constraints must be deleted using the appropriate SQL.
+                # These may exist for example to enforce ANSI-compliant unique constraints on nullable columns.
+                for index_name in constraint_names_index:
+                    self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
 
     def _rename_field_sql(self, table, old_field, new_field, new_type):
         new_type = self._set_field_new_type_null_status(old_field, new_type)

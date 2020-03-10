@@ -41,3 +41,10 @@ class UUIDModel(models.Model):
 
     def __str__(self):
         return self.pk
+
+
+class TestUniqueNullableModel(models.Model):
+    # This field started off as unique=True *and* null=True so it is implemented with a filtered unique index
+    # Then it is made non-nullable by a subsequent migration, to check this is correctly handled (the index
+    # should be dropped, then a normal unique constraint should be added, now that the column is not nullable)
+    test_field = models.CharField(max_length=100, unique=True)
