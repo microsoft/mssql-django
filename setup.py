@@ -16,7 +16,7 @@ CLASSIFIERS = [
 
 setup(
     name='django-mssql-backend',
-    version='2.7.0',
+    version='2.8.0',
     description='Django backend for Microsoft SQL Server',
     long_description=open('README.rst').read(),
     author='ES Solutions AB',
@@ -27,6 +27,7 @@ setup(
     install_requires=[
         'pyodbc>=3.0',
     ],
+    package_data={'sql_server.pyodbc': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
     keywords='django',
 )
