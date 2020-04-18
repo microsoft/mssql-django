@@ -8,6 +8,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Issue #38 test prep
         # Create with a field that is unique *and* nullable so it is implemented with a filtered unique index.
         migrations.CreateModel(
             name='TestUniqueNullableModel',

@@ -3,10 +3,9 @@ from unittest import skipUnless
 from django import VERSION
 from django.db.models import IntegerField
 from django.db.models.expressions import Case, Exists, OuterRef, Subquery, Value, When
-from django.db.utils import IntegrityError
-from django.test import TestCase, skipUnlessDBFeature
+from django.test import TestCase
 
-from ..models import Author, Comment, Editor, Post
+from ..models import Author, Comment, Post
 
 DJANGO3 = VERSION[0] >= 3
 
@@ -52,16 +51,3 @@ class TestExists(TestCase):
 
         authors_by_posts = Author.objects.order_by(Exists(Post.objects.filter(author=OuterRef('pk'))).asc())
         self.assertSequenceEqual(authors_by_posts, [author_without_posts, self.author])
-
-
-@skipUnlessDBFeature('supports_partially_nullable_unique_constraints')
-class TestPartiallyNullableUniqueTogether(TestCase):
-    def test_partially_nullable(self):
-        author = Author.objects.create(name="author")
-        Post.objects.create(title="foo", author=author)
-        Post.objects.create(title="foo", author=author)
-
-        editor = Editor.objects.create(name="editor")
-        Post.objects.create(title="foo", author=author, alt_editor=editor)
-        with self.assertRaises(IntegrityError):
-            Post.objects.create(title="foo", author=author, alt_editor=editor)

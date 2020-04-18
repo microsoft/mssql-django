@@ -8,6 +8,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Issue #38 test
         # Now remove the null=True to check this transition is correctly handled.
         migrations.AlterField(
             model_name='testuniquenullablemodel',

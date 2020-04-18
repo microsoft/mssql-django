@@ -454,21 +454,30 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # True               | True             | True               | False
         if (not old_field.db_index or old_field.unique) and new_field.db_index and not new_field.unique:
             self.execute(self._create_index_sql(model, [new_field]))
-        # Restore an index, SQL Server requires explicit restoration
+
+        # Restore indexes & unique constraints deleted above, SQL Server requires explicit restoration
         if (old_type != new_type or (old_field.null and not new_field.null)) and (
             old_field.column == new_field.column
         ):
-            unique_columns = []
+            # Restore unique constraints
+            # Note: if nullable they are implemented via an explicit filtered UNIQUE INDEX (not CONSTRAINT)
+            # in order to get ANSI-compliant NULL behaviour (i.e. NULL != NULL, multiple are allowed)
             if old_field.unique and new_field.unique:
-                unique_columns.append([old_field.column])
+                if new_field.null:
+                    self.execute(
+                        self._create_index_sql(
+                            model, [old_field], sql=self.sql_create_unique_null, suffix="_uniq"
+                        )
+                    )
+                else:
+                    self.execute(self._create_unique_sql(model, columns=[old_field.column]))
             else:
                 for fields in model._meta.unique_together:
                     columns = [model._meta.get_field(field).column for field in fields]
                     if old_field.column in columns:
-                        unique_columns.append(columns)
-            if unique_columns:
-                for columns in unique_columns:
-                    self.execute(self._create_unique_sql(model, columns))
+                        condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                        self.execute(self._create_unique_sql(model, columns, condition=condition))
+            # Restore indexes
             index_columns = []
             if old_field.db_index and new_field.db_index:
                 index_columns.append([old_field])
