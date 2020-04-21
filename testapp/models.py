@@ -64,3 +64,10 @@ class TestNullableUniqueTogetherModel(models.Model):
     a = models.CharField(max_length=51, null=True)
     b = models.CharField(max_length=50)
     c = models.CharField(max_length=50)
+
+
+class TestRemoveOneToOneFieldModel(models.Model):
+    # Fields used for testing removing OneToOne field. Verifies that delete_unique do not try to remove indexes
+    # thats already is removed.
+    # b = models.OneToOneField('self', on_delete=models.SET_NULL, null=True)
+    a = models.CharField(max_length=50)

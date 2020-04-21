@@ -2,10 +2,16 @@ import binascii
 import datetime
 
 from django.db.backends.base.schema import (
-    BaseDatabaseSchemaEditor, logger, _is_relevant_relation, _related_non_m2m_objects,
+    BaseDatabaseSchemaEditor,
+    _is_relevant_relation,
+    _related_non_m2m_objects,
+    logger,
 )
 from django.db.backends.ddl_references import (
-    Columns, IndexName, Statement as DjStatement, Table,
+    Columns,
+    IndexName,
+    Statement as DjStatement,
+    Table,
 )
 from django.db.models import Index
 from django.db.models.fields import AutoField, BigAutoField
@@ -935,7 +941,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 })
         # Drop unique constraints, SQL Server requires explicit deletion
         for name, infodict in constraints.items():
-            if field.column in infodict['columns'] and infodict['unique'] and not infodict['primary_key']:
+            if (field.column in infodict['columns'] and infodict['unique'] and
+                    not infodict['primary_key'] and not infodict['index']):
                 self.execute(self.sql_delete_unique % {
                     "table": self.quote_name(model._meta.db_table),
                     "name": self.quote_name(name),
