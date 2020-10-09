@@ -43,17 +43,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                                           "WHERE" \
                                           " t.name = %(table)s AND" \
                                           " c.name = %(column)s"
-    _sql_select_foreign_key_constraints = "SELECT" \
-                                          " po.name AS table_name," \
-                                          " co.name AS constraint_name " \
-                                          "FROM sys.foreign_key_columns fkc " \
-                                          "INNER JOIN sys.objects co ON" \
-                                          " fkc.constraint_object_id = co.object_id " \
-                                          "INNER JOIN sys.tables po ON" \
-                                          " fkc.parent_object_id = po.object_id " \
-                                          "INNER JOIN sys.tables ro ON" \
-                                          " fkc.referenced_object_id = ro.object_id " \
-                                          "WHERE ro.name = %(table)s"
     sql_alter_column_default = "ADD DEFAULT %(default)s FOR %(column)s"
     sql_alter_column_no_default = "DROP CONSTRAINT %(column)s"
     sql_alter_column_not_null = "ALTER COLUMN %(column)s %(type)s NOT NULL"
@@ -62,7 +51,23 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_create_column = "ALTER TABLE %(table)s ADD %(column)s %(definition)s"
     sql_delete_column = "ALTER TABLE %(table)s DROP COLUMN %(column)s"
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
-    sql_delete_table = "DROP TABLE %(table)s"
+    sql_delete_table = """
+        DECLARE @sql_drop_constraint nvarchar(255)
+        SELECT @sql_drop_constraint = name
+        FROM sys.foreign_keys
+        WHERE referenced_object_id = object_id('%(table)s')
+        IF @sql_drop_constraint IS NOT NULL
+        BEGIN
+            SELECT
+            @sql_drop_constraint = 'ALTER TABLE [' + OBJECT_NAME(parent_object_id) + '] ' +
+            'DROP CONSTRAINT [' + @sql_drop_constraint + '] '
+            FROM sys.foreign_keys
+            WHERE referenced_object_id = object_id('%(table)s')
+            print(@sql_drop_constraint)
+            exec sp_executesql @sql_drop_constraint
+        END
+        DROP TABLE %(table)s
+"""
     sql_rename_column = "EXEC sp_rename '%(table)s.%(old_column)s', %(new_column)s, 'COLUMN'"
     sql_rename_table = "EXEC sp_rename %(old_table)s, %(new_table)s"
     sql_create_unique_null = "CREATE UNIQUE INDEX %(name)s ON %(table)s(%(columns)s) " \
@@ -818,32 +823,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.create_model(field.remote_field.through)
 
     def delete_model(self, model):
-        """
-        Deletes a model from the database.
-        """
-        # Delete the foreign key constraints
-        result = self.execute(
-            self._sql_select_foreign_key_constraints % {
-                "table": self.quote_value(model._meta.db_table),
-            },
-            has_result=True
-        )
-        if result:
-            for table, constraint in result:
-                sql = self.sql_alter_column % {
-                    "table": self.quote_name(table),
-                    "changes": self.sql_alter_column_no_default % {
-                        "column": self.quote_name(constraint),
-                    }
-                }
-                self.execute(sql)
-
-        # Delete the table
         super().delete_model(model)
-        # Remove all deferred statements referencing the deleted table.
-        for sql in list(self.deferred_sql):
-            if isinstance(sql, Statement) and sql.references_table(model._meta.db_table):
-                self.deferred_sql.remove(sql)
 
     def execute(self, sql, params=(), has_result=False):
         """
