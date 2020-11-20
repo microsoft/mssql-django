@@ -12,28 +12,28 @@ try:
 except ImportError as e:
     raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
 
-from django.utils.version import get_version_tuple # noqa
+from django.utils.version import get_version_tuple  # noqa
 
 pyodbc_ver = get_version_tuple(Database.version)
 if pyodbc_ver < (3, 0):
     raise ImproperlyConfigured("pyodbc 3.0 or newer is required; you have %s" % Database.version)
 
-from django.conf import settings # noqa
-from django.db import NotSupportedError # noqa
-from django.db.backends.base.base import BaseDatabaseWrapper # noqa
-from django.utils.encoding import smart_str # noqa
-from django.utils.functional import cached_property # noqa
+from django.conf import settings  # noqa
+from django.db import NotSupportedError  # noqa
+from django.db.backends.base.base import BaseDatabaseWrapper  # noqa
+from django.utils.encoding import smart_str  # noqa
+from django.utils.functional import cached_property  # noqa
 
 if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
     if not settings.DATABASE_CONNECTION_POOLING:
         Database.pooling = False
 
-from .client import DatabaseClient # noqa
-from .creation import DatabaseCreation # noqa
-from .features import DatabaseFeatures # noqa
-from .introspection import DatabaseIntrospection # noqa
-from .operations import DatabaseOperations # noqa
-from .schema import DatabaseSchemaEditor # noqa
+from .client import DatabaseClient  # noqa
+from .creation import DatabaseCreation  # noqa
+from .features import DatabaseFeatures  # noqa
+from .introspection import DatabaseIntrospection  # noqa
+from .operations import DatabaseOperations  # noqa
+from .schema import DatabaseSchemaEditor  # noqa
 
 EDITION_AZURE_SQL_DB = 5
 
@@ -69,8 +69,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     # be interpolated against the values of Field.__dict__ before being output.
     # If a column type is set to None, it won't be included in the output.
     data_types = {
-        'AutoField': 'int IDENTITY (1, 1)',
-        'BigAutoField': 'bigint IDENTITY (1, 1)',
+        'AutoField': 'int',
+        'BigAutoField': 'bigint',
         'BigIntegerField': 'bigint',
         'BinaryField': 'varbinary(max)',
         'BooleanField': 'bit',
@@ -90,11 +90,16 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'PositiveIntegerField': 'int',
         'PositiveSmallIntegerField': 'smallint',
         'SlugField': 'nvarchar(%(max_length)s)',
-        'SmallAutoField': 'smallint IDENTITY (1, 1)',
+        'SmallAutoField': 'smallint',
         'SmallIntegerField': 'smallint',
         'TextField': 'nvarchar(max)',
         'TimeField': 'time',
         'UUIDField': 'char(32)',
+    }
+    data_types_suffix = {
+        'AutoField': 'IDENTITY (1, 1)',
+        'BigAutoField': 'IDENTITY (1, 1)',
+        'SmallAutoField': 'IDENTITY (1, 1)',
     }
     data_type_check_constraints = {
         'PositiveIntegerField': '[%(column)s] >= 0',

@@ -110,6 +110,8 @@ class DatabaseOperations(BaseDatabaseOperations):
             return "DATEPART(weekday, %s)" % field_name
         elif lookup_type == 'week':
             return "DATEPART(iso_week, %s)" % field_name
+        elif lookup_type == 'iso_year':
+            return "YEAR(DATEADD(day, 26 - DATEPART(isoww, %s), %s))" % (field_name, field_name)
         else:
             return "DATEPART(%s, %s)" % (lookup_type, field_name)
 
