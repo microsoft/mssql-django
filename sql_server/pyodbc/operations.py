@@ -129,6 +129,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         CONVERT_YEAR = 'CONVERT(varchar, DATEPART(year, %s))' % field_name
         CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
         CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % field_name
+        CONVERT_WEEK = "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, %s)" % (field_name, field_name)
 
         if lookup_type == 'year':
             return "CONVERT(datetime2, %s + '/01/01')" % CONVERT_YEAR
@@ -137,8 +138,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         if lookup_type == 'month':
             return "CONVERT(datetime2, %s + '/' + %s + '/01')" % (CONVERT_YEAR, CONVERT_MONTH)
         if lookup_type == 'week':
-            CONVERT = "CONVERT(datetime2, CONVERT(varchar(12), %s, 112))" % field_name
-            return "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, %s)" % (CONVERT, field_name)
+            return "CONVERT(datetime2, CONVERT(varchar, %s, 112))" % CONVERT_WEEK
         if lookup_type == 'day':
             return "CONVERT(datetime2, CONVERT(varchar(12), %s, 112))" % field_name
 
