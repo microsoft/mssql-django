@@ -1,14 +1,18 @@
-django-mssql-backend
-====================
+# Project
 
 .. image:: https://img.shields.io/pypi/v/django-mssql-backend.svg
    :target: https://pypi.python.org/pypi/django-mssql-backend
 
-*django-mssql-backend* is a fork of
-`django-pyodbc-azure <https://pypi.org/project/django-pyodbc-azure/>`__
+Welcome to the MSSQL-Django 3rd party backend project!
 
-Features
---------
+*django-mssql-backend* is a fork of
+`django-pyodbc-azure <https://pypi.org/project/django-pyodbc-azure/>`
+
+This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
+
+We hope you enjoy using the MSSQL-Django 3rd party backend.
+
+## Features
 
 -  Supports Django 2.2, 3.0
 -  Supports Microsoft SQL Server 2008/2008R2, 2012, 2014, 2016, 2017, 2019
@@ -18,14 +22,12 @@ Features
    `SQL Server Native Client <https://msdn.microsoft.com/en-us/library/ms131321(v=sql.120).aspx>`__,
    and `FreeTDS <http://www.freetds.org/>`__ ODBC drivers
 
-Dependencies
-------------
+## Dependencies
 
 -  Django 2.2 or newer
 -  pyodbc 3.0 or newer
 
-Installation
-------------
+## Installation
 
 1. Install pyodbc and Django
 
@@ -39,18 +41,15 @@ Installation
 
     'ENGINE': 'sql_server.pyodbc'
 
-Regex Support
--------------
+## Regex Support
 
 django-mssql-backend supports regex using a CLR .dll file. To install it, run ::
 
     python manage.py install_regex_clr {database_name}
 
-Configuration
--------------
+## Configuration
 
-Standard Django settings
-~~~~~~~~~~~~~~~~~~~~~~~~
+### Standard Django settings
 
 The following entries in a database-level settings dictionary
 in DATABASES control the behavior of the backend:
@@ -112,8 +111,7 @@ for any given database-level settings dictionary:
    mirror during testing. Default value is ``None``.
    See the official Django documentation for more details.
 
-OPTIONS
-~~~~~~~
+### OPTIONS
 
 Dictionary. Current available keys are:
 
@@ -193,7 +191,7 @@ Dictionary. Current available keys are:
    Integer. Sets the timeout in seconds for the database query.
    Default value is ``0`` which disables the timeout.
 
-backend-specific settings
+### Backend-specific settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The following project-level settings also control the behavior of the backend:
@@ -203,8 +201,7 @@ The following project-level settings also control the behavior of the backend:
    Boolean. If it is set to ``False``, pyodbc's connection pooling feature
    won't be activated.
 
-Example
-~~~~~~~
+### Example
 
 Here is an example of the database settings:
 
@@ -228,9 +225,30 @@ Here is an example of the database settings:
     # set this to False if you want to turn off pyodbc's connection pooling
     DATABASE_CONNECTION_POOLING = False
 
-Limitations
------------
+## Limitations
 
 The following features are currently not supported:
 
 - Altering a model field from or to AutoField at migration
+
+## Contributing
+
+This project welcomes contributions and suggestions.  Most contributions require you to agree to a
+Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
+the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+
+When you submit a pull request, a CLA bot will automatically determine whether you need to provide
+a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
+provided by the bot. You will only need to do this once across all repos using our CLA.
+
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
+contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
+## Trademarks
+
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
+trademarks or logos is subject to and must follow 
+[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
+Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
+Any use of third-party trademarks or logos are subject to those third-party's policies.
