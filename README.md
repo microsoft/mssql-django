@@ -135,10 +135,12 @@ Dictionary. Current available keys are:
    definition present in the ``freetds.conf`` FreeTDS configuration file
    instead of a hostname or an IP address.
 
-   But if this option is present and it's value is ``True``, this
-   special behavior is turned off.
+   But if this option is present and its value is ``True``, this
+   special behavior is turned off. Instead, connections to the database
+   server will be established using ``HOST`` and ``PORT`` options, without
+   requiring ``freetds.conf`` to be configured.
 
-   See http://www.freetds.org/userguide/dsnless.htm for more information.
+   See https://www.freetds.org/userguide/dsnless.html for more information.
 
 -  unicode_results
 
