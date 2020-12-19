@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 import pyodbc as Database
 
 from django.db.backends.base.introspection import (
