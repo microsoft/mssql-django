@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 from django import VERSION
 from django.db.models import BooleanField
 from django.db.models.functions import Cast

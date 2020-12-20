@@ -1,12 +1,9 @@
 # Project
 
-.. image:: https://img.shields.io/pypi/v/django-mssql-backend.svg
-   :target: https://pypi.python.org/pypi/django-mssql-backend
-
 Welcome to the MSSQL-Django 3rd party backend project!
 
-*django-mssql-backend* is a fork of
-`django-pyodbc-azure <https://pypi.org/project/django-pyodbc-azure/>`
+*mssql-django* is a fork of
+`django-mssql-backend <https://pypi.org/project/django-mssql-backend/>`
 
 This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
 
@@ -244,6 +241,10 @@ provided by the bot. You will only need to do this once across all repos using o
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
+## Security Reporting Instructions
+
+For security reporting instructions please refer to the SECURITY.md file in this repository.
 
 ## Trademarks
 
