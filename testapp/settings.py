@@ -1,18 +1,32 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 
-import dj_database_url
-
 DATABASES = {
-    'default': dj_database_url.config(default='sqlite:///db.sqlite'),
-    'other': dj_database_url.config(env='DATABASE_URL_OTHER', default='sqlite:///db.sqlite'),
+    "default": {
+        "ENGINE": "mssql",
+        "NAME": "default",
+        "USER": "sa",
+        "PASSWORD": "MyPassword42",
+        "HOST": "localhost",
+        "PORT": "1433",
+        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
+    },
+    'other': {
+        "ENGINE": "mssql",
+        "NAME": "other",
+        "USER": "sa",
+        "PASSWORD": "MyPassword42",
+        "HOST": "localhost",
+        "PORT": "1433",
+        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
+    },
 }
 
 INSTALLED_APPS = (
     'django.contrib.contenttypes',
     'django.contrib.staticfiles',
     'django.contrib.auth',
-    'sql_server.pyodbc',
+    'mssql',
     'testapp',
 )
 

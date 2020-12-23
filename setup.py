@@ -18,19 +18,19 @@ CLASSIFIERS = [
 ]
 
 setup(
-    name='django-mssql-backend',
+    name='mssql-django',
     version='2.8.1',
     description='Django backend for Microsoft SQL Server',
-    long_description=open('README.rst').read(),
-    author='ES Solutions AB',
-    author_email='info@essolutions.se',
-    url='https://github.com/ESSolutions/django-mssql-backend',
+    long_description=open('README.md').read(),
+    author='Microsoft',
+    author_email='opencode@microsoft.com',
+    url='https://github.com/microsoft/mssql-django',
     license='BSD',
     packages=find_packages(),
     install_requires=[
         'pyodbc>=3.0',
     ],
-    package_data={'sql_server.pyodbc': ['regex_clr.dll']},
+    package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
     keywords='django',
 )

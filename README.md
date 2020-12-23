@@ -33,10 +33,10 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
     pip install django-mssql-backend
 
 3. Now you can point the ``ENGINE`` setting in the settings file used by
-   your Django application or project to the ``'sql_server.pyodbc'``
+   your Django application or project to the ``'mssql'``
    module path ::
 
-    'ENGINE': 'sql_server.pyodbc'
+    'ENGINE': 'mssql'
 
 ## Regex Support
 
@@ -53,7 +53,7 @@ in DATABASES control the behavior of the backend:
 
 -  ENGINE
 
-   String. It must be ``"sql_server.pyodbc"``.
+   String. It must be ``"mssql"``.
 
 -  NAME
 
@@ -189,7 +189,6 @@ Dictionary. Current available keys are:
    Default value is ``0`` which disables the timeout.
 
 ### Backend-specific settings
-~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The following project-level settings also control the behavior of the backend:
 
@@ -202,11 +201,10 @@ The following project-level settings also control the behavior of the backend:
 
 Here is an example of the database settings:
 
-::
-
+```
     DATABASES = {
         'default': {
-            'ENGINE': 'sql_server.pyodbc',
+            'ENGINE': 'mssql',
             'NAME': 'mydb',
             'USER': 'user@myserver',
             'PASSWORD': 'password',
@@ -221,7 +219,7 @@ Here is an example of the database settings:
 
     # set this to False if you want to turn off pyodbc's connection pooling
     DATABASE_CONNECTION_POOLING = False
-
+```
 ## Limitations
 
 The following features are currently not supported:

@@ -14,7 +14,7 @@ import pytz
 
 
 class DatabaseOperations(BaseDatabaseOperations):
-    compiler_module = 'sql_server.pyodbc.compiler'
+    compiler_module = 'mssql.compiler'
 
     cast_char_field_without_max_length = 'nvarchar(max)'
 
