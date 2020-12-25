@@ -1,0 +1,35 @@
+trigger:
+  - master
+  - dev
+
+jobs:
+  - job: Windows
+    pool:
+      Django-agent-pool
+
+    strategy:
+      matrix:
+        Python 3.7 Windows:
+          python.version: '3.7'
+          tox.env: 'py37-django22'
+        Python 3.6 Windows:
+          python.version: '3.6'
+          tox.env: 'py36-django22'
+
+    steps:
+      - task: UsePythonVersion@0
+        inputs:
+          versionSpec: "$(python.version)"
+        displayName: Use Python $(python.version)
+
+      - script: |
+          python -m pip install --upgrade pip wheel setuptools
+          pip install tox
+          git clone https://github.com/django/django.git
+        displayName: Install requirements
+
+      - task: Bash@3
+        inputs:
+          targetType: 'inline'
+          script: tox -e $(tox.env)
+        displayName: Run tox
