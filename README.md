@@ -35,7 +35,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 3. Set the ``ENGINE`` setting in the settings.py file used by
    your Django application or project to ``'mssql'``
 
-    'ENGINE': 'mssql'
+    ``'ENGINE': 'mssql'``
 
 ## Configuration
 
