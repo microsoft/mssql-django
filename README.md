@@ -28,9 +28,9 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 1. Install pyodbc 3.0 (or newer) and Django 2.2 (or newer)
 
-2. Install django-mssql-backend ::
+2. Install mssql-django ::
 
-    pip install django-mssql-backend
+    pip install mssql-django
 
 3. Set the ``ENGINE`` setting in the settings.py file used by
    your Django application or project to ``'mssql'``
