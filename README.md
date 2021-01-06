@@ -26,23 +26,16 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Installation
 
-1. Install pyodbc and Django
+1. Install pyodbc 3.0 (or newer) and Django 2.2 (or newer)
 
-2. Install django-mssql-backend ::
+2. Install mssql-django ::
 
-    pip install django-mssql-backend
+    pip install mssql-django
 
-3. Now you can point the ``ENGINE`` setting in the settings file used by
-   your Django application or project to the ``'mssql'``
-   module path ::
+3. Set the ``ENGINE`` setting in the settings.py file used by
+   your Django application or project to ``'mssql'``
 
-    'ENGINE': 'mssql'
-
-## Regex Support
-
-django-mssql-backend supports regex using a CLR .dll file. To install it, run ::
-
-    python manage.py install_regex_clr {database_name}
+    ``'ENGINE': 'mssql'``
 
 ## Configuration
 
@@ -223,8 +216,13 @@ Here is an example of the database settings:
 ## Limitations
 
 The following features are currently not supported:
-
+- mssql-django does not support SQL-based regex commands
 - Altering a model field from or to AutoField at migration
+
+## Future Plans
+
+The following features and additions are planned:
+- install instructions for CLR .dll file to add SQL-based regex command support to SQL Server or Azure SQL DB
 
 ## Contributing
 
