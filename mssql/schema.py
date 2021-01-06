@@ -55,18 +55,20 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_delete_column = "ALTER TABLE %(table)s DROP COLUMN %(column)s"
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
     sql_delete_table = """
-        DECLARE @sql_drop_constraint nvarchar(255)
-        SELECT @sql_drop_constraint = name
-        FROM sys.foreign_keys
-        WHERE referenced_object_id = object_id('%(table)s')
-        IF @sql_drop_constraint IS NOT NULL
+        DECLARE @sql_froeign_constraint_name nvarchar(128)
+        DECLARE @sql_drop_constraint nvarchar(300)
+        WHILE EXISTS(SELECT 1
+            FROM sys.foreign_keys
+            WHERE referenced_object_id = object_id('%(table)s'))
         BEGIN
-            SELECT
-            @sql_drop_constraint = 'ALTER TABLE [' + OBJECT_NAME(parent_object_id) + '] ' +
-            'DROP CONSTRAINT [' + @sql_drop_constraint + '] '
+            SELECT TOP 1 @sql_froeign_constraint_name = name
             FROM sys.foreign_keys
             WHERE referenced_object_id = object_id('%(table)s')
-            print(@sql_drop_constraint)
+            SELECT
+            @sql_drop_constraint = 'ALTER TABLE [' + OBJECT_NAME(parent_object_id) + '] ' +
+            'DROP CONSTRAINT [' + @sql_froeign_constraint_name + '] '
+            FROM sys.foreign_keys
+            WHERE referenced_object_id = object_id('%(table)s')
             exec sp_executesql @sql_drop_constraint
         END
         DROP TABLE %(table)s
