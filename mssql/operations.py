@@ -34,7 +34,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         # no way to take DST into account at this point
         now = datetime.datetime.now()
         delta = zone.localize(now, is_dst=False).utcoffset()
-        return delta.days * 86400 + delta.seconds
+        return delta.days * 86400 + delta.seconds - zone.dst(now).seconds
 
     def bulk_batch_size(self, fields, objs):
         """
