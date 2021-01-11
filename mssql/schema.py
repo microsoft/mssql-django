@@ -689,7 +689,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.connection.close()
 
     def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None):
-        if (deferrable and not self.connection.features.supports_deferrable_unique_constraints):
+        if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False)):
             return None
 
         def create_unique_name(*args, **kwargs):
