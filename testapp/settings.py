@@ -37,6 +37,8 @@ PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.MD5PasswordHasher',
 ]
 
+ENABLE_REGEX_TESTS = False
+
 TEST_RUNNER = "testapp.runners.ExcludedTestSuiteRunner"
 EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggregation',
                   'aggregation_regress.tests.AggregationTests.test_annotated_conditional_aggregate',
@@ -51,22 +53,6 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions.tests.FTimeDeltaTests.test_duration_with_datetime_microseconds',
                   'expressions.tests.IterableLookupInnerExpressionsTests.test_expressions_in_lookups_join_choice',
                   'expressions_case.tests.CaseExpressionTests.test_annotate_with_in_clause',
-                  'fixtures_regress.tests.TestFixtures.test_loaddata_with_m2m_to_self',
-                  'fixtures_regress.tests.TestFixtures.test_loaddata_with_valid_fixture_dirs',
-                  'fixtures_regress.tests.TestFixtures.test_loaddata_works_when_fixture_has_forward_refs',
-                  'fixtures_regress.tests.TestFixtures.test_path_containing_dots',
-                  'fixtures_regress.tests.TestFixtures.test_pg_sequence_resetting_checks',
-                  'fixtures_regress.tests.TestFixtures.test_pretty_print_xml',
-                  'fixtures_regress.tests.TestFixtures.test_proxy_model_included',
-                  'fixtures_regress.tests.TestFixtures.test_relative_path',
-                  'fixtures_regress.tests.TestFixtures.test_relative_path_in_fixture_dirs',
-                  'fixtures_regress.tests.TestFixtures.test_ticket_20820',
-                  'fixtures_regress.tests.TestFixtures.test_ticket_22421',
-                  'lookup.tests.LookupTests.test_regex',
-                  'lookup.tests.LookupTests.test_regex_backreferencing',
-                  'lookup.tests.LookupTests.test_regex_non_ascii',
-                  'lookup.tests.LookupTests.test_regex_non_string',
-                  'lookup.tests.LookupTests.test_regex_null',
                   'ordering.tests.OrderingTests.test_orders_nulls_first_on_filtered_subquery',
                   'queries.test_bulk_update.BulkUpdateNoteTests.test_set_field_to_null',
                   'get_or_create.tests.UpdateOrCreateTransactionTests.test_creation_in_transaction',
@@ -174,3 +160,10 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'schema.tests.SchemaTests.test_alter_primary_key_quoted_db_table',
                   'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk'
                   ]
+
+REGEX_TESTS = ['lookup.tests.LookupTests.test_regex',
+               'lookup.tests.LookupTests.test_regex_backreferencing',
+               'lookup.tests.LookupTests.test_regex_non_ascii',
+               'lookup.tests.LookupTests.test_regex_non_string',
+               'lookup.tests.LookupTests.test_regex_null'
+               ]
