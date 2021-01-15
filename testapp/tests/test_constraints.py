@@ -1,12 +1,18 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 
+from django.db import connections, migrations, models
+from django.db.migrations.state import ProjectState
 from django.db.utils import IntegrityError
-from django.test import TestCase, skipUnlessDBFeature
+from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
 
+from mssql.base import DatabaseWrapper
 from ..models import (
-    Author, Editor, Post,
-    TestUniqueNullableModel, TestNullableUniqueTogetherModel,
+    Author,
+    Editor,
+    Post,
+    TestUniqueNullableModel,
+    TestNullableUniqueTogetherModel,
 )
 
 
@@ -55,3 +61,52 @@ class TestPartiallyNullableUniqueTogether(TestCase):
         TestNullableUniqueTogetherModel.objects.create(a='aaa', b='bbb', c='ccc')
         with self.assertRaises(IntegrityError):
             TestNullableUniqueTogetherModel.objects.create(a='aaa', b='bbb', c='ccc')
+
+
+class TestUniqueConstraints(TransactionTestCase):
+    def test_unsupportable_unique_constraint(self):
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraint',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                    ),
+                    migrations.AddConstraint(
+                        model_name='testunsupportableuniqueconstraint',
+                        constraint=models.UniqueConstraint(
+                            condition=models.Q(
+                                ('status', 'in_progress'),
+                                ('status', 'needs_changes'),
+                                _connector='OR',
+                            ),
+                            fields=('_type',),
+                            name='or_constraint',
+                        ),
+                    ),
+                ]
+
+            migration = TestMigration('testapp', 'test_unsupportable_unique_constraint')
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support OR conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
