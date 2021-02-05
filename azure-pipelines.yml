@@ -26,6 +26,9 @@ jobs:
           tox.env: 'py36-django22'
 
     steps:
+      - task: CredScan@2
+        inputs:
+          toolMajorVersion: 'V2'
       - task: UsePythonVersion@0
         inputs:
           versionSpec: "$(python.version)"
