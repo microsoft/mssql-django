@@ -117,6 +117,7 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'backends.tests.LastExecutedQueryTest.test_last_executed_query',
                   'constraints.tests.CheckConstraintTests.test_abstract_name',
                   'constraints.tests.CheckConstraintTests.test_name',
+                  'db_functions.datetime.test_now.NowTests.test_basic',
                   'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_exact_lookup',
                   'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_greaterthan_lookup',
                   'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_lessthan_lookup',

@@ -43,6 +43,11 @@ jobs:
       - script: tox -e $(tox.env)
         displayName: Run tox
 
+      - task: PublishCodeCoverageResults@1
+        inputs:
+          codeCoverageTool: 'Cobertura'
+          summaryFileLocation: 'C:\Windows\ServiceProfiles\NetworkService\coverage.xml'
+
   - job: Linux
     pool:
       vmImage: ubuntu-18.04
@@ -85,3 +90,8 @@ jobs:
 
       - script: tox -e $(tox.env)
         displayName: Run tox
+
+      - task: PublishCodeCoverageResults@1
+        inputs:
+          codeCoverageTool: 'Cobertura'
+          summaryFileLocation: '/home/vsts/coverage.xml'
