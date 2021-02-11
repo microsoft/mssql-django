@@ -5,6 +5,14 @@ trigger:
 variables:
   agent.preferPowerShellOnContainers: true
 
+schedules:
+- cron: "0 0 * * *"
+  displayName: Daily midnight build
+  branches:
+    include:
+    - dev
+  always: true
+
 jobs:
   - job: Windows
     pool:
