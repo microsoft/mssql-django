@@ -2,7 +2,7 @@
 
 Welcome to the MSSQL-Django 3rd party backend project!
 
-*mssql-django* is a fork of [django-mssql-backend](https://pypi.org/project/django-mssql-backend/)
+*mssql-django* is a fork of [django-mssql-backend](https://pypi.org/project/django-mssql-backend/). We'd like to give thanks to the community that made this project possible, with a special thanks to the contributors: OskarPersson, michiya, dlo and the original Google Code django-pyodbc team
 
 This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
 
