@@ -19,7 +19,6 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     has_select_for_update = True
     has_select_for_update_nowait = True
     has_select_for_update_skip_locked = True
-    has_zoneinfo_database = False
     ignores_table_name_case = True
     ignores_quoted_identifier_case = True
     requires_literal_defaults = True
@@ -56,3 +55,9 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     @cached_property
     def supports_functions_in_partial_indexes(self):
         return self.connection.sql_server_version > 2005
+
+    @cached_property
+    def has_zoneinfo_database(self):
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT TOP 1 1 FROM sys.time_zone_info")
+            return cursor.fetchone() is not None

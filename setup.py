@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 
+from os import path
 from setuptools import find_packages, setup
 
 CLASSIFIERS = [
@@ -17,20 +18,24 @@ CLASSIFIERS = [
     'Framework :: Django :: 3.0',
 ]
 
+this_directory = path.abspath(path.dirname(__file__))
+with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+    long_description = f.read()
+
 setup(
-    name='django-mssql-backend',
-    version='2.8.1',
+    name='mssql-django',
+    version='1.0a1',
     description='Django backend for Microsoft SQL Server',
-    long_description=open('README.rst').read(),
-    author='ES Solutions AB',
-    author_email='info@essolutions.se',
-    url='https://github.com/ESSolutions/django-mssql-backend',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    author='Microsoft',
+    author_email='opencode@microsoft.com',
+    url='https://github.com/microsoft/mssql-django',
     license='BSD',
     packages=find_packages(),
     install_requires=[
         'pyodbc>=3.0',
     ],
-    package_data={'sql_server.pyodbc': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
     keywords='django',
 )

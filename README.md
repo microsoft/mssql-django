@@ -2,22 +2,21 @@
 
 Welcome to the MSSQL-Django 3rd party backend project!
 
-*mssql-django* is a fork of
-`django-mssql-backend <https://pypi.org/project/django-mssql-backend/>`
+*mssql-django* is a fork of [django-mssql-backend](https://pypi.org/project/django-mssql-backend/). This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
 
-This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
+We'd like to give thanks to the community that made this project possible, with particular recognition of the contributors: OskarPersson, michiya, dlo and the original Google Code django-pyodbc team. Moving forward we encourage partipation in this project from both old and new contributors! 
 
 We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
 -  Supports Django 2.2, 3.0
--  Supports Microsoft SQL Server 2008/2008R2, 2012, 2014, 2016, 2017, 2019
+-  Tested on Microsoft SQL Server 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
-   `Micosoft ODBC Driver for SQL Server <https://docs.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server>`__,
-   `SQL Server Native Client <https://msdn.microsoft.com/en-us/library/ms131321(v=sql.120).aspx>`__,
-   and `FreeTDS <http://www.freetds.org/>`__ ODBC drivers
+   [Micosoft ODBC Driver for SQL Server](https://docs.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server),
+   [SQL Server Native Client](https://msdn.microsoft.com/en-us/library/ms131321(v=sql.120).aspx),
+   and [FreeTDS](http://www.freetds.org/) ODBC drivers
 
 ## Dependencies
 
@@ -26,23 +25,16 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Installation
 
-1. Install pyodbc and Django
+1. Install pyodbc 3.0 (or newer) and Django 2.2 (or newer)
 
-2. Install django-mssql-backend ::
+2. Install mssql-django ::
 
-    pip install django-mssql-backend
+    pip install mssql-django
 
-3. Now you can point the ``ENGINE`` setting in the settings file used by
-   your Django application or project to the ``'sql_server.pyodbc'``
-   module path ::
+3. Set the ``ENGINE`` setting in the `settings.py` file used by
+   your Django application or project to ``'mssql'``
 
-    'ENGINE': 'sql_server.pyodbc'
-
-## Regex Support
-
-django-mssql-backend supports regex using a CLR .dll file. To install it, run ::
-
-    python manage.py install_regex_clr {database_name}
+    ``'ENGINE': 'mssql'``
 
 ## Configuration
 
@@ -53,7 +45,7 @@ in DATABASES control the behavior of the backend:
 
 -  ENGINE
 
-   String. It must be ``"sql_server.pyodbc"``.
+   String. It must be ``"mssql"``.
 
 -  NAME
 
@@ -114,14 +106,13 @@ Dictionary. Current available keys are:
 
 -  driver
 
-   String. ODBC Driver to use (``"ODBC Driver 13 for SQL Server"``,
+   String. ODBC Driver to use (``"ODBC Driver 17 for SQL Server"``,
    ``"SQL Server Native Client 11.0"``, ``"FreeTDS"`` etc).
-   Default is ``"ODBC Driver 13 for SQL Server"``.
+   Default is ``"ODBC Driver 17 for SQL Server"``.
 
 -  isolation_level
 
-   String. Sets `transaction isolation level
-   <https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql>`__
+   String. Sets [transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql)
    for each database session. Valid values for this entry are
    ``READ UNCOMMITTED``, ``READ COMMITTED``, ``REPEATABLE READ``,
    ``SNAPSHOT``, and ``SERIALIZABLE``. Default is ``None`` which means
@@ -189,7 +180,6 @@ Dictionary. Current available keys are:
    Default value is ``0`` which disables the timeout.
 
 ### Backend-specific settings
-~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The following project-level settings also control the behavior of the backend:
 
@@ -202,11 +192,10 @@ The following project-level settings also control the behavior of the backend:
 
 Here is an example of the database settings:
 
-::
-
+```
     DATABASES = {
         'default': {
-            'ENGINE': 'sql_server.pyodbc',
+            'ENGINE': 'mssql',
             'NAME': 'mydb',
             'USER': 'user@myserver',
             'PASSWORD': 'password',
@@ -214,19 +203,24 @@ Here is an example of the database settings:
             'PORT': '',
 
             'OPTIONS': {
-                'driver': 'ODBC Driver 13 for SQL Server',
+                'driver': 'ODBC Driver 17 for SQL Server',
             },
         },
     }
 
     # set this to False if you want to turn off pyodbc's connection pooling
     DATABASE_CONNECTION_POOLING = False
-
+```
 ## Limitations
 
 The following features are currently not supported:
-
+- mssql-django does not support SQL-based regex commands
 - Altering a model field from or to AutoField at migration
+
+## Future Plans
+
+The following features and additions are planned:
+- install instructions for CLR .dll file to add SQL-based regex command support to SQL Server or Azure SQL DB
 
 ## Contributing
 
@@ -248,8 +242,8 @@ For security reporting instructions please refer to the SECURITY.md file in this
 
 ## Trademarks
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
+trademarks or logos is subject to and must follow
 [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
 Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
 Any use of third-party trademarks or logos are subject to those third-party's policies.
