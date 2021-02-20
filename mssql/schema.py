@@ -233,6 +233,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             template,
             table=Table(db_table, self.quote_name),
             name=self.quote_name(name),
+            deferrable='',
         )
 
     def alter_db_table(self, model, old_db_table, new_db_table):
@@ -704,6 +705,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 name=name,
                 columns=columns,
                 condition=' WHERE ' + condition,
+                deferrable='',
             ) if self.connection.features.supports_partial_indexes else None
         else:
             return Statement(
@@ -711,6 +713,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 table=table,
                 name=name,
                 columns=columns,
+                deferrable='',
             )
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',
@@ -740,6 +743,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             columns=self._index_columns(table, columns, col_suffixes, opclasses),
             extra=tablespace_sql,
             condition=(' WHERE ' + condition) if condition else '',
+            deferrable='',
         )
 
     def create_model(self, model):
