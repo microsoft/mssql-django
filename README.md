@@ -20,12 +20,12 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Dependencies
 
--  Django 2.2 or newer
+-  Django 2.2 or 3.0
 -  pyodbc 3.0 or newer
 
 ## Installation
 
-1. Install pyodbc 3.0 (or newer) and Django 2.2 (or newer)
+1. Install pyodbc 3.0 (or newer) and Django 2.2 (or 3.0)
 
 2. Install mssql-django ::
 
