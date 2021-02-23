@@ -24,8 +24,10 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     requires_literal_defaults = True
     requires_sqlparse_for_splitting = False
     supports_boolean_expr_in_select_clause = False
+    supports_deferrable_unique_constraints = False
     supports_ignore_conflicts = False
     supports_index_on_text_field = False
+    supports_json_field = False
     supports_paramstyle_pyformat = False
     supports_regex_backreferencing = True
     supports_sequence_reset = False

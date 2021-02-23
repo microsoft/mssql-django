@@ -7,9 +7,11 @@ import warnings
 
 from django.conf import settings
 from django.db.backends.base.operations import BaseDatabaseOperations
+from django.db.models.expressions import Exists, ExpressionWrapper, RawSQL
+from django.db.models.sql.where import WhereNode
 from django.utils import timezone
 from django.utils.encoding import force_str
-
+from django import VERSION as django_version
 import pytz
 
 
@@ -315,7 +317,33 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         return "ROLLBACK TRANSACTION %s" % sid
 
-    def sql_flush(self, style, tables, sequences, allow_cascade=False):
+    def _build_sequences(self, sequences, cursor):
+        seqs = []
+        for seq in sequences:
+            cursor.execute("SELECT COUNT(*) FROM %s" % self.quote_name(seq["table"]))
+            rowcnt = cursor.fetchone()[0]
+            elem = {}
+            if rowcnt:
+                elem['start_id'] = 0
+            else:
+                elem['start_id'] = 1
+            elem.update(seq)
+            seqs.append(elem)
+        return seqs
+
+    def _sql_flush_new(self, style, tables, *, reset_sequences=False, allow_cascade=False):
+        if reset_sequences:
+            return [
+                sequence
+                for sequence in self.connection.introspection.sequence_list()
+            ]
+
+        return []
+
+    def _sql_flush_old(self, style, tables, sequences, allow_cascade=False):
+        return sequences
+
+    def sql_flush(self, style, tables, *args, **kwargs):
         """
         Returns a list of SQL statements required to remove all data from
         the given database tables (without actually removing the tables
@@ -330,55 +358,49 @@ class DatabaseOperations(BaseDatabaseOperations):
         The `allow_cascade` argument determines whether truncation may cascade
         to tables with foreign keys pointing the tables being truncated.
         """
-        if tables:
-            # Cannot use TRUNCATE on tables that are referenced by a FOREIGN KEY
-            # So must use the much slower DELETE
-            from django.db import connections
-            cursor = connections[self.connection.alias].cursor()
-            # Try to minimize the risks of the braindeaded inconsistency in
-            # DBCC CHEKIDENT(table, RESEED, n) behavior.
-            seqs = []
-            for seq in sequences:
-                cursor.execute("SELECT COUNT(*) FROM %s" % self.quote_name(seq["table"]))
-                rowcnt = cursor.fetchone()[0]
-                elem = {}
-                if rowcnt:
-                    elem['start_id'] = 0
-                else:
-                    elem['start_id'] = 1
-                elem.update(seq)
-                seqs.append(elem)
-            COLUMNS = "TABLE_NAME, CONSTRAINT_NAME"
-            WHERE = "CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')"
-            cursor.execute(
-                "SELECT {} FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE {}".format(COLUMNS, WHERE))
-            fks = cursor.fetchall()
-            sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' %
-                        (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
-            sql_list.extend(['%s %s %s;' % (style.SQL_KEYWORD('DELETE'), style.SQL_KEYWORD('FROM'),
-                                            style.SQL_FIELD(self.quote_name(table))) for table in tables])
 
-            if self.connection.to_azure_sql_db and self.connection.sql_server_version < 2014:
-                warnings.warn("Resetting identity columns is not supported "
-                              "on this versios of Azure SQL Database.",
-                              RuntimeWarning)
-            else:
-                # Then reset the counters on each table.
-                sql_list.extend(['%s %s (%s, %s, %s) %s %s;' % (
-                    style.SQL_KEYWORD('DBCC'),
-                    style.SQL_KEYWORD('CHECKIDENT'),
-                    style.SQL_FIELD(self.quote_name(seq["table"])),
-                    style.SQL_KEYWORD('RESEED'),
-                    style.SQL_FIELD('%d' % seq['start_id']),
-                    style.SQL_KEYWORD('WITH'),
-                    style.SQL_KEYWORD('NO_INFOMSGS'),
-                ) for seq in seqs])
-
-            sql_list.extend(['ALTER TABLE %s CHECK CONSTRAINT %s;' %
-                             (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks])
-            return sql_list
-        else:
+        if not tables:
             return []
+
+        if django_version >= (3, 1):
+            sequences = self._sql_flush_new(style, tables, *args, **kwargs)
+        else:
+            sequences = self._sql_flush_old(style, tables, *args, **kwargs)
+
+        from django.db import connections
+        cursor = connections[self.connection.alias].cursor()
+
+        seqs = self._build_sequences(sequences, cursor)
+
+        COLUMNS = "TABLE_NAME, CONSTRAINT_NAME"
+        WHERE = "CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')"
+        cursor.execute(
+            "SELECT {} FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE {}".format(COLUMNS, WHERE))
+        fks = cursor.fetchall()
+        sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' %
+                    (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
+        sql_list.extend(['%s %s %s;' % (style.SQL_KEYWORD('DELETE'), style.SQL_KEYWORD('FROM'),
+                                        style.SQL_FIELD(self.quote_name(table))) for table in tables])
+
+        if self.connection.to_azure_sql_db and self.connection.sql_server_version < 2014:
+            warnings.warn("Resetting identity columns is not supported "
+                          "on this versios of Azure SQL Database.",
+                          RuntimeWarning)
+        else:
+            # Then reset the counters on each table.
+            sql_list.extend(['%s %s (%s, %s, %s) %s %s;' % (
+                style.SQL_KEYWORD('DBCC'),
+                style.SQL_KEYWORD('CHECKIDENT'),
+                style.SQL_FIELD(self.quote_name(seq["table"])),
+                style.SQL_KEYWORD('RESEED'),
+                style.SQL_FIELD('%d' % seq['start_id']),
+                style.SQL_KEYWORD('WITH'),
+                style.SQL_KEYWORD('NO_INFOMSGS'),
+            ) for seq in seqs])
+
+        sql_list.extend(['ALTER TABLE %s CHECK CONSTRAINT %s;' %
+                         (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks])
+        return sql_list
 
     def start_transaction_sql(self):
         """
@@ -445,3 +467,16 @@ class DatabaseOperations(BaseDatabaseOperations):
         elif lookup_type == 'second':
             sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 9))" % field_name
         return sql
+
+    def conditional_expression_supported_in_where_clause(self, expression):
+        """
+        Following "Moved conditional expression wrapping to the Exact lookup" in django 3.1
+        https://github.com/django/django/commit/37e6c5b79bd0529a3c85b8c478e4002fd33a2a1d
+        """
+        if isinstance(expression, (Exists, WhereNode)):
+            return True
+        if isinstance(expression, ExpressionWrapper) and expression.conditional:
+            return self.conditional_expression_supported_in_where_clause(expression.expression)
+        if isinstance(expression, RawSQL) and expression.conditional:
+            return True
+        return False

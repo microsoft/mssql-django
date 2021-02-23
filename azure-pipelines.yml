@@ -6,7 +6,7 @@ variables:
   agent.preferPowerShellOnContainers: true
 
 schedules:
-- cron: "0 0 * * *"
+- cron: "0 9 * * *"
   displayName: Daily midnight build
   branches:
     include:
@@ -20,12 +20,26 @@ jobs:
 
     strategy:
       matrix:
+        Python 3.8 - Django 3.1:
+          python.version: '3.8'
+          tox.env: 'py38-django31'
+        Python 3.7 - Django 3.1:
+          python.version: '3.7'
+          tox.env: 'py37-django31'
+        Python 3.6 - Django 3.1:
+          python.version: '3.6'
+          tox.env: 'py36-django31'
+
+        Python 3.8 - Django 3.0:
+          python.version: '3.8'
+          tox.env: 'py38-django30'
         Python 3.7 - Django 3.0:
           python.version: '3.7'
           tox.env: 'py37-django30'
         Python 3.6 - Django 3.0:
           python.version: '3.6'
           tox.env: 'py36-django30'
+
         Python 3.7 - Django 2.2:
           python.version: '3.7'
           tox.env: 'py37-django22'
@@ -62,12 +76,26 @@ jobs:
 
     strategy:
       matrix:
+        Python 3.8 - Django 3.1:
+          python.version: '3.8'
+          tox.env: 'py38-django31'
+        Python 3.7 - Django 3.1:
+          python.version: '3.7'
+          tox.env: 'py37-django31'
+        Python 3.6 - Django 3.1:
+          python.version: '3.6'
+          tox.env: 'py36-django31'
+
+        Python 3.8 - Django 3.0:
+          python.version: '3.8'
+          tox.env: 'py38-django30'
         Python 3.7 - Django 3.0:
           python.version: '3.7'
           tox.env: 'py37-django30'
         Python 3.6 - Django 3.0:
           python.version: '3.6'
           tox.env: 'py36-django30'
+
         Python 3.7 - Django 2.2:
           python.version: '3.7'
           tox.env: 'py37-django22'
@@ -87,7 +115,7 @@ jobs:
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/18.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev libmemcached-dev
         displayName: Install SQL Server
 
       - script: |

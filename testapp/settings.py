@@ -32,9 +32,8 @@ INSTALLED_APPS = (
 
 SECRET_KEY = "django_tests_secret_key"
 
-# Use a fast hasher to speed up tests.
 PASSWORD_HASHERS = [
-    'django.contrib.auth.hashers.MD5PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
 
 ENABLE_REGEX_TESTS = False
@@ -151,6 +150,7 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions.tests.FTimeDeltaTests.test_date_subquery_subtraction',
                   'expressions.tests.FTimeDeltaTests.test_datetime_subquery_subtraction',
                   'expressions.tests.FTimeDeltaTests.test_time_subquery_subtraction',
+                  'expressions.tests.BasicExpressionsTests.test_filtering_on_q_that_is_boolean',
                   'migrations.test_operations.OperationTests.test_alter_field_reloads_state_on_fk_with_to_field_target_type_change',
                   'migrations.test_operations.OperationTests.test_autofield__bigautofield_foreignfield_growth',
                   'migrations.test_operations.OperationTests.test_smallfield_autofield_foreignfield_growth',
@@ -159,7 +159,35 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'schema.tests.SchemaTests.test_alter_autofield_pk_to_bigautofield_pk_sequence_owner',
                   'schema.tests.SchemaTests.test_alter_autofield_pk_to_smallautofield_pk_sequence_owner',
                   'schema.tests.SchemaTests.test_alter_primary_key_quoted_db_table',
-                  'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk'
+                  'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk',
+
+                  'annotations.tests.NonAggregateAnnotationTestCase.test_combined_expression_annotation_with_aggregation',
+                  'bulk_create.tests.BulkCreateTests.test_bulk_insert_nullable_fields',
+                  'db_functions.comparison.test_cast.CastTests.test_cast_to_integer',
+                  'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_func',
+                  'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_iso_weekday_func',
+                  'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_func',
+                  'constraints.tests.CheckConstraintTests.test_database_constraint_expression',
+                  'constraints.tests.CheckConstraintTests.test_database_constraint_expressionwrapper',
+                  'constraints.tests.UniqueConstraintTests.test_database_constraint_with_condition',
+                  'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_iso_weekday_func',
+                  'datetimes.tests.DateTimesTests.test_datetimes_ambiguous_and_invalid_times',
+                  'expressions.tests.ExpressionOperatorTests.test_lefthand_bitwise_xor',
+                  'expressions.tests.ExpressionOperatorTests.test_lefthand_bitwise_xor_null',
+                  'inspectdb.tests.InspectDBTestCase.test_number_field_types',
+                  'inspectdb.tests.InspectDBTestCase.test_json_field',
+                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_backend_range_save',
+                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_coercing',
+                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_documented_range',
+                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_types',
+                  'ordering.tests.OrderingTests.test_default_ordering_by_f_expression',
+                  'ordering.tests.OrderingTests.test_order_by_nulls_first',
+                  'ordering.tests.OrderingTests.test_order_by_nulls_last',
+                  'queries.test_bulk_update.BulkUpdateTests.test_json_field',
+                  'queries.test_qs_combinators.QuerySetSetOperationTests.test_ordering_by_f_expression_and_alias',
+                  'queries.test_db_returning.ReturningValuesTests.test_insert_returning_multiple',
+                  'dbshell.tests.DbshellCommandTestCase.test_command_missing',
+                  'schema.tests.SchemaTests.test_char_field_pk_to_auto_field'
                   ]
 
 REGEX_TESTS = ['lookup.tests.LookupTests.test_regex',
