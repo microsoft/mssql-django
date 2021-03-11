@@ -20,6 +20,11 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     cast_char_field_without_max_length = 'nvarchar(max)'
 
+    def max_in_list_size(self):
+        # The driver might add a few parameters
+        # chose a reasonable number less than 2100 limit
+        return 2048
+
     def _convert_field_to_tz(self, field_name, tzname):
         if settings.USE_TZ and not tzname == 'UTC':
             offset = self._get_utcoffset(tzname)

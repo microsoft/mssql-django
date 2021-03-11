@@ -6,7 +6,7 @@ from django.db.models import BooleanField
 from django.db.models.functions import Cast
 from django.db.models.functions.math import ATan2, Log, Ln, Mod, Round
 from django.db.models.expressions import Case, Exists, OrderBy, When
-from django.db.models.lookups import Lookup
+from django.db.models.lookups import Lookup, In
 
 DJANGO3 = VERSION[0] >= 3
 
@@ -91,11 +91,29 @@ def sqlserver_orderby(self, compiler, connection):
     return self.as_sql(compiler, connection, template=template)
 
 
+def split_parameter_list_as_sql(self, compiler, connection):
+    # Insert In clause parameters 1000 at a time into a temp table.
+    lhs, _ = self.process_lhs(compiler, connection)
+    _, rhs_params = self.batch_process_rhs(compiler, connection)
+
+    with connection.cursor() as cursor:
+        cursor.execute("IF OBJECT_ID('tempdb.dbo.#Temp_params', 'U') IS NOT NULL DROP TABLE #Temp_params; ")
+        cursor.execute("CREATE TABLE #Temp_params (params int)")
+        for offset in range(0, len(rhs_params), 1000):
+            sqls_params = rhs_params[offset: offset + 1000]
+            sqls_params = ", ".join("({})".format(item) for item in sqls_params)
+            cursor.execute("INSERT INTO #Temp_params VALUES %s" % sqls_params)
+
+    in_clause = lhs + ' IN ' + '(SELECT params from #Temp_params)'
+
+    return in_clause, ()
+
 ATan2.as_microsoft = sqlserver_atan2
 Log.as_microsoft = sqlserver_log
 Ln.as_microsoft = sqlserver_ln
 Mod.as_microsoft = sqlserver_mod
 Round.as_microsoft = sqlserver_round
+In.split_parameter_list_as_sql = split_parameter_list_as_sql
 
 if DJANGO3:
     Lookup.as_microsoft = sqlserver_lookup
