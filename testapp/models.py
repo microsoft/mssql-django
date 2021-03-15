@@ -71,10 +71,20 @@ class TestNullableUniqueTogetherModel(models.Model):
 
 
 class TestRemoveOneToOneFieldModel(models.Model):
-    # Fields used for testing removing OneToOne field. Verifies that delete_unique do not try to remove indexes
-    # thats already is removed.
+    # Fields used for testing removing OneToOne field. Verifies that delete_unique does not try to remove
+    # indexes that have already been removed (Issue #51)
     # b = models.OneToOneField('self', on_delete=models.SET_NULL, null=True)
     a = models.CharField(max_length=50)
+
+
+class TestIndexesRetainedRenamed(models.Model):
+    # Issue #58 - in all these cases the column index should still exist afterwards
+    # case (a) `a` starts out not nullable, but then is changed to be nullable
+    a = models.IntegerField(db_index=True, null=True)
+    # case (b) column originally called `b` is renamed
+    b_renamed = models.IntegerField(db_index=True)
+    # case (c) this entire model is renamed - this is just a column whose index can be checked afterwards
+    c = models.IntegerField(db_index=True)
 
 
 class Topping(models.Model):
