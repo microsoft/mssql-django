@@ -77,10 +77,10 @@ class TestRemoveOneToOneFieldModel(models.Model):
 
 
 class Topping(models.Model):
-    name = models.CharField(max_length=30)
+    name = models.UUIDField(primary_key=True, default=uuid.uuid4)
 
 class Pizza(models.Model):
-    name = models.CharField(max_length=50)
+    name = models.UUIDField(primary_key=True, default=uuid.uuid4)
     toppings = models.ManyToManyField(Topping)
 
     def __str__(self):

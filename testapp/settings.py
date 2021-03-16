@@ -187,7 +187,8 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'queries.test_qs_combinators.QuerySetSetOperationTests.test_ordering_by_f_expression_and_alias',
                   'queries.test_db_returning.ReturningValuesTests.test_insert_returning_multiple',
                   'dbshell.tests.DbshellCommandTestCase.test_command_missing',
-                  'schema.tests.SchemaTests.test_char_field_pk_to_auto_field'
+                  'schema.tests.SchemaTests.test_char_field_pk_to_auto_field',
+                  'datetimes.tests.DateTimesTests.test_21432'
                   ]
 
 REGEX_TESTS = ['lookup.tests.LookupTests.test_regex',
