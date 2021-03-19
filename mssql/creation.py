@@ -5,9 +5,16 @@ import binascii
 import os
 
 from django.db.backends.base.creation import BaseDatabaseCreation
+from django import VERSION as django_version
 
 
 class DatabaseCreation(BaseDatabaseCreation):
+
+    def cursor(self):
+        if django_version >= (3, 1):
+            return self.connection._nodb_cursor()
+
+        return self.connection._nodb_connection.cursor()
 
     def _destroy_test_db(self, test_database_name, verbosity):
         """
@@ -17,7 +24,7 @@ class DatabaseCreation(BaseDatabaseCreation):
         # ourselves. Connect to the previous database (not the test database)
         # to do so, because it's not allowed to delete a database while being
         # connected to it.
-        with self.connection._nodb_connection.cursor() as cursor:
+        with self.cursor() as cursor:
             to_azure_sql_db = self.connection.to_azure_sql_db
             if not to_azure_sql_db:
                 cursor.execute("ALTER DATABASE %s SET SINGLE_USER WITH ROLLBACK IMMEDIATE"
@@ -39,7 +46,7 @@ class DatabaseCreation(BaseDatabaseCreation):
         This function will not fail if current user doesn't have
         permissions to enable clr, and clr is already enabled
         """
-        with self._nodb_connection.cursor() as cursor:
+        with self.cursor() as cursor:
             # check whether clr is enabled
             cursor.execute('''
             SELECT value FROM sys.configurations
@@ -89,7 +96,7 @@ EXTERNAL NAME regex_clr.UserDefinedFunctions.REGEXP_LIKE
 
         self.enable_clr()
 
-        with self._nodb_connection.cursor() as cursor:
+        with self.self.cursor() as cursor:
             for s in sql:
                 cursor.execute(s)
 

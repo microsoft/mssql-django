@@ -16,6 +16,7 @@ from django.db.backends.ddl_references import (
     Statement as DjStatement,
     Table,
 )
+from django import VERSION as django_version
 from django.db.models import Index
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.transaction import TransactionManagementError
@@ -687,7 +688,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
 
-    def _create_unique_sql(self, model, columns, name=None, condition=None):
+    def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None):
+        if (deferrable and not self.connection.features.supports_deferrable_unique_constraints):
+            return None
+
         def create_unique_name(*args, **kwargs):
             return self.quote_name(self._create_index_name(*args, **kwargs))
 
@@ -697,6 +701,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         else:
             name = self.quote_name(name)
         columns = Columns(table, columns, self.quote_name)
+        statement_args = {
+            "deferrable": self._deferrable_constraint_sql(deferrable)
+        } if django_version >= (3, 1) else {}
+
         if condition:
             return Statement(
                 self.sql_create_unique_index,
@@ -704,6 +712,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 name=name,
                 columns=columns,
                 condition=' WHERE ' + condition,
+                **statement_args
             ) if self.connection.features.supports_partial_indexes else None
         else:
             return Statement(
@@ -711,6 +720,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 table=table,
                 name=name,
                 columns=columns,
+                **statement_args
             )
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',

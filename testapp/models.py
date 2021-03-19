@@ -74,3 +74,17 @@ class TestRemoveOneToOneFieldModel(models.Model):
     # thats already is removed.
     # b = models.OneToOneField('self', on_delete=models.SET_NULL, null=True)
     a = models.CharField(max_length=50)
+
+
+class Topping(models.Model):
+    name = models.UUIDField(primary_key=True, default=uuid.uuid4)
+
+class Pizza(models.Model):
+    name = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    toppings = models.ManyToManyField(Topping)
+
+    def __str__(self):
+        return "%s (%s)" % (
+            self.name,
+            ", ".join(topping.name for topping in self.toppings.all()),
+        )

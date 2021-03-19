@@ -16,7 +16,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 -  Compatible with
    [Micosoft ODBC Driver for SQL Server](https://docs.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server),
    [SQL Server Native Client](https://msdn.microsoft.com/en-us/library/ms131321(v=sql.120).aspx),
-   and [FreeTDS](http://www.freetds.org/) ODBC drivers
+   and [FreeTDS](https://www.freetds.org/) ODBC drivers
 
 ## Dependencies
 
@@ -27,14 +27,14 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 1. Install pyodbc 3.0 (or newer) and Django 2.2 (or 3.0)
 
-2. Install mssql-django ::
+2. Install mssql-django:
 
-    pip install mssql-django
+       pip install mssql-django
 
-3. Set the ``ENGINE`` setting in the `settings.py` file used by
-   your Django application or project to ``'mssql'``
+3. Set the `ENGINE` setting in the `settings.py` file used by
+   your Django application or project to `'mssql'`:
 
-    ``'ENGINE': 'mssql'``
+       'ENGINE': 'mssql'
 
 ## Configuration
 
@@ -45,7 +45,7 @@ in DATABASES control the behavior of the backend:
 
 -  ENGINE
 
-   String. It must be ``"mssql"``.
+   String. It must be `"mssql"`.
 
 -  NAME
 
@@ -53,7 +53,7 @@ in DATABASES control the behavior of the backend:
 
 -  HOST
 
-   String. SQL Server instance in ``"server\instance"`` format.
+   String. SQL Server instance in `"server\instance"` format.
 
 -  PORT
 
@@ -62,7 +62,7 @@ in DATABASES control the behavior of the backend:
 
 -  USER
 
-   String. Database user name in ``"user"`` format.
+   String. Database user name in `"user"` format.
    If not given then MS Integrated Security will be used.
 
 -  PASSWORD
@@ -71,22 +71,22 @@ in DATABASES control the behavior of the backend:
 
 -  AUTOCOMMIT
 
-   Boolean. Set this to False if you want to disable
+   Boolean. Set this to `False` if you want to disable
    Django's transaction management and implement your own.
 
-and the following entries are also available in the TEST dictionary
+and the following entries are also available in the `TEST` dictionary
 for any given database-level settings dictionary:
 
 -  NAME
 
    String. The name of database to use when running the test suite.
-   If the default value (``None``) is used, the test database will use
-   the name "test\_" + ``NAME``.
+   If the default value (`None`) is used, the test database will use
+   the name `"test\_" + NAME`.
 
 -  COLLATION
 
    String. The collation order to use when creating the test database.
-   If the default value (``None``) is used, the test database is assigned
+   If the default value (`None`) is used, the test database is assigned
    the default collation of the instance of SQL Server.
 
 -  DEPENDENCIES
@@ -97,7 +97,7 @@ for any given database-level settings dictionary:
 -  MIRROR
 
    String. The alias of the database that this database should
-   mirror during testing. Default value is ``None``.
+   mirror during testing. Default value is `None`.
    See the official Django documentation for more details.
 
 ### OPTIONS
@@ -106,22 +106,22 @@ Dictionary. Current available keys are:
 
 -  driver
 
-   String. ODBC Driver to use (``"ODBC Driver 17 for SQL Server"``,
-   ``"SQL Server Native Client 11.0"``, ``"FreeTDS"`` etc).
-   Default is ``"ODBC Driver 17 for SQL Server"``.
+   String. ODBC Driver to use (`"ODBC Driver 17 for SQL Server"`,
+   `"SQL Server Native Client 11.0"`, `"FreeTDS"` etc).
+   Default is `"ODBC Driver 17 for SQL Server"`.
 
 -  isolation_level
 
    String. Sets [transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql)
    for each database session. Valid values for this entry are
-   ``READ UNCOMMITTED``, ``READ COMMITTED``, ``REPEATABLE READ``,
-   ``SNAPSHOT``, and ``SERIALIZABLE``. Default is ``None`` which means
+   `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`,
+   `SNAPSHOT`, and `SERIALIZABLE`. Default is `None` which means
    no isolation levei is set to a database session and SQL Server default
    will be used.
 
 -  dsn
 
-   String. A named DSN can be used instead of ``HOST``.
+   String. A named DSN can be used instead of `HOST`.
 
 -  host_is_server
 
@@ -192,7 +192,7 @@ The following project-level settings also control the behavior of the backend:
 
 Here is an example of the database settings:
 
-```
+```python
     DATABASES = {
         'default': {
             'ENGINE': 'mssql',
@@ -211,6 +211,7 @@ Here is an example of the database settings:
     # set this to False if you want to turn off pyodbc's connection pooling
     DATABASE_CONNECTION_POOLING = False
 ```
+
 ## Limitations
 
 The following features are currently not supported:
@@ -238,7 +239,7 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 
 ## Security Reporting Instructions
 
-For security reporting instructions please refer to the SECURITY.md file in this repository.
+For security reporting instructions please refer to the [`SECURITY.md`](SECURITY.md) file in this repository.
 
 ## Trademarks
 
