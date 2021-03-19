@@ -17,8 +17,9 @@ from django.db.backends.ddl_references import (
     Table,
 )
 from django import VERSION as django_version
-from django.db.models import Index
+from django.db.models import Index, UniqueConstraint
 from django.db.models.fields import AutoField, BigAutoField
+from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_str
 
@@ -689,7 +690,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.connection.close()
 
     def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None):
-        if (deferrable and not self.connection.features.supports_deferrable_unique_constraints):
+        if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False)):
             return None
 
         def create_unique_name(*args, **kwargs):
@@ -955,3 +956,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for sql in list(self.deferred_sql):
             if isinstance(sql, Statement) and sql.references_column(model._meta.db_table, field.column):
                 self.deferred_sql.remove(sql)
+
+    def add_constraint(self, model, constraint):
+        if isinstance(constraint, UniqueConstraint) and constraint.condition and constraint.condition.connector != AND:
+            raise NotImplementedError("The backend does not support %s conditions on unique constraint %s." %
+                                      (constraint.condition.connector, constraint.name))
+        super().add_constraint(model, constraint)
