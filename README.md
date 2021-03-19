@@ -10,7 +10,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 2.2, 3.0
+-  Supports Django 2.2, 3.0 and 3.1
 -  Tested on Microsoft SQL Server 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -20,12 +20,12 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Dependencies
 
--  Django 2.2 or 3.0
+-  Django 2.2, 3.0 or 3.1
 -  pyodbc 3.0 or newer
 
 ## Installation
 
-1. Install pyodbc 3.0 (or newer) and Django 2.2 (or 3.0)
+1. Install pyodbc 3.0 (or newer) and Django 2.2, 3.0 or 3.1
 
 2. Install mssql-django:
 
