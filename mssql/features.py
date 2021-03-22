@@ -21,6 +21,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     has_select_for_update_skip_locked = True
     ignores_table_name_case = True
     ignores_quoted_identifier_case = True
+    order_by_nulls_first = True
     requires_literal_defaults = True
     requires_sqlparse_for_splitting = False
     supports_boolean_expr_in_select_clause = False
@@ -28,6 +29,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_ignore_conflicts = False
     supports_index_on_text_field = False
     supports_json_field = False
+    supports_order_by_nulls_modifier = False
     supports_paramstyle_pyformat = False
     supports_regex_backreferencing = True
     supports_sequence_reset = False
