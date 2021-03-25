@@ -4,7 +4,7 @@ Welcome to the MSSQL-Django 3rd party backend project!
 
 *mssql-django* is a fork of [django-mssql-backend](https://pypi.org/project/django-mssql-backend/). This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
 
-We'd like to give thanks to the community that made this project possible, with particular recognition of the contributors: OskarPersson, michiya, dlo and the original Google Code django-pyodbc team. Moving forward we encourage partipation in this project from both old and new contributors! 
+We'd like to give thanks to the community that made this project possible, with particular recognition of the contributors: OskarPersson, michiya, dlo and the original Google Code django-pyodbc team. Moving forward we encourage partipation in this project from both old and new contributors!
 
 We hope you enjoy using the MSSQL-Django 3rd party backend.
 
@@ -81,7 +81,7 @@ for any given database-level settings dictionary:
 
    String. The name of database to use when running the test suite.
    If the default value (`None`) is used, the test database will use
-   the name `"test\_" + NAME`.
+   the name `"test_" + NAME`.
 
 -  COLLATION
 
@@ -151,7 +151,7 @@ Dictionary. Current available keys are:
 -  extra_params
 
    String. Additional parameters for the ODBC connection. The format is
-   ``"param=value;param=value"``.
+   ``"param=value;param=value"``, [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) can be added to this field.
 
 -  collation
 

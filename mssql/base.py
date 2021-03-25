@@ -286,7 +286,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         if user:
             cstr_parts['UID'] = user
-            cstr_parts['PWD'] = password
+            if 'Authentication=ActiveDirectoryInteractive' not in options.get('extra_params', ''):
+                cstr_parts['PWD'] = password
         else:
             if ms_drivers.match(driver):
                 cstr_parts['Trusted_Connection'] = 'yes'
