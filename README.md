@@ -74,6 +74,10 @@ in DATABASES control the behavior of the backend:
    Boolean. Set this to `False` if you want to disable
    Django's transaction management and implement your own.
 
+-  Trusted_Connection
+
+   String. Default is `"yes"`. Can be set to `"no"` if required.
+
 and the following entries are also available in the `TEST` dictionary
 for any given database-level settings dictionary:
 
