@@ -307,6 +307,12 @@ class SQLCompiler(compiler.SQLCompiler):
                     params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))
 
+                # For subqueres with an ORDER BY clause, SQL Server also
+                # requires a TOP or OFFSET clause which is not generated for
+                # Django 2.x.  See https://github.com/microsoft/mssql-django/issues/12
+                if django.VERSION < (3, 0, 0) and not (do_offset or do_limit):
+                    result.append("OFFSET 0 ROWS")
+
             # SQL Server requires the backend-specific emulation (2008 or earlier)
             # or an offset clause (2012 or newer) for offsetting
             if do_offset:
