@@ -252,7 +252,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         trusted_connection = conn_params.get('Trusted_Connection', 'yes')
 
         options = conn_params.get('OPTIONS', {})
-        driver = options.get('driver', 'ODBC Driver 13 for SQL Server')
+        driver = options.get('driver', 'ODBC Driver 17 for SQL Server')
         dsn = options.get('dsn', None)
 
         # Microsoft driver names assumed here are:
