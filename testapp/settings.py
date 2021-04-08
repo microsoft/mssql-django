@@ -101,8 +101,6 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'ordering.tests.OrderingTests.test_deprecated_values_annotate',
                   'queries.test_qs_combinators.QuerySetSetOperationTests.test_limits',
                   'backends.tests.BackendTestCase.test_unicode_password',
-                  'backends.tests.FkConstraintsTests.test_disable_constraint_checks_context_manager',
-                  'backends.tests.FkConstraintsTests.test_disable_constraint_checks_manually',
                   'introspection.tests.IntrospectionTests.test_get_table_description_types',
                   'migrations.test_commands.MigrateTests.test_migrate_syncdb_app_label',
                   'migrations.test_commands.MigrateTests.test_migrate_syncdb_deferred_sql_executed_with_schemaeditor',
