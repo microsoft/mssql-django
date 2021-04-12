@@ -489,12 +489,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def disable_constraint_checking(self):
         if not self.needs_rollback:
-            self.cursor().execute('EXEC sp_msforeachtable "ALTER TABLE ? NOCHECK CONSTRAINT ALL"')
+            self._execute_foreach('ALTER TABLE %s NOCHECK CONSTRAINT ALL')
         return not self.needs_rollback
 
     def enable_constraint_checking(self):
         if not self.needs_rollback:
-            self.cursor().execute('EXEC sp_msforeachtable "ALTER TABLE ? WITH NOCHECK CHECK CONSTRAINT ALL"')
+            self._execute_foreach('ALTER TABLE %s WITH NOCHECK CHECK CONSTRAINT ALL')
 
 
 class CursorWrapper(object):
