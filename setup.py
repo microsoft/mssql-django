@@ -34,7 +34,9 @@ setup(
     license='BSD',
     packages=find_packages(),
     install_requires=[
+        'django>=2.2,<3.2',
         'pyodbc>=3.0',
+        'pytz',
     ],
     classifiers=CLASSIFIERS,
     keywords='django',
