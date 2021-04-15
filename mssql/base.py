@@ -88,6 +88,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'IntegerField': 'int',
         'IPAddressField': 'nvarchar(15)',
         'GenericIPAddressField': 'nvarchar(39)',
+        'JSONField': 'nvarchar(max)',
         'NullBooleanField': 'bit',
         'OneToOneField': 'int',
         'PositiveIntegerField': 'int',

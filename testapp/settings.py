@@ -186,7 +186,33 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'queries.test_db_returning.ReturningValuesTests.test_insert_returning_multiple',
                   'dbshell.tests.DbshellCommandTestCase.test_command_missing',
                   'schema.tests.SchemaTests.test_char_field_pk_to_auto_field',
-                  'datetimes.tests.DateTimesTests.test_21432'
+                  'datetimes.tests.DateTimesTests.test_21432',
+
+                  #JSONFields
+                  'model_fields.test_jsonfield.TestQuerying.test_has_any_keys',
+                  'model_fields.test_jsonfield.TestQuerying.test_has_key',
+                  'model_fields.test_jsonfield.TestQuerying.test_has_key_deep',
+                  'model_fields.test_jsonfield.TestQuerying.test_has_key_list',
+                  'model_fields.test_jsonfield.TestQuerying.test_has_key_null_value',
+                  'model_fields.test_jsonfield.TestQuerying.test_has_keys',
+                  'model_fields.test_jsonfield.TestQuerying.test_key_iregex',
+                  'model_fields.test_jsonfield.TestQuerying.test_key_quoted_string',
+                  'model_fields.test_jsonfield.TestQuerying.test_key_regex',
+                  'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
+                  'model_fields.test_jsonfield.TestQuerying.test_order_grouping_custom_decoder',
+                  'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
+                  'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_key_transform',
+                  'model_fields.test_jsonfield.JSONFieldTests.test_db_check_constraints',
+                  'model_fields.test_jsonfield.TestQuerying.test_isnull_key',
+                  'model_fields.test_jsonfield.TestQuerying.test_key_in',
+                  'model_fields.test_jsonfield.TestQuerying.test_key_transform_expression',
+                  'model_fields.test_jsonfield.TestQuerying.test_key_values',
+                  'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_expression',
+                  'model_fields.test_jsonfield.TestQuerying.test_none_key',
+                  'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
+                  'model_fields.test_jsonfield.TestQuerying.test_none_key_exclude',
+                  'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
+                  'model_fields.test_jsonfield.TestQuerying.test_shallow_lookup_obj_target'
                   ]
 
 REGEX_TESTS = ['lookup.tests.LookupTests.test_regex',

@@ -13,7 +13,7 @@ from django.db.models.functions import (
 from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
-
+from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -42,6 +42,11 @@ def _as_sql_greatest(self, compiler, connection):
     template = '(SELECT MAX(value) FROM (VALUES (%(expressions)s)) AS _%(function)s(value))'
     return self.as_sql(compiler, connection, arg_joiner='), (', template=template)
 
+def _as_sql_json_keytransform(self, compiler, connection):
+    lhs, params, key_transforms = self.preprocess_lhs(compiler, connection)
+    json_path = compile_json_path(key_transforms)
+
+    return 'JSON_VALUE(%s, %%s)' % lhs, tuple(params) + (json_path,)
 
 def _as_sql_least(self, compiler, connection):
     # SQL Server does not provide LEAST function,
@@ -382,6 +387,8 @@ class SQLCompiler(compiler.SQLCompiler):
             as_microsoft = _as_sql_count
         elif isinstance(node, Greatest):
             as_microsoft = _as_sql_greatest
+        if isinstance(node, json_KeyTransform):
+            as_microsoft = _as_sql_json_keytransform
         elif isinstance(node, Least):
             as_microsoft = _as_sql_least
         elif isinstance(node, Length):

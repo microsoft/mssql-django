@@ -6,7 +6,8 @@ from django.db.models import BooleanField
 from django.db.models.functions import Cast
 from django.db.models.functions.math import ATan2, Log, Ln, Mod, Round
 from django.db.models.expressions import Case, Exists, OrderBy, When
-from django.db.models.lookups import Lookup, In
+from django.db.models.lookups import Lookup, In, Exact
+from django.db.models.fields.json import KeyTransform, KeyTransformExact
 
 DJANGO3 = VERSION[0] >= 3
 
@@ -108,12 +109,22 @@ def split_parameter_list_as_sql(self, compiler, connection):
 
     return in_clause, ()
 
+def KeyTransformExact_process_rhs(self, compiler, connection):
+    if isinstance(self.rhs, KeyTransform):
+        return super(Exact, self).process_rhs(compiler, connection)
+    rhs, rhs_params = super(Exact, self).process_rhs(compiler, connection)
+    if connection.vendor == 'microsoft':
+        if rhs_params != [None]:
+            rhs_params = [params.strip('"') for params in rhs_params]
+    return rhs, rhs_params
+
 ATan2.as_microsoft = sqlserver_atan2
-Log.as_microsoft = sqlserver_log
+In.split_parameter_list_as_sql = split_parameter_list_as_sql
+KeyTransformExact.process_rhs = KeyTransformExact_process_rhs
 Ln.as_microsoft = sqlserver_ln
+Log.as_microsoft = sqlserver_log
 Mod.as_microsoft = sqlserver_mod
 Round.as_microsoft = sqlserver_round
-In.split_parameter_list_as_sql = split_parameter_list_as_sql
 
 if DJANGO3:
     Lookup.as_microsoft = sqlserver_lookup

@@ -36,6 +36,7 @@ setup(
     install_requires=[
         'pyodbc>=3.0',
     ],
+    package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
     keywords='django',
 )

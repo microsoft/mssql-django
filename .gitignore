@@ -6,7 +6,7 @@
 Thumbs.db
 
 *.egg-info
-
+*.dll
 tests/local_settings.py
 
 # Virtual Env
