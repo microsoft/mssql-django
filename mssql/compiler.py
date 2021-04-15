@@ -13,7 +13,8 @@ from django.db.models.functions import (
 from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
-from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
+if django.VERSION >= (3, 1):
+    from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -387,8 +388,6 @@ class SQLCompiler(compiler.SQLCompiler):
             as_microsoft = _as_sql_count
         elif isinstance(node, Greatest):
             as_microsoft = _as_sql_greatest
-        if isinstance(node, json_KeyTransform):
-            as_microsoft = _as_sql_json_keytransform
         elif isinstance(node, Least):
             as_microsoft = _as_sql_least
         elif isinstance(node, Length):
@@ -409,6 +408,9 @@ class SQLCompiler(compiler.SQLCompiler):
             as_microsoft = _as_sql_trim
         elif isinstance(node, Variance):
             as_microsoft = _as_sql_variance
+        if django.VERSION >= (3, 1):
+            if isinstance(node, json_KeyTransform):
+                as_microsoft = _as_sql_json_keytransform
         if as_microsoft:
             node = node.copy()
             node.as_microsoft = types.MethodType(as_microsoft, node)

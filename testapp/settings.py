@@ -36,6 +36,8 @@ PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
 
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+
 ENABLE_REGEX_TESTS = False
 
 TEST_RUNNER = "testapp.runners.ExcludedTestSuiteRunner"

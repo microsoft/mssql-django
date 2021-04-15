@@ -235,6 +235,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             template,
             table=Table(db_table, self.quote_name),
             name=self.quote_name(name),
+            include=''
         )
 
     def alter_db_table(self, model, old_db_table, new_db_table):
@@ -689,7 +690,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
 
-    def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None):
+    def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None, include=None, opclasses=None):
         if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False)):
             return None
 
@@ -713,7 +714,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 name=name,
                 columns=columns,
                 condition=' WHERE ' + condition,
-                **statement_args
+                **statement_args,
+                include='',
             ) if self.connection.features.supports_partial_indexes else None
         else:
             return Statement(
@@ -721,12 +723,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 table=table,
                 name=name,
                 columns=columns,
-                **statement_args
+                **statement_args,
+                include='',
             )
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',
                           db_tablespace=None, col_suffixes=(), sql=None, opclasses=(),
-                          condition=None):
+                          condition=None, include=None, expressions=None):
         """
         Return the SQL statement to create the index for one or several fields.
         `sql` can be specified if the syntax differs from the standard (GIS
@@ -751,6 +754,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             columns=self._index_columns(table, columns, col_suffixes, opclasses),
             extra=tablespace_sql,
             condition=(' WHERE ' + condition) if condition else '',
+            include=''
         )
 
     def create_model(self, model):

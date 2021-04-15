@@ -7,7 +7,8 @@ from django.db.models.functions import Cast
 from django.db.models.functions.math import ATan2, Log, Ln, Mod, Round
 from django.db.models.expressions import Case, Exists, OrderBy, When
 from django.db.models.lookups import Lookup, In, Exact
-from django.db.models.fields.json import KeyTransform, KeyTransformExact
+if VERSION >= (3, 1):
+    from django.db.models.fields.json import KeyTransform, KeyTransformExact
 
 DJANGO3 = VERSION[0] >= 3
 
@@ -120,7 +121,8 @@ def KeyTransformExact_process_rhs(self, compiler, connection):
 
 ATan2.as_microsoft = sqlserver_atan2
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
-KeyTransformExact.process_rhs = KeyTransformExact_process_rhs
+if VERSION >= (3, 1):
+    KeyTransformExact.process_rhs = KeyTransformExact_process_rhs
 Ln.as_microsoft = sqlserver_ln
 Log.as_microsoft = sqlserver_log
 Mod.as_microsoft = sqlserver_mod
