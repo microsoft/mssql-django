@@ -71,24 +71,27 @@ def sqlserver_lookup(self, compiler, connection):
 
 
 def sqlserver_orderby(self, compiler, connection):
-    # MSSQL doesn't allow ORDER BY EXISTS() unless it's wrapped in
-    # a CASE WHEN.
-
     template = None
     if self.nulls_last:
         template = 'CASE WHEN %(expression)s IS NULL THEN 1 ELSE 0 END, %(expression)s %(ordering)s'
     if self.nulls_first:
         template = 'CASE WHEN %(expression)s IS NULL THEN 0 ELSE 1 END, %(expression)s %(ordering)s'
 
+    copy = self.copy()
+
+    # Prevent OrderBy.as_sql() from modifying supplied templates
+    copy.nulls_first = False
+    copy.nulls_last = False
+
+    # MSSQL doesn't allow ORDER BY EXISTS() unless it's wrapped in a CASE WHEN.
     if isinstance(self.expression, Exists):
-        copy = self.copy()
         copy.expression = Case(
             When(self.expression, then=True),
             default=False,
             output_field=BooleanField(),
         )
-        return copy.as_sql(compiler, connection, template=template)
-    return self.as_sql(compiler, connection, template=template)
+
+    return copy.as_sql(compiler, connection, template=template)
 
 
 def split_parameter_list_as_sql(self, compiler, connection):
