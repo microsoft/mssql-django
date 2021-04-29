@@ -1,14 +1,18 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 
+import json
+
 from django import VERSION
 from django.db.models import BooleanField
 from django.db.models.functions import Cast
 from django.db.models.functions.math import ATan2, Log, Ln, Mod, Round
 from django.db.models.expressions import Case, Exists, OrderBy, When
-from django.db.models.lookups import Lookup, In, Exact
+from django.db.models.lookups import Lookup, In
+from django.db.models import lookups
+
 if VERSION >= (3, 1):
-    from django.db.models.fields.json import KeyTransform, KeyTransformExact
+    from django.db.models.fields.json import KeyTransform, KeyTransformIn, KeyTransformExact
 
 DJANGO3 = VERSION[0] >= 3
 
@@ -110,19 +114,31 @@ def split_parameter_list_as_sql(self, compiler, connection):
 
     return in_clause, ()
 
-def KeyTransformExact_process_rhs(self, compiler, connection):
+def unquote_json_rhs(rhs_params):
+    for value in rhs_params:
+        value = json.loads(value)
+        if not isinstance(value, (list, dict)):
+            rhs_params = [param.replace('"', '') for param in rhs_params]
+    return rhs_params
+
+def json_KeyTransformExact_process_rhs(self, compiler, connection):
     if isinstance(self.rhs, KeyTransform):
-        return super(Exact, self).process_rhs(compiler, connection)
-    rhs, rhs_params = super(Exact, self).process_rhs(compiler, connection)
-    if connection.vendor == 'microsoft':
-        if rhs_params != [None]:
-            rhs_params = [params.strip('"') for params in rhs_params]
-    return rhs, rhs_params
+        return super(lookups.Exact, self).process_rhs(compiler, connection)
+    rhs, rhs_params = super(KeyTransformExact, self).process_rhs(compiler, connection)
+
+    return rhs, unquote_json_rhs(rhs_params)
+
+def json_KeyTransformIn(self, compiler, connection):
+    lhs, _ = super(KeyTransformIn, self).process_lhs(compiler, connection)
+    rhs, rhs_params = super(KeyTransformIn, self).process_rhs(compiler, connection)
+
+    return (lhs + ' IN ' + rhs, unquote_json_rhs(rhs_params))
 
 ATan2.as_microsoft = sqlserver_atan2
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
-    KeyTransformExact.process_rhs = KeyTransformExact_process_rhs
+    KeyTransformIn.as_microsoft = json_KeyTransformIn
+    KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
 Ln.as_microsoft = sqlserver_ln
 Log.as_microsoft = sqlserver_log
 Mod.as_microsoft = sqlserver_mod

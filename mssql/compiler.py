@@ -46,8 +46,10 @@ def _as_sql_greatest(self, compiler, connection):
 def _as_sql_json_keytransform(self, compiler, connection):
     lhs, params, key_transforms = self.preprocess_lhs(compiler, connection)
     json_path = compile_json_path(key_transforms)
-
-    return 'JSON_VALUE(%s, %%s)' % lhs, tuple(params) + (json_path,)
+    return (
+        "COALESCE(JSON_QUERY(%s, '%s'), JSON_VALUE(%s, '%s'))" %
+        ((lhs, json_path) * 2)
+    ), tuple(params) * 2
 
 def _as_sql_least(self, compiler, connection):
     # SQL Server does not provide LEAST function,
