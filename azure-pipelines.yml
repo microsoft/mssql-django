@@ -21,6 +21,9 @@ jobs:
 
     strategy:
       matrix:
+        Python 3.9 - Django 3.1:
+          python.version: '3.9'
+          tox.env: 'py39-django31'
         Python 3.8 - Django 3.1:
           python.version: '3.8'
           tox.env: 'py38-django31'
@@ -31,6 +34,9 @@ jobs:
           python.version: '3.6'
           tox.env: 'py36-django31'
 
+        Python 3.9 - Django 3.0:
+          python.version: '3.9'
+          tox.env: 'py39-django30'
         Python 3.8 - Django 3.0:
           python.version: '3.8'
           tox.env: 'py38-django30'
@@ -77,6 +83,9 @@ jobs:
 
     strategy:
       matrix:
+        Python 3.9 - Django 3.1:
+          python.version: '3.9'
+          tox.env: 'py39-django31'
         Python 3.8 - Django 3.1:
           python.version: '3.8'
           tox.env: 'py38-django31'
@@ -87,6 +96,9 @@ jobs:
           python.version: '3.6'
           tox.env: 'py36-django31'
 
+        Python 3.9 - Django 3.0:
+          python.version: '3.9'
+          tox.env: 'py39-django30'
         Python 3.8 - Django 3.0:
           python.version: '3.8'
           tox.env: 'py38-django30'
