@@ -12,7 +12,9 @@ from django.db.models.lookups import Lookup, In
 from django.db.models import lookups
 
 if VERSION >= (3, 1):
-    from django.db.models.fields.json import KeyTransform, KeyTransformIn, KeyTransformExact
+    from django.db.models.fields.json import (
+        KeyTransform, KeyTransformIn, KeyTransformExact,
+        HasKeyLookup, compile_json_path)
 
 DJANGO3 = VERSION[0] >= 3
 
@@ -134,11 +136,42 @@ def json_KeyTransformIn(self, compiler, connection):
 
     return (lhs + ' IN ' + rhs, unquote_json_rhs(rhs_params))
 
+def json_HasKeyLookup(self, compiler, connection):
+    # Process JSON path from the left-hand side.
+    if isinstance(self.lhs, KeyTransform):
+        lhs, _, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
+        lhs_json_path = compile_json_path(lhs_key_transforms)
+    else:
+        lhs, _ = self.process_lhs(compiler, connection)
+        lhs_json_path = '$'
+    sql = lhs + ' IN (SELECT ' + lhs + ' FROM ' + self.lhs.output_field.model._meta.db_table + \
+    ' CROSS APPLY OPENJSON(' + lhs + ') WITH ( [json_path_value] char(1) \'%s\') WHERE [json_path_value] IS NOT NULL)'
+    # Process JSON path from the right-hand side.
+    rhs = self.rhs
+    rhs_params = []
+    if not isinstance(rhs, (list, tuple)):
+        rhs = [rhs]
+    for key in rhs:
+        if isinstance(key, KeyTransform):
+            *_, rhs_key_transforms = key.preprocess_lhs(compiler, connection)
+        else:
+            rhs_key_transforms = [key]
+        rhs_params.append('%s%s' % (
+            lhs_json_path,
+            compile_json_path(rhs_key_transforms, include_root=False),
+        ))
+    # Add condition for each key.
+    if self.logical_operator:
+        sql = '(%s)' % self.logical_operator.join([sql] * len(rhs_params))
+
+    return sql % tuple(rhs_params), []
+
 ATan2.as_microsoft = sqlserver_atan2
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
     KeyTransformIn.as_microsoft = json_KeyTransformIn
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
+    HasKeyLookup.as_microsoft = json_HasKeyLookup
 Ln.as_microsoft = sqlserver_ln
 Log.as_microsoft = sqlserver_log
 Mod.as_microsoft = sqlserver_mod
