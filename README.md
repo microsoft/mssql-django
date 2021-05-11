@@ -222,7 +222,9 @@ Here is an example of the database settings:
 
 The following features are currently not supported:
 - mssql-django does not support SQL-based regex commands
-- Altering a model field from or to AutoField at migration
+- Altering a model field from or to AutoField at migration  
+
+Certain limitations for JSONField lookups, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
 ## Future Plans
 

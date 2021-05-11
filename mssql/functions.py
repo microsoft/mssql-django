@@ -169,6 +169,7 @@ def json_HasKeyLookup(self, compiler, connection):
 
     return sql % tuple(rhs_params), []
 
+
 ATan2.as_microsoft = sqlserver_atan2
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
