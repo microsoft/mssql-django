@@ -196,7 +196,6 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'model_fields.test_jsonfield.TestQuerying.test_key_quoted_string',
                   'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
                   'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
-                  'model_fields.test_jsonfield.JSONFieldTests.test_db_check_constraints',
                   'model_fields.test_jsonfield.TestQuerying.test_isnull_key',
                   'model_fields.test_jsonfield.TestQuerying.test_none_key',
                   'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
