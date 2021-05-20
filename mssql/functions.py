@@ -4,10 +4,10 @@
 import json
 
 from django import VERSION
-from django.db.models import BooleanField
+from django.db.models import BooleanField, Value
 from django.db.models.functions import Cast
 from django.db.models.functions.math import ATan2, Log, Ln, Mod, Round
-from django.db.models.expressions import Case, Exists, OrderBy, When
+from django.db.models.expressions import Case, Exists, OrderBy, When, Window
 from django.db.models.lookups import Lookup, In
 from django.db.models import lookups
 
@@ -53,6 +53,13 @@ def sqlserver_mod(self, compiler, connection):
 
 def sqlserver_round(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, template='%(function)s(%(expressions)s, 0)', **extra_context)
+
+
+def sqlserver_window(self, compiler, connection, template=None):
+    # MSSQL window functions require an OVER clause with ORDER BY
+    if self.order_by is None:
+        self.order_by = Value('SELECT NULL')
+    return self.as_sql(compiler, connection, template)
 
 
 def sqlserver_exists(self, compiler, connection, template=None, **extra_context):
@@ -180,6 +187,7 @@ Ln.as_microsoft = sqlserver_ln
 Log.as_microsoft = sqlserver_log
 Mod.as_microsoft = sqlserver_mod
 Round.as_microsoft = sqlserver_round
+Window.as_microsoft = sqlserver_window
 
 if DJANGO3:
     Lookup.as_microsoft = sqlserver_lookup
@@ -187,3 +195,4 @@ else:
     Exists.as_microsoft = sqlserver_exists
 
 OrderBy.as_microsoft = sqlserver_orderby
+
