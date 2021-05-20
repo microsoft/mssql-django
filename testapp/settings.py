@@ -54,6 +54,8 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions.tests.FTimeDeltaTests.test_duration_with_datetime_microseconds',
                   'expressions.tests.IterableLookupInnerExpressionsTests.test_expressions_in_lookups_join_choice',
                   'expressions_case.tests.CaseExpressionTests.test_annotate_with_in_clause',
+                  'expressions_window.tests.WindowFunctionTests.test_nth_returns_null',
+                  'expressions_window.tests.WindowFunctionTests.test_nthvalue',
                   'ordering.tests.OrderingTests.test_orders_nulls_first_on_filtered_subquery',
                   'queries.test_bulk_update.BulkUpdateNoteTests.test_set_field_to_null',
                   'get_or_create.tests.UpdateOrCreateTransactionTests.test_creation_in_transaction',
