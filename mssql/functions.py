@@ -17,6 +17,9 @@ if VERSION >= (3, 1):
         KeyTransform, KeyTransformIn, KeyTransformExact,
         HasKeyLookup, compile_json_path)
 
+if VERSION >= (3, 2):
+    from django.db.models.functions.math import Random
+
 DJANGO3 = VERSION[0] >= 3
 
 
@@ -59,6 +62,8 @@ def sqlserver_nth_value(self, compiler, connection, **extra_content):
 def sqlserver_round(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, template='%(function)s(%(expressions)s, 0)', **extra_context)
 
+def sqlserver_random(self, compiler, connection, **extra_context):
+    return self.as_sql(compiler, connection, function='RAND', **extra_context)
 
 def sqlserver_window(self, compiler, connection, template=None):
     # MSSQL window functions require an OVER clause with ORDER BY
@@ -194,6 +199,9 @@ Mod.as_microsoft = sqlserver_mod
 NthValue.as_microsoft = sqlserver_nth_value
 Round.as_microsoft = sqlserver_round
 Window.as_microsoft = sqlserver_window
+
+if VERSION >= (3, 2):
+    Random.as_microsoft = sqlserver_random
 
 if DJANGO3:
     Lookup.as_microsoft = sqlserver_lookup

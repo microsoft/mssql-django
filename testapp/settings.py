@@ -179,10 +179,6 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions.tests.ExpressionOperatorTests.test_lefthand_bitwise_xor_null',
                   'inspectdb.tests.InspectDBTestCase.test_number_field_types',
                   'inspectdb.tests.InspectDBTestCase.test_json_field',
-                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_backend_range_save',
-                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_coercing',
-                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_documented_range',
-                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_types',
                   'ordering.tests.OrderingTests.test_default_ordering_by_f_expression',
                   'ordering.tests.OrderingTests.test_order_by_nulls_first',
                   'ordering.tests.OrderingTests.test_order_by_nulls_last',
@@ -203,8 +199,8 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'model_fields.test_jsonfield.TestQuerying.test_none_key',
                   'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
                   'model_fields.test_jsonfield.TestQuerying.test_key_escape',
-
                   'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
+                  'expressions_window.tests.WindowFunctionTests.test_key_transform',
                   ]
 
 REGEX_TESTS = ['lookup.tests.LookupTests.test_regex',

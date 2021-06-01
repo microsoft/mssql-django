@@ -143,7 +143,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             sql = 'DATEADD(microsecond, %d%%s, CAST(%s AS datetime2))' % (timedelta.microseconds, sql)
         return sql
 
-    def date_trunc_sql(self, lookup_type, field_name):
+    def date_trunc_sql(self, lookup_type, field_name, tzname=''):
         CONVERT_YEAR = 'CONVERT(varchar, DATEPART(year, %s))' % field_name
         CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
         CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % field_name
@@ -465,7 +465,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             value = value.astimezone(self.connection.timezone).replace(tzinfo=None)
         return value
 
-    def time_trunc_sql(self, lookup_type, field_name):
+    def time_trunc_sql(self, lookup_type, field_name, tzname=''):
         # if self.connection.sql_server_version >= 2012:
         #    fields = {
         #        'hour': 'DATEPART(hour, %s)' % field_name,

@@ -93,6 +93,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'OneToOneField': 'int',
         'PositiveIntegerField': 'int',
         'PositiveSmallIntegerField': 'smallint',
+        'PositiveBigIntegerField' : 'bigint',
         'SlugField': 'nvarchar(%(max_length)s)',
         'SmallAutoField': 'smallint',
         'SmallIntegerField': 'smallint',
@@ -109,6 +110,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'JSONField': '(ISJSON ("%(column)s") = 1)',
         'PositiveIntegerField': '[%(column)s] >= 0',
         'PositiveSmallIntegerField': '[%(column)s] >= 0',
+        'PositiveBigIntegerField': '[%(column)s] >= 0',
     }
     operators = {
         # Since '=' is used not only for string comparision there is no way

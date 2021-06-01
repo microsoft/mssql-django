@@ -15,6 +15,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     can_use_chunked_reads = False
     for_update_after_from = True
     greatest_least_ignores_nulls = True
+    has_json_object_function = False
     has_json_operators = False
     has_native_json_field = False
     has_native_uuid_field = False
@@ -29,6 +30,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     requires_sqlparse_for_splitting = False
     supports_boolean_expr_in_select_clause = False
     supports_deferrable_unique_constraints = False
+    supports_expression_indexes = False
     supports_ignore_conflicts = False
     supports_index_on_text_field = False
     supports_json_field_contains = False

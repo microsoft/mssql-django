@@ -77,6 +77,13 @@ jobs:
           codeCoverageTool: 'Cobertura'
           summaryFileLocation: 'C:\Windows\ServiceProfiles\NetworkService\coverage.xml'
 
+      - task: PublishTestResults@2
+        displayName: Publish test results via jUnit
+        inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: 'C:\Windows\ServiceProfiles\NetworkService\result.xml'
+          testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
+
   - job: Linux
     pool:
       vmImage: ubuntu-18.04
@@ -144,3 +151,10 @@ jobs:
         inputs:
           codeCoverageTool: 'Cobertura'
           summaryFileLocation: '/home/vsts/coverage.xml'
+
+      - task: PublishTestResults@2
+        displayName: Publish test results via jUnit
+        inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: '/home/vsts/result.xml'
+          testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'

@@ -3,6 +3,7 @@
 
 import pyodbc as Database
 
+from django import VERSION
 from django.db.backends.base.introspection import (
     BaseDatabaseIntrospection, FieldInfo, TableInfo,
 )
@@ -97,7 +98,11 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
 
         # map pyodbc's cursor.columns to db-api cursor description
-        columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
+        if VERSION >= (3, 2):
+            columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12], ''] for c in cursor.columns(table=table_name)]
+        else:
+            columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
+
         items = []
         for column in columns:
             if identity_check and self._is_auto_field(cursor, table_name, column[0]):
