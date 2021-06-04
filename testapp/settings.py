@@ -189,7 +189,7 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'schema.tests.SchemaTests.test_char_field_pk_to_auto_field',
                   'datetimes.tests.DateTimesTests.test_21432',
 
-                  #JSONFields
+                  # JSONFields
                   'model_fields.test_jsonfield.TestQuerying.test_has_key_list',
                   'model_fields.test_jsonfield.TestQuerying.test_has_key_null_value',
                   'model_fields.test_jsonfield.TestQuerying.test_key_quoted_string',
@@ -201,6 +201,28 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'model_fields.test_jsonfield.TestQuerying.test_key_escape',
                   'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
                   'expressions_window.tests.WindowFunctionTests.test_key_transform',
+
+                  # Django 3.2
+                  'model_indexes.tests.IndexesTests.test_func_with_tablespace',
+                  'migrations.test_operations.OperationTests.test_add_covering_unique_constraint',
+                  'migrations.test_operations.OperationTests.test_remove_covering_unique_constraint',
+                  'constraints.tests.CheckConstraintTests.test_database_constraint_unicode',
+                  'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_trunc_func_with_timezone',
+                  'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_trunc_timezone_applied_before_truncation',
+                  'expressions.tests.ExistsTests.test_optimizations',
+                  'expressions.tests.FTimeDeltaTests.test_delta_add',
+                  'expressions.tests.FTimeDeltaTests.test_delta_subtract',
+                  'expressions.tests.FTimeDeltaTests.test_delta_update',
+                  'expressions.tests.FTimeDeltaTests.test_exclude',
+                  'expressions.tests.FTimeDeltaTests.test_mixed_comparisons1',
+                  'expressions.tests.FTimeDeltaTests.test_negative_timedelta_update',
+                  'inspectdb.tests.InspectDBTestCase.test_field_types',
+                  'lookup.tests.LookupTests.test_in_ignore_none',
+                  'lookup.tests.LookupTests.test_in_ignore_none_with_unhashable_items',
+                  'queries.test_qs_combinators.QuerySetSetOperationTests.test_exists_union',
+                  'introspection.tests.IntrospectionTests.test_get_constraints_unique_indexes_orders',
+                  'schema.tests.SchemaTests.test_ci_cs_db_collation',
+                  'select_for_update.tests.SelectForUpdateTests.test_unsuported_no_key_raises_error',
                   ]
 
 REGEX_TESTS = ['lookup.tests.LookupTests.test_regex',
