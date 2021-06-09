@@ -27,20 +27,16 @@ class ExcludedTestSuiteRunner(DiscoverRunner):
                 if case.id() in EXCLUDED_TESTS:
                     test_method = getattr(case, test_name)
                     setattr(case, test_name, MarkexpectedFailure()(test_method))
-                    # setattr(case, test_name, expectedFailure2()(test_method))
             else:
                 if case.id() in EXCLUDED_TESTS + REGEX_TESTS:
                     test_method = getattr(case, test_name)
                     setattr(case, test_name, MarkexpectedFailure()(test_method))
-                    # setattr(case, test_name, expectedFailure2()(test_method))
             tests.append(case)
         suite._tests = tests
         return suite
 
     def run_suite(self, suite):
-        kwargs = dict(
-            verbosity=1, descriptions=False,
-            failfast=self.failfast)
+        kwargs = dict(verbosity=1, descriptions=False)
 
         with open('./result.xml', 'wb') as xml:
             return xmlrunner.XMLTestRunner(
