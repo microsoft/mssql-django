@@ -203,7 +203,6 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions_window.tests.WindowFunctionTests.test_key_transform',
 
                   # Django 3.2
-                  'model_indexes.tests.IndexesTests.test_func_with_tablespace',
                   'migrations.test_operations.OperationTests.test_add_covering_unique_constraint',
                   'migrations.test_operations.OperationTests.test_remove_covering_unique_constraint',
                   'constraints.tests.CheckConstraintTests.test_database_constraint_unicode',

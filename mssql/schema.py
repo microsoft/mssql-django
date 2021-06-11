@@ -735,28 +735,18 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         `sql` can be specified if the syntax differs from the standard (GIS
         indexes, ...).
         """
-        tablespace_sql = self._get_index_tablespace_sql(model, fields, db_tablespace=db_tablespace)
-        columns = [field.column for field in fields]
-        sql_create_index = sql or self.sql_create_index
-        table = model._meta.db_table
-
-        def create_index_name(*args, **kwargs):
-            nonlocal name
-            if name is None:
-                name = self._create_index_name(*args, **kwargs)
-            return self.quote_name(name)
-
-        return Statement(
-            sql_create_index,
-            table=Table(table, self.quote_name),
-            name=IndexName(table, columns, suffix, create_index_name),
-            using=using,
-            columns=self._index_columns(table, columns, col_suffixes, opclasses),
-            extra=tablespace_sql,
-            condition=(' WHERE ' + condition) if condition else '',
-            include=''
+        if django_version >= (3, 2):
+            return super()._create_index_sql(
+                model, fields=fields, name=name, suffix=suffix, using=using,
+                db_tablespace=db_tablespace, col_suffixes=col_suffixes, sql=sql,
+                opclasses=opclasses, condition=condition, include=include,
+                expressions=expressions,
+            )
+        return super()._create_index_sql(
+            model, fields=fields, name=name, suffix=suffix, using=using,
+            db_tablespace=db_tablespace, col_suffixes=col_suffixes, sql=sql,
+            opclasses=opclasses, condition=condition,
         )
-
     def create_model(self, model):
         """
         Takes a model and creates a table for it in the database.
