@@ -75,7 +75,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'AutoField': 'int',
         'BigAutoField': 'bigint',
         'BigIntegerField': 'bigint',
-        'BinaryField': 'varbinary(max)',
+        'BinaryField': 'varbinary(%(max_length)s)',
         'BooleanField': 'bit',
         'CharField': 'nvarchar(%(max_length)s)',
         'DateField': 'date',

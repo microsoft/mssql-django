@@ -11,6 +11,8 @@ from django.db.models.functions.math import ATan2, Log, Ln, Mod, Round
 from django.db.models.expressions import Case, Exists, OrderBy, When, Window
 from django.db.models.lookups import Lookup, In
 from django.db.models import lookups
+from django.db.models.fields import BinaryField, Field
+from django.core import validators
 
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
@@ -187,6 +189,14 @@ def json_HasKeyLookup(self, compiler, connection):
 
     return sql % tuple(rhs_params), []
 
+def BinaryField_init(self, *args, **kwargs):
+    # Add max_length option for BinaryField, default to max
+    kwargs.setdefault('editable', False)
+    Field.__init__(self, *args, **kwargs)
+    if self.max_length is not None:
+        self.validators.append(validators.MaxLengthValidator(self.max_length))
+    else:
+        self.max_length = 'max'
 
 ATan2.as_microsoft = sqlserver_atan2
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
@@ -200,6 +210,7 @@ Mod.as_microsoft = sqlserver_mod
 NthValue.as_microsoft = sqlserver_nth_value
 Round.as_microsoft = sqlserver_round
 Window.as_microsoft = sqlserver_window
+BinaryField.__init__ = BinaryField_init
 
 if VERSION >= (3, 2):
     Random.as_microsoft = sqlserver_random
