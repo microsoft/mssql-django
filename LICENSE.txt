@@ -2,7 +2,10 @@ Project Name: mssql-django
 
 BSD 3-Clause License
 
-Copyright (c) Microsoft Corporation
+Copyright (c) 2021, Microsoft Corporation
+              2019, ES Solutions AB
+              2018, Michiya Takahashi
+              2008, 2009 django-pyodbc developers
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
