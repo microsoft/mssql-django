@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 from django.db.backends.base.features import BaseDatabaseFeatures
 from django.utils.functional import cached_property

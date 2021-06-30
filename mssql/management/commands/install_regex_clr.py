@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 # Add regex support in SQLServer
 # Code taken from django-mssql (see https://bitbucket.org/Manfre/django-mssql)

@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 from os import path
 from setuptools import find_packages, setup

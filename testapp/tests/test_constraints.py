@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 from django.db import connections, migrations, models
 from django.db.migrations.state import ProjectState
