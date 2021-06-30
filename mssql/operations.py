@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 import datetime
 import uuid
@@ -49,12 +49,20 @@ class DatabaseOperations(BaseDatabaseOperations):
         are the fields going to be inserted in the batch, the objs contains
         all the objects to be inserted.
         """
-        objs_len, fields_len, max_row_values = len(objs), len(fields), 1000
-        if (objs_len * fields_len) <= max_row_values:
-            size = objs_len
-        else:
-            size = max_row_values // fields_len
-        return size
+        max_insert_rows = 1000
+        fields_len = len(fields)
+        if fields_len == 0:
+            # Required for empty model
+            # (bulk_create.tests.BulkCreateTests.test_empty_model)
+            return max_insert_rows
+
+        # MSSQL allows a query to have 2100 parameters but some parameters are
+        # taken up defining `NVARCHAR` parameters to store the query text and
+        # query parameters for the `sp_executesql` call. This should only take
+        # up 2 parameters but I've had this error when sending 2098 parameters.
+        max_query_params = 2050
+        # inserts are capped at 1000 rows regardless of number of query params.
+        return min(max_insert_rows, max_query_params // fields_len)
 
     def bulk_insert_sql(self, fields, placeholder_rows):
         placeholder_rows_sql = (", ".join(row) for row in placeholder_rows)
@@ -135,7 +143,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             sql = 'DATEADD(microsecond, %d%%s, CAST(%s AS datetime2))' % (timedelta.microseconds, sql)
         return sql
 
-    def date_trunc_sql(self, lookup_type, field_name):
+    def date_trunc_sql(self, lookup_type, field_name, tzname=''):
         CONVERT_YEAR = 'CONVERT(varchar, DATEPART(year, %s))' % field_name
         CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
         CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % field_name
@@ -457,7 +465,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             value = value.astimezone(self.connection.timezone).replace(tzinfo=None)
         return value
 
-    def time_trunc_sql(self, lookup_type, field_name):
+    def time_trunc_sql(self, lookup_type, field_name, tzname=''):
         # if self.connection.sql_server_version >= 2012:
         #    fields = {
         #        'hour': 'DATEPART(hour, %s)' % field_name,

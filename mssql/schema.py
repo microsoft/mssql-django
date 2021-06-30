@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 import binascii
 import datetime
@@ -17,8 +17,9 @@ from django.db.backends.ddl_references import (
     Table,
 )
 from django import VERSION as django_version
-from django.db.models import Index
+from django.db.models import Index, UniqueConstraint
 from django.db.models.fields import AutoField, BigAutoField
+from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_str
 
@@ -234,6 +235,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             template,
             table=Table(db_table, self.quote_name),
             name=self.quote_name(name),
+            include=''
         )
 
     def alter_db_table(self, model, old_db_table, new_db_table):
@@ -688,8 +690,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
 
-    def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None):
-        if (deferrable and not self.connection.features.supports_deferrable_unique_constraints):
+    def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None, include=None, opclasses=None):
+        if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False)):
             return None
 
         def create_unique_name(*args, **kwargs):
@@ -712,7 +714,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 name=name,
                 columns=columns,
                 condition=' WHERE ' + condition,
-                **statement_args
+                **statement_args,
+                include='',
             ) if self.connection.features.supports_partial_indexes else None
         else:
             return Statement(
@@ -720,38 +723,30 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 table=table,
                 name=name,
                 columns=columns,
-                **statement_args
+                **statement_args,
+                include='',
             )
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',
                           db_tablespace=None, col_suffixes=(), sql=None, opclasses=(),
-                          condition=None):
+                          condition=None, include=None, expressions=None):
         """
         Return the SQL statement to create the index for one or several fields.
         `sql` can be specified if the syntax differs from the standard (GIS
         indexes, ...).
         """
-        tablespace_sql = self._get_index_tablespace_sql(model, fields, db_tablespace=db_tablespace)
-        columns = [field.column for field in fields]
-        sql_create_index = sql or self.sql_create_index
-        table = model._meta.db_table
-
-        def create_index_name(*args, **kwargs):
-            nonlocal name
-            if name is None:
-                name = self._create_index_name(*args, **kwargs)
-            return self.quote_name(name)
-
-        return Statement(
-            sql_create_index,
-            table=Table(table, self.quote_name),
-            name=IndexName(table, columns, suffix, create_index_name),
-            using=using,
-            columns=self._index_columns(table, columns, col_suffixes, opclasses),
-            extra=tablespace_sql,
-            condition=(' WHERE ' + condition) if condition else '',
+        if django_version >= (3, 2):
+            return super()._create_index_sql(
+                model, fields=fields, name=name, suffix=suffix, using=using,
+                db_tablespace=db_tablespace, col_suffixes=col_suffixes, sql=sql,
+                opclasses=opclasses, condition=condition, include=include,
+                expressions=expressions,
+            )
+        return super()._create_index_sql(
+            model, fields=fields, name=name, suffix=suffix, using=using,
+            db_tablespace=db_tablespace, col_suffixes=col_suffixes, sql=sql,
+            opclasses=opclasses, condition=condition,
         )
-
     def create_model(self, model):
         """
         Takes a model and creates a table for it in the database.
@@ -955,3 +950,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for sql in list(self.deferred_sql):
             if isinstance(sql, Statement) and sql.references_column(model._meta.db_table, field.column):
                 self.deferred_sql.remove(sql)
+
+    def add_constraint(self, model, constraint):
+        if isinstance(constraint, UniqueConstraint) and constraint.condition and constraint.condition.connector != AND:
+            raise NotImplementedError("The backend does not support %s conditions on unique constraint %s." %
+                                      (constraint.condition.connector, constraint.name))
+        super().add_constraint(model, constraint)

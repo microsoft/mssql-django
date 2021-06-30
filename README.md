@@ -4,13 +4,13 @@ Welcome to the MSSQL-Django 3rd party backend project!
 
 *mssql-django* is a fork of [django-mssql-backend](https://pypi.org/project/django-mssql-backend/). This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
 
-We'd like to give thanks to the community that made this project possible, with particular recognition of the contributors: OskarPersson, michiya, dlo and the original Google Code django-pyodbc team. Moving forward we encourage partipation in this project from both old and new contributors! 
+We'd like to give thanks to the community that made this project possible, with particular recognition of the contributors: OskarPersson, michiya, dlo and the original Google Code django-pyodbc team. Moving forward we encourage partipation in this project from both old and new contributors!
 
 We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 2.2, 3.0
+-  Supports Django 2.2, 3.0 and 3.1
 -  Tested on Microsoft SQL Server 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -20,12 +20,12 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Dependencies
 
--  Django 2.2 or 3.0
+-  Django 2.2, 3.0 or 3.1
 -  pyodbc 3.0 or newer
 
 ## Installation
 
-1. Install pyodbc 3.0 (or newer) and Django 2.2 (or 3.0)
+1. Install pyodbc 3.0 (or newer) and Django 2.2, 3.0 or 3.1
 
 2. Install mssql-django:
 
@@ -74,6 +74,10 @@ in DATABASES control the behavior of the backend:
    Boolean. Set this to `False` if you want to disable
    Django's transaction management and implement your own.
 
+-  Trusted_Connection
+
+   String. Default is `"yes"`. Can be set to `"no"` if required.
+
 and the following entries are also available in the `TEST` dictionary
 for any given database-level settings dictionary:
 
@@ -81,7 +85,7 @@ for any given database-level settings dictionary:
 
    String. The name of database to use when running the test suite.
    If the default value (`None`) is used, the test database will use
-   the name `"test\_" + NAME`.
+   the name `"test_" + NAME`.
 
 -  COLLATION
 
@@ -135,10 +139,12 @@ Dictionary. Current available keys are:
    definition present in the ``freetds.conf`` FreeTDS configuration file
    instead of a hostname or an IP address.
 
-   But if this option is present and it's value is ``True``, this
-   special behavior is turned off.
+   But if this option is present and its value is ``True``, this
+   special behavior is turned off. Instead, connections to the database
+   server will be established using ``HOST`` and ``PORT`` options, without
+   requiring ``freetds.conf`` to be configured.
 
-   See http://www.freetds.org/userguide/dsnless.htm for more information.
+   See https://www.freetds.org/userguide/dsnless.html for more information.
 
 -  unicode_results
 
@@ -149,7 +155,7 @@ Dictionary. Current available keys are:
 -  extra_params
 
    String. Additional parameters for the ODBC connection. The format is
-   ``"param=value;param=value"``.
+   ``"param=value;param=value"``, [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) can be added to this field.
 
 -  collation
 
@@ -216,7 +222,9 @@ Here is an example of the database settings:
 
 The following features are currently not supported:
 - mssql-django does not support SQL-based regex commands
-- Altering a model field from or to AutoField at migration
+- Altering a model field from or to AutoField at migration  
+
+Certain limitations for JSONField lookups, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
 ## Future Plans
 
@@ -224,6 +232,8 @@ The following features and additions are planned:
 - install instructions for CLR .dll file to add SQL-based regex command support to SQL Server or Azure SQL DB
 
 ## Contributing
+
+More details on contributing can be found [Here](CONTRIBUTING.md).
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
 Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us

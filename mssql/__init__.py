@@ -1,4 +1,4 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 import mssql.functions  # noqa

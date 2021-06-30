@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 import types
 from itertools import chain
@@ -13,7 +13,8 @@ from django.db.models.functions import (
 from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
-
+if django.VERSION >= (3, 1):
+    from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -42,6 +43,13 @@ def _as_sql_greatest(self, compiler, connection):
     template = '(SELECT MAX(value) FROM (VALUES (%(expressions)s)) AS _%(function)s(value))'
     return self.as_sql(compiler, connection, arg_joiner='), (', template=template)
 
+def _as_sql_json_keytransform(self, compiler, connection):
+    lhs, params, key_transforms = self.preprocess_lhs(compiler, connection)
+    json_path = compile_json_path(key_transforms)
+    return (
+        "COALESCE(JSON_QUERY(%s, '%s'), JSON_VALUE(%s, '%s'))" %
+        ((lhs, json_path) * 2)
+    ), tuple(params) * 2
 
 def _as_sql_least(self, compiler, connection):
     # SQL Server does not provide LEAST function,
@@ -307,6 +315,12 @@ class SQLCompiler(compiler.SQLCompiler):
                     params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))
 
+                # For subqueres with an ORDER BY clause, SQL Server also
+                # requires a TOP or OFFSET clause which is not generated for
+                # Django 2.x.  See https://github.com/microsoft/mssql-django/issues/12
+                if django.VERSION < (3, 0, 0) and not (do_offset or do_limit):
+                    result.append("OFFSET 0 ROWS")
+
             # SQL Server requires the backend-specific emulation (2008 or earlier)
             # or an offset clause (2012 or newer) for offsetting
             if do_offset:
@@ -396,6 +410,9 @@ class SQLCompiler(compiler.SQLCompiler):
             as_microsoft = _as_sql_trim
         elif isinstance(node, Variance):
             as_microsoft = _as_sql_variance
+        if django.VERSION >= (3, 1):
+            if isinstance(node, json_KeyTransform):
+                as_microsoft = _as_sql_json_keytransform
         if as_microsoft:
             node = node.copy()
             node.as_microsoft = types.MethodType(as_microsoft, node)

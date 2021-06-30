@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 DATABASES = {
     "default": {
@@ -36,6 +36,8 @@ PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
 
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+
 ENABLE_REGEX_TESTS = False
 
 TEST_RUNNER = "testapp.runners.ExcludedTestSuiteRunner"
@@ -52,6 +54,10 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions.tests.FTimeDeltaTests.test_duration_with_datetime_microseconds',
                   'expressions.tests.IterableLookupInnerExpressionsTests.test_expressions_in_lookups_join_choice',
                   'expressions_case.tests.CaseExpressionTests.test_annotate_with_in_clause',
+                  'expressions_window.tests.WindowFunctionTests.test_nth_returns_null',
+                  'expressions_window.tests.WindowFunctionTests.test_nthvalue',
+                  'expressions_window.tests.WindowFunctionTests.test_range_n_preceding_and_following',
+                  'field_deconstruction.tests.FieldDeconstructionTests.test_binary_field',
                   'ordering.tests.OrderingTests.test_orders_nulls_first_on_filtered_subquery',
                   'queries.test_bulk_update.BulkUpdateNoteTests.test_set_field_to_null',
                   'get_or_create.tests.UpdateOrCreateTransactionTests.test_creation_in_transaction',
@@ -101,8 +107,6 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'ordering.tests.OrderingTests.test_deprecated_values_annotate',
                   'queries.test_qs_combinators.QuerySetSetOperationTests.test_limits',
                   'backends.tests.BackendTestCase.test_unicode_password',
-                  'backends.tests.FkConstraintsTests.test_disable_constraint_checks_context_manager',
-                  'backends.tests.FkConstraintsTests.test_disable_constraint_checks_manually',
                   'introspection.tests.IntrospectionTests.test_get_table_description_types',
                   'migrations.test_commands.MigrateTests.test_migrate_syncdb_app_label',
                   'migrations.test_commands.MigrateTests.test_migrate_syncdb_deferred_sql_executed_with_schemaeditor',
@@ -176,10 +180,6 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions.tests.ExpressionOperatorTests.test_lefthand_bitwise_xor_null',
                   'inspectdb.tests.InspectDBTestCase.test_number_field_types',
                   'inspectdb.tests.InspectDBTestCase.test_json_field',
-                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_backend_range_save',
-                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_coercing',
-                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_documented_range',
-                  'model_fields.test_integerfield.PositiveBigIntegerFieldTests.test_types',
                   'ordering.tests.OrderingTests.test_default_ordering_by_f_expression',
                   'ordering.tests.OrderingTests.test_order_by_nulls_first',
                   'ordering.tests.OrderingTests.test_order_by_nulls_last',
@@ -188,12 +188,48 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'queries.test_db_returning.ReturningValuesTests.test_insert_returning_multiple',
                   'dbshell.tests.DbshellCommandTestCase.test_command_missing',
                   'schema.tests.SchemaTests.test_char_field_pk_to_auto_field',
-                  'datetimes.tests.DateTimesTests.test_21432'
+                  'datetimes.tests.DateTimesTests.test_21432',
+
+                  # JSONFields
+                  'model_fields.test_jsonfield.TestQuerying.test_has_key_list',
+                  'model_fields.test_jsonfield.TestQuerying.test_has_key_null_value',
+                  'model_fields.test_jsonfield.TestQuerying.test_key_quoted_string',
+                  'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
+                  'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
+                  'model_fields.test_jsonfield.TestQuerying.test_isnull_key',
+                  'model_fields.test_jsonfield.TestQuerying.test_none_key',
+                  'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
+                  'model_fields.test_jsonfield.TestQuerying.test_key_escape',
+                  'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
+                  'expressions_window.tests.WindowFunctionTests.test_key_transform',
+
+                  # Django 3.2
+                  'migrations.test_operations.OperationTests.test_add_covering_unique_constraint',
+                  'migrations.test_operations.OperationTests.test_remove_covering_unique_constraint',
+                  'constraints.tests.CheckConstraintTests.test_database_constraint_unicode',
+                  'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_trunc_func_with_timezone',
+                  'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_trunc_timezone_applied_before_truncation',
+                  'expressions.tests.ExistsTests.test_optimizations',
+                  'expressions.tests.FTimeDeltaTests.test_delta_add',
+                  'expressions.tests.FTimeDeltaTests.test_delta_subtract',
+                  'expressions.tests.FTimeDeltaTests.test_delta_update',
+                  'expressions.tests.FTimeDeltaTests.test_exclude',
+                  'expressions.tests.FTimeDeltaTests.test_mixed_comparisons1',
+                  'expressions.tests.FTimeDeltaTests.test_negative_timedelta_update',
+                  'inspectdb.tests.InspectDBTestCase.test_field_types',
+                  'lookup.tests.LookupTests.test_in_ignore_none',
+                  'lookup.tests.LookupTests.test_in_ignore_none_with_unhashable_items',
+                  'queries.test_qs_combinators.QuerySetSetOperationTests.test_exists_union',
+                  'introspection.tests.IntrospectionTests.test_get_constraints_unique_indexes_orders',
+                  'schema.tests.SchemaTests.test_ci_cs_db_collation',
+                  'select_for_update.tests.SelectForUpdateTests.test_unsuported_no_key_raises_error',
                   ]
 
 REGEX_TESTS = ['lookup.tests.LookupTests.test_regex',
                'lookup.tests.LookupTests.test_regex_backreferencing',
                'lookup.tests.LookupTests.test_regex_non_ascii',
                'lookup.tests.LookupTests.test_regex_non_string',
-               'lookup.tests.LookupTests.test_regex_null'
+               'lookup.tests.LookupTests.test_regex_null',
+               'model_fields.test_jsonfield.TestQuerying.test_key_iregex',
+               'model_fields.test_jsonfield.TestQuerying.test_key_regex',
                ]

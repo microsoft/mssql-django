@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 from os import path
 from setuptools import find_packages, setup
@@ -24,7 +24,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='mssql-django',
-    version='1.0b1',
+    version='1.0rc1',
     description='Django backend for Microsoft SQL Server',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -34,8 +34,11 @@ setup(
     license='BSD',
     packages=find_packages(),
     install_requires=[
+        'django>=2.2,<3.3',
         'pyodbc>=3.0',
+        'pytz',
     ],
+    package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
     keywords='django',
 )

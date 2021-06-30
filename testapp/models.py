@@ -1,9 +1,10 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 import uuid
 
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -79,6 +80,7 @@ class TestRemoveOneToOneFieldModel(models.Model):
 class Topping(models.Model):
     name = models.UUIDField(primary_key=True, default=uuid.uuid4)
 
+
 class Pizza(models.Model):
     name = models.UUIDField(primary_key=True, default=uuid.uuid4)
     toppings = models.ManyToManyField(Topping)
@@ -88,3 +90,39 @@ class Pizza(models.Model):
             self.name,
             ", ".join(topping.name for topping in self.toppings.all()),
         )
+
+
+class TestUnsupportableUniqueConstraint(models.Model):
+    class Meta:
+        managed = False
+        constraints = [
+            models.UniqueConstraint(
+                name='or_constraint',
+                fields=['_type'],
+                condition=(Q(status='in_progress') | Q(status='needs_changes')),
+            ),
+        ]
+
+    _type = models.CharField(max_length=50)
+    status = models.CharField(max_length=50)
+
+
+class TestSupportableUniqueConstraint(models.Model):
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                name='and_constraint',
+                fields=['_type'],
+                condition=(
+                    Q(status='in_progress') & Q(status='needs_changes') & Q(status='published')
+                ),
+            ),
+            models.UniqueConstraint(
+                name='in_constraint',
+                fields=['_type'],
+                condition=(Q(status__in=['in_progress', 'needs_changes'])),
+            ),
+        ]
+
+    _type = models.CharField(max_length=50)
+    status = models.CharField(max_length=50)

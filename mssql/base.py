@@ -1,5 +1,5 @@
 # Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
+# Licensed under the BSD license.
 
 """
 MS SQL Server database backend for Django.
@@ -75,7 +75,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'AutoField': 'int',
         'BigAutoField': 'bigint',
         'BigIntegerField': 'bigint',
-        'BinaryField': 'varbinary(max)',
+        'BinaryField': 'varbinary(%(max_length)s)',
         'BooleanField': 'bit',
         'CharField': 'nvarchar(%(max_length)s)',
         'DateField': 'date',
@@ -88,10 +88,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'IntegerField': 'int',
         'IPAddressField': 'nvarchar(15)',
         'GenericIPAddressField': 'nvarchar(39)',
+        'JSONField': 'nvarchar(max)',
         'NullBooleanField': 'bit',
         'OneToOneField': 'int',
         'PositiveIntegerField': 'int',
         'PositiveSmallIntegerField': 'smallint',
+        'PositiveBigIntegerField' : 'bigint',
         'SlugField': 'nvarchar(%(max_length)s)',
         'SmallAutoField': 'smallint',
         'SmallIntegerField': 'smallint',
@@ -105,8 +107,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'SmallAutoField': 'IDENTITY (1, 1)',
     }
     data_type_check_constraints = {
+        'JSONField': '(ISJSON ("%(column)s") = 1)',
         'PositiveIntegerField': '[%(column)s] >= 0',
         'PositiveSmallIntegerField': '[%(column)s] >= 0',
+        'PositiveBigIntegerField': '[%(column)s] >= 0',
     }
     operators = {
         # Since '=' is used not only for string comparision there is no way
@@ -249,9 +253,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         user = conn_params.get('USER', None)
         password = conn_params.get('PASSWORD', None)
         port = conn_params.get('PORT', None)
+        trusted_connection = conn_params.get('Trusted_Connection', 'yes')
 
         options = conn_params.get('OPTIONS', {})
-        driver = options.get('driver', 'ODBC Driver 13 for SQL Server')
+        driver = options.get('driver', 'ODBC Driver 17 for SQL Server')
         dsn = options.get('dsn', None)
 
         # Microsoft driver names assumed here are:
@@ -286,10 +291,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         if user:
             cstr_parts['UID'] = user
-            cstr_parts['PWD'] = password
+            if 'Authentication=ActiveDirectoryInteractive' not in options.get('extra_params', ''):
+                cstr_parts['PWD'] = password
         else:
             if ms_drivers.match(driver):
-                cstr_parts['Trusted_Connection'] = 'yes'
+                cstr_parts['Trusted_Connection'] = trusted_connection
             else:
                 cstr_parts['Integrated Security'] = 'SSPI'
 
@@ -487,12 +493,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def disable_constraint_checking(self):
         if not self.needs_rollback:
-            self.cursor().execute('EXEC sp_msforeachtable "ALTER TABLE ? NOCHECK CONSTRAINT ALL"')
+            self._execute_foreach('ALTER TABLE %s NOCHECK CONSTRAINT ALL')
         return not self.needs_rollback
 
     def enable_constraint_checking(self):
         if not self.needs_rollback:
-            self.cursor().execute('EXEC sp_msforeachtable "ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL"')
+            self._execute_foreach('ALTER TABLE %s WITH NOCHECK CHECK CONSTRAINT ALL')
 
 
 class CursorWrapper(object):
