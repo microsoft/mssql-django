@@ -1,9 +1,7 @@
 trigger:
   - master
   - dev
-
-variables:
-  agent.preferPowerShellOnContainers: true
+  - 1ES
 
 schedules:
 - cron: "0 9 * * *"
@@ -14,9 +12,12 @@ schedules:
   always: true
 
 jobs:
-  - job: Linux
+  - job: Windows
     pool:
-      vmImage: ubuntu-18.04
+      name: SqlClientDrivers-1ES-Windows-agent-pool
+      demands:
+      - imageOverride -equals MMS2016
+    timeoutInMinutes: 120
 
     strategy:
       matrix:
@@ -67,37 +68,120 @@ jobs:
           tox.env: 'py36-django22'
 
     steps:
+      - task: CredScan@2
+        inputs:
+          toolMajorVersion: 'V2'
+
       - task: UsePythonVersion@0
         inputs:
           versionSpec: "$(python.version)"
         displayName: Use Python $(python.version)
 
-      - script: |
-          docker pull mcr.microsoft.com/mssql/server:2017-latest-ubuntu
-          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2017-latest-ubuntu
-          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-          curl https://packages.microsoft.com/config/ubuntu/18.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
-          sudo apt-get update
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev libmemcached-dev
-        displayName: Install SQL Server
+      - powershell: |
+          $IP=Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $(Get-NetConnectionProfile -IPv4Connectivity Internet | Select-Object -ExpandProperty InterfaceIndex) | Select-Object -ExpandProperty IPAddress
 
-      - script: |
+          (Get-Content $pwd/testapp/settings.py).replace('localhost', $IP) | Set-Content $pwd/testapp/settings.py
+
+          Invoke-WebRequest https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.5.2.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
+          msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
+          Get-OdbcDriver
+
+          docker pull microsoft/mssql-server-windows-developer
+          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d microsoft/mssql-server-windows-developer
+          docker ps
+
+      - powershell: |
           python -m pip install --upgrade pip wheel setuptools
-          pip install tox
+          python -m pip install tox
           git clone https://github.com/django/django.git
-        displayName: Install requirements
 
-      - script: tox -e $(tox.env)
+          python -m tox -e $(tox.env)
         displayName: Run tox
 
-      - task: PublishCodeCoverageResults@1
-        inputs:
-          codeCoverageTool: 'Cobertura'
-          summaryFileLocation: '/home/vsts/coverage.xml'
+  # - job: Linux
+  #   pool:
+  #     vmImage: ubuntu-18.04
 
-      - task: PublishTestResults@2
-        displayName: Publish test results via jUnit
-        inputs:
-          testResultsFormat: 'JUnit'
-          testResultsFiles: '/home/vsts/result.xml'
-          testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
+  #   strategy:
+  #     matrix:
+  #       Python 3.9 - Django 3.2:
+  #         python.version: '3.9'
+  #         tox.env: 'py39-django32'
+  #       Python 3.8 - Django 3.2:
+  #         python.version: '3.8'
+  #         tox.env: 'py38-django32'
+  #       Python 3.7 - Django 3.2:
+  #         python.version: '3.7'
+  #         tox.env: 'py37-django32'
+  #       Python 3.6 - Django 3.2:
+  #         python.version: '3.6'
+  #         tox.env: 'py36-django32'
+
+  #       Python 3.9 - Django 3.1:
+  #         python.version: '3.9'
+  #         tox.env: 'py39-django31'
+  #       Python 3.8 - Django 3.1:
+  #         python.version: '3.8'
+  #         tox.env: 'py38-django31'
+  #       Python 3.7 - Django 3.1:
+  #         python.version: '3.7'
+  #         tox.env: 'py37-django31'
+  #       Python 3.6 - Django 3.1:
+  #         python.version: '3.6'
+  #         tox.env: 'py36-django31'
+
+  #       Python 3.9 - Django 3.0:
+  #         python.version: '3.9'
+  #         tox.env: 'py39-django30'
+  #       Python 3.8 - Django 3.0:
+  #         python.version: '3.8'
+  #         tox.env: 'py38-django30'
+  #       Python 3.7 - Django 3.0:
+  #         python.version: '3.7'
+  #         tox.env: 'py37-django30'
+  #       Python 3.6 - Django 3.0:
+  #         python.version: '3.6'
+  #         tox.env: 'py36-django30'
+
+  #       Python 3.7 - Django 2.2:
+  #         python.version: '3.7'
+  #         tox.env: 'py37-django22'
+  #       Python 3.6 - Django 2.2:
+  #         python.version: '3.6'
+  #         tox.env: 'py36-django22'
+
+  #   steps:
+  #     - task: UsePythonVersion@0
+  #       inputs:
+  #         versionSpec: "$(python.version)"
+  #       displayName: Use Python $(python.version)
+
+  #     - script: |
+  #         docker pull mcr.microsoft.com/mssql/server:2017-latest-ubuntu
+  #         docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2017-latest-ubuntu
+  #         curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+  #         curl https://packages.microsoft.com/config/ubuntu/18.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+  #         sudo apt-get update
+  #         sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev libmemcached-dev
+  #       displayName: Install SQL Server
+
+  #     - script: |
+  #         python -m pip install --upgrade pip wheel setuptools
+  #         pip install tox
+  #         git clone https://github.com/django/django.git
+  #       displayName: Install requirements
+
+  #     - script: tox -e $(tox.env)
+  #       displayName: Run tox
+
+  #     - task: PublishCodeCoverageResults@1
+  #       inputs:
+  #         codeCoverageTool: 'Cobertura'
+  #         summaryFileLocation: '/home/vsts/coverage.xml'
+
+  #     - task: PublishTestResults@2
+  #       displayName: Publish test results via jUnit
+  #       inputs:
+  #         testResultsFormat: 'JUnit'
+  #         testResultsFiles: '/home/vsts/result.xml'
+  #         testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
