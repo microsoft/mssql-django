@@ -10,7 +10,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 2.2, 3.0 and 3.1
+-  Supports Django 2.2, 3.0, 3.1 and 3.2
 -  Tested on Microsoft SQL Server 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -20,13 +20,11 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Dependencies
 
--  Django 2.2, 3.0 or 3.1
 -  pyodbc 3.0 or newer
 
 ## Installation
 
-1. Install pyodbc 3.0 (or newer) and Django 2.2, 3.0 or 3.1
-
+1. Install pyodbc 3.0 (or newer) and Django
 2. Install mssql-django:
 
        pip install mssql-django
@@ -222,7 +220,7 @@ Here is an example of the database settings:
 
 The following features are currently not supported:
 - mssql-django does not support SQL-based regex commands
-- Altering a model field from or to AutoField at migration  
+- Altering a model field from or to AutoField at migration
 
 Certain limitations for JSONField lookups, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
