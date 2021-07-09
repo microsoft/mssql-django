@@ -96,7 +96,7 @@ EXTERNAL NAME regex_clr.UserDefinedFunctions.REGEXP_LIKE
 
         self.enable_clr()
 
-        with self.self.cursor() as cursor:
+        with self.cursor() as cursor:
             for s in sql:
                 cursor.execute(s)
 
