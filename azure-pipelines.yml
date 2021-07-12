@@ -14,7 +14,7 @@ schedules:
 jobs:
   - job: Windows
     pool:
-      name: SqlClientDrivers-1ES-Windows-agent-pool
+      name: Django-1ES-pool
       demands:
       - imageOverride -equals MMS2016
     timeoutInMinutes: 120
@@ -98,90 +98,93 @@ jobs:
           python -m tox -e $(tox.env)
         displayName: Run tox
 
-  # - job: Linux
-  #   pool:
-  #     vmImage: ubuntu-18.04
+  - job: Linux
+    pool:
+      name: Django-1ES-pool
+      demands:
+      - imageOverride -equals MMSUbuntu20.04
+    timeoutInMinutes: 120
 
-  #   strategy:
-  #     matrix:
-  #       Python 3.9 - Django 3.2:
-  #         python.version: '3.9'
-  #         tox.env: 'py39-django32'
-  #       Python 3.8 - Django 3.2:
-  #         python.version: '3.8'
-  #         tox.env: 'py38-django32'
-  #       Python 3.7 - Django 3.2:
-  #         python.version: '3.7'
-  #         tox.env: 'py37-django32'
-  #       Python 3.6 - Django 3.2:
-  #         python.version: '3.6'
-  #         tox.env: 'py36-django32'
+    strategy:
+      matrix:
+        Python 3.9 - Django 3.2:
+          python.version: '3.9'
+          tox.env: 'py39-django32'
+        Python 3.8 - Django 3.2:
+          python.version: '3.8'
+          tox.env: 'py38-django32'
+        Python 3.7 - Django 3.2:
+          python.version: '3.7'
+          tox.env: 'py37-django32'
+        Python 3.6 - Django 3.2:
+          python.version: '3.6'
+          tox.env: 'py36-django32'
 
-  #       Python 3.9 - Django 3.1:
-  #         python.version: '3.9'
-  #         tox.env: 'py39-django31'
-  #       Python 3.8 - Django 3.1:
-  #         python.version: '3.8'
-  #         tox.env: 'py38-django31'
-  #       Python 3.7 - Django 3.1:
-  #         python.version: '3.7'
-  #         tox.env: 'py37-django31'
-  #       Python 3.6 - Django 3.1:
-  #         python.version: '3.6'
-  #         tox.env: 'py36-django31'
+        Python 3.9 - Django 3.1:
+          python.version: '3.9'
+          tox.env: 'py39-django31'
+        Python 3.8 - Django 3.1:
+          python.version: '3.8'
+          tox.env: 'py38-django31'
+        Python 3.7 - Django 3.1:
+          python.version: '3.7'
+          tox.env: 'py37-django31'
+        Python 3.6 - Django 3.1:
+          python.version: '3.6'
+          tox.env: 'py36-django31'
 
-  #       Python 3.9 - Django 3.0:
-  #         python.version: '3.9'
-  #         tox.env: 'py39-django30'
-  #       Python 3.8 - Django 3.0:
-  #         python.version: '3.8'
-  #         tox.env: 'py38-django30'
-  #       Python 3.7 - Django 3.0:
-  #         python.version: '3.7'
-  #         tox.env: 'py37-django30'
-  #       Python 3.6 - Django 3.0:
-  #         python.version: '3.6'
-  #         tox.env: 'py36-django30'
+        Python 3.9 - Django 3.0:
+          python.version: '3.9'
+          tox.env: 'py39-django30'
+        Python 3.8 - Django 3.0:
+          python.version: '3.8'
+          tox.env: 'py38-django30'
+        Python 3.7 - Django 3.0:
+          python.version: '3.7'
+          tox.env: 'py37-django30'
+        Python 3.6 - Django 3.0:
+          python.version: '3.6'
+          tox.env: 'py36-django30'
 
-  #       Python 3.7 - Django 2.2:
-  #         python.version: '3.7'
-  #         tox.env: 'py37-django22'
-  #       Python 3.6 - Django 2.2:
-  #         python.version: '3.6'
-  #         tox.env: 'py36-django22'
+        Python 3.7 - Django 2.2:
+          python.version: '3.7'
+          tox.env: 'py37-django22'
+        Python 3.6 - Django 2.2:
+          python.version: '3.6'
+          tox.env: 'py36-django22'
 
-  #   steps:
-  #     - task: UsePythonVersion@0
-  #       inputs:
-  #         versionSpec: "$(python.version)"
-  #       displayName: Use Python $(python.version)
+    steps:
+      - task: UsePythonVersion@0
+        inputs:
+          versionSpec: "$(python.version)"
+        displayName: Use Python $(python.version)
 
-  #     - script: |
-  #         docker pull mcr.microsoft.com/mssql/server:2017-latest-ubuntu
-  #         docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2017-latest-ubuntu
-  #         curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-  #         curl https://packages.microsoft.com/config/ubuntu/18.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
-  #         sudo apt-get update
-  #         sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev libmemcached-dev
-  #       displayName: Install SQL Server
+      - script: |
+          docker pull mcr.microsoft.com/mssql/server:2019-latest
+          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev libmemcached-dev
+        displayName: Install SQL Server
 
-  #     - script: |
-  #         python -m pip install --upgrade pip wheel setuptools
-  #         pip install tox
-  #         git clone https://github.com/django/django.git
-  #       displayName: Install requirements
+      - script: |
+          python -m pip install --upgrade pip wheel setuptools
+          pip install tox
+          git clone https://github.com/django/django.git
+        displayName: Install requirements
 
-  #     - script: tox -e $(tox.env)
-  #       displayName: Run tox
+      - script: tox -e $(tox.env)
+        displayName: Run tox
 
-  #     - task: PublishCodeCoverageResults@1
-  #       inputs:
-  #         codeCoverageTool: 'Cobertura'
-  #         summaryFileLocation: '/home/vsts/coverage.xml'
+      - task: PublishCodeCoverageResults@1
+        inputs:
+          codeCoverageTool: 'Cobertura'
+          summaryFileLocation: 'django/coverage.xml'
 
-  #     - task: PublishTestResults@2
-  #       displayName: Publish test results via jUnit
-  #       inputs:
-  #         testResultsFormat: 'JUnit'
-  #         testResultsFiles: '/home/vsts/result.xml'
-  #         testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
+      - task: PublishTestResults@2
+        displayName: Publish test results via jUnit
+        inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: 'result.xml'
+          testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
