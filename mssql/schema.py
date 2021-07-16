@@ -694,14 +694,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
 
-    def _index_include_sql(self, model, columns):
-        if not columns or not self.connection.features.supports_covering_indexes:
-            return ''
-        return Statement(
-            ' INCLUDE (%(columns)s)',
-            columns=Columns(model._meta.db_table, columns, self.quote_name),
-        )
-
     def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None, include=None, opclasses=None):
         if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False)):
             return None
