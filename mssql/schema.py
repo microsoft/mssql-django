@@ -189,10 +189,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             output.append(sql)
 
         for index in model._meta.indexes:
-            if (
+            if django_version >= (3, 2) and (
                 not index.contains_expressions or
                 self.connection.features.supports_expression_indexes
             ):
+                output.append(index.create_sql(model, self))
+            else:
                 output.append(index.create_sql(model, self))
         return output
 
@@ -710,6 +712,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         statement_args = {
             "deferrable": self._deferrable_constraint_sql(deferrable)
         } if django_version >= (3, 1) else {}
+        include = self._index_include_sql(model, include) if django_version >=(3, 2) else ''
 
         if condition:
             return Statement(
@@ -719,7 +722,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 columns=columns,
                 condition=' WHERE ' + condition,
                 **statement_args,
-                include=self._index_include_sql(model, include),
+                include=include,
             ) if self.connection.features.supports_partial_indexes else None
         else:
             return Statement(
@@ -728,7 +731,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 name=name,
                 columns=columns,
                 **statement_args,
-                include=self._index_include_sql(model, include),
+                include=include,
             )
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',
