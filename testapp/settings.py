@@ -204,8 +204,6 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions_window.tests.WindowFunctionTests.test_key_transform',
 
                   # Django 3.2
-                  'migrations.test_operations.OperationTests.test_add_covering_unique_constraint',
-                  'migrations.test_operations.OperationTests.test_remove_covering_unique_constraint',
                   'constraints.tests.CheckConstraintTests.test_database_constraint_unicode',
                   'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_trunc_func_with_timezone',
                   'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_trunc_timezone_applied_before_truncation',

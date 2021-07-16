@@ -189,7 +189,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             output.append(sql)
 
         for index in model._meta.indexes:
-            output.append(index.create_sql(model, self))
+            if (
+                not index.contains_expressions or
+                self.connection.features.supports_expression_indexes
+            ):
+                output.append(index.create_sql(model, self))
         return output
 
     def _alter_many_to_many(self, model, old_field, new_field, strict):
@@ -690,6 +694,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
 
+    def _index_include_sql(self, model, columns):
+        if not columns or not self.connection.features.supports_covering_indexes:
+            return ''
+        return Statement(
+            ' INCLUDE (%(columns)s)',
+            columns=Columns(model._meta.db_table, columns, self.quote_name),
+        )
+
     def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None, include=None, opclasses=None):
         if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False)):
             return None
@@ -715,7 +727,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 columns=columns,
                 condition=' WHERE ' + condition,
                 **statement_args,
-                include='',
+                include=self._index_include_sql(model, include),
             ) if self.connection.features.supports_partial_indexes else None
         else:
             return Statement(
@@ -724,7 +736,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 name=name,
                 columns=columns,
                 **statement_args,
-                include='',
+                include=self._index_include_sql(model, include),
             )
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',
@@ -747,6 +759,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             db_tablespace=db_tablespace, col_suffixes=col_suffixes, sql=sql,
             opclasses=opclasses, condition=condition,
         )
+
     def create_model(self, model):
         """
         Takes a model and creates a table for it in the database.
@@ -799,7 +812,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 definition,
             ))
             # Autoincrement SQL (for backends with post table definition variant)
-            if field.get_internal_type() in ("AutoField", "BigAutoField"):
+            if field.get_internal_type() in ("AutoField", "BigAutoField", "SmallAutoField"):
                 autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
                 if autoinc_sql:
                     self.deferred_sql.extend(autoinc_sql)
@@ -811,10 +824,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
             self.deferred_sql.append(self._create_unique_sql(model, columns, condition=condition))
 
+        constraints = [constraint.constraint_sql(model, self) for constraint in model._meta.constraints]
         # Make the table
         sql = self.sql_create_table % {
             "table": self.quote_name(model._meta.db_table),
-            "definition": ", ".join(column_sqls)
+            'definition': ', '.join(constraint for constraint in (*column_sqls, *constraints) if constraint),
         }
         if model._meta.db_tablespace:
             tablespace_sql = self.connection.ops.tablespace_sql(model._meta.db_tablespace)
@@ -831,6 +845,30 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for field in model._meta.local_many_to_many:
             if field.remote_field.through._meta.auto_created:
                 self.create_model(field.remote_field.through)
+
+    def _delete_unique_sql(
+        self, model, name, condition=None, deferrable=None, include=None,
+        opclasses=None,
+    ):
+        if (
+            (
+                deferrable and
+                not self.connection.features.supports_deferrable_unique_constraints
+            ) or
+            (condition and not self.connection.features.supports_partial_indexes) or
+            (include and not self.connection.features.supports_covering_indexes)
+        ):
+            return None
+        if condition or include or opclasses:
+            sql = self.sql_delete_index
+            with self.connection.cursor() as cursor:
+                cursor.execute("SELECT 1 FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE CONSTRAINT_NAME = '%s'" % name)
+                row = cursor.fetchone()
+                if row:
+                    sql = self.sql_delete_unique
+        else:
+            sql = self.sql_delete_unique
+        return self._delete_constraint_sql(sql, model, name)
 
     def delete_model(self, model):
         super().delete_model(model)
