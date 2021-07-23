@@ -189,6 +189,7 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'dbshell.tests.DbshellCommandTestCase.test_command_missing',
                   'schema.tests.SchemaTests.test_char_field_pk_to_auto_field',
                   'datetimes.tests.DateTimesTests.test_21432',
+                  'migrations.test_operations.OperationTests.test_rename_model_with_m2m',
 
                   # JSONFields
                   'model_fields.test_jsonfield.TestQuerying.test_has_key_list',

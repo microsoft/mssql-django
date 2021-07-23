@@ -244,17 +244,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             include=''
         )
 
-    def alter_db_table(self, model, old_db_table, new_db_table):
-        index_names = self._db_table_constraint_names(old_db_table, index=True)
-        for index_name in index_names:
-            self.execute(self._db_table_delete_constraint_sql(self.sql_delete_index, old_db_table, index_name))
-
-        index_names = self._db_table_constraint_names(new_db_table, index=True)
-        for index_name in index_names:
-            self.execute(self._db_table_delete_constraint_sql(self.sql_delete_index, new_db_table, index_name))
-
-        return super().alter_db_table(model, old_db_table, new_db_table)
-
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
         """Actually perform a "physical" (non-ManyToMany) field update."""
@@ -356,9 +345,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(self._delete_constraint_sql(self.sql_delete_check, model, constraint_name))
         # Have they renamed the column?
         if old_field.column != new_field.column:
-            # remove old indices
-            self._delete_indexes(model, old_field, new_field)
-
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
             # Rename all references to the renamed column.
             for sql in self.deferred_sql:
@@ -422,7 +408,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 actions = [(", ".join(sql), sum(params, []))]
             # Apply those actions
             for sql, params in actions:
-                self._delete_indexes(model, old_field, new_field)
                 self.execute(
                     self.sql_alter_column % {
                         "table": self.quote_name(model._meta.db_table),
