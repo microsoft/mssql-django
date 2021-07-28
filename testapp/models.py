@@ -8,7 +8,14 @@ from django.db.models import Q
 from django.utils import timezone
 
 
-class Author(models.Model):
+class BigAutoFieldMixin(models.Model):
+    id = models.BigAutoField(primary_key=True)
+
+    class Meta:
+        abstract = True
+
+
+class Author(BigAutoFieldMixin, models.Model):
     name = models.CharField(max_length=100)
 
 
