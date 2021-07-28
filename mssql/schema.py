@@ -248,11 +248,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                      old_db_params, new_db_params, strict=False):
         """Actually perform a "physical" (non-ManyToMany) field update."""
 
-        # the backend doesn't support altering from/to (Big)AutoField
-        # because of the limited capability of SQL Server to edit IDENTITY property
-        for t in (AutoField, BigAutoField):
-            if isinstance(old_field, t) or isinstance(new_field, t):
-                raise NotImplementedError("the backend doesn't support altering from/to %s." % t.__name__)
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
         if old_field.remote_field and old_field.db_constraint:
@@ -408,13 +403,40 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 actions = [(", ".join(sql), sum(params, []))]
             # Apply those actions
             for sql, params in actions:
-                self.execute(
-                    self.sql_alter_column % {
-                        "table": self.quote_name(model._meta.db_table),
-                        "changes": sql,
-                    },
-                    params,
-                )
+                if "IDENTITY" in sql:
+                    # SQL Server does not support ALTER COLUMN commands in IDENTITY columns directly.
+                    is_bigint = lambda sql: "bigint" in sql
+                    _type = "bigint IDENTITY (1, 1)" if is_bigint(sql) else "int IDENTITY (1, 1)"
+                    _type_map = {
+                        "bigint IDENTITY (1, 1)": "bigint",
+                        'int IDENTITY (1, 1)': 'int'
+                    }
+                    sql = sql.replace(_type, _type_map[_type])
+                    rels = _related_non_m2m_objects(old_field, new_field)
+                    # Drops the PK constraint
+                    self._delete_primary_key(model, strict)
+                    for old_rel, new_rel in rels:
+                        # Drop fks indexes and unique constraints
+                        self._delete_unique_constraints(old_rel.related_model, old_rel.field, new_rel.field, strict=False)
+                        self._delete_indexes(old_rel.related_model, old_rel.field, new_rel.field)
+                    # Alter the table
+                    self.execute(
+                        self.sql_alter_column % {
+                            "table": self.quote_name(model._meta.db_table),
+                            "changes": sql,
+                        },
+                        params,
+                    )
+                    # Recriate the PK constraint
+                    self.execute(self._create_primary_key_sql(model, new_field))
+                else:
+                    self.execute(
+                        self.sql_alter_column % {
+                            "table": self.quote_name(model._meta.db_table),
+                            "changes": sql,
+                        },
+                        params,
+                    )
             if four_way_default_alteration:
                 # Update existing rows with default value
                 self.execute(
@@ -974,3 +996,35 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             raise NotImplementedError("The backend does not support %s conditions on unique constraint %s." %
                                       (constraint.condition.connector, constraint.name))
         super().add_constraint(model, constraint)
+
+    def _constraint_names(self, model, column_names=None, unique=None,
+                          primary_key=None, index=None, foreign_key=None,
+                          check=None, type_=None, exclude=None):
+        """Return all constraint names matching the columns and conditions."""
+        if column_names is not None:
+            column_names = [
+                self.connection.introspection.identifier_converter(name)
+                for name in column_names
+            ]
+        with self.connection.cursor() as cursor:
+            constraints = self.connection.introspection.get_constraints(cursor, model._meta.db_table)
+        result = []
+        for name, infodict in constraints.items():
+            # NOTE: the ```any([column ... ])``` section was added to cover edge cases where column_names
+            # NOTE: is not equal infodict["columns"] but it holds a column identifier one may want to identify.
+            if column_names is None or column_names == infodict['columns'] or any([column in infodict["columns"] for column in column_names if column_names]):
+                if unique is not None and infodict['unique'] != unique:
+                    continue
+                if primary_key is not None and infodict['primary_key'] != primary_key:
+                    continue
+                if index is not None and infodict['index'] != index:
+                    continue
+                if check is not None and infodict['check'] != check:
+                    continue
+                if foreign_key is not None and not infodict['foreign_key']:
+                    continue
+                if type_ is not None and infodict['type'] != type_:
+                    continue
+                if not exclude or name not in exclude:
+                    result.append(name)
+        return result
