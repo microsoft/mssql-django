@@ -218,20 +218,27 @@ Here is an example of the database settings:
 
 ## Limitations
 
-The following features are currently not supported:
-- mssql-django does not support SQL-based regex commands
+The following features are currently not fully supported:
 - Altering a model field from or to AutoField at migration
+- Django annotate functions have floating point arithmetic problems in some cases
+- Annotate function with exists
+- Exists function in order_by
+- Righthand power and arithmetic with datatimes
+- Timezones, timedeltas not fully supported
+- `bulk_update` multiple field to null
+- Rename field/model with foreign key constraint
+- Database level constraints
+- Math degrees power or radians
+- Bit-shift operators
+- Filtered index
+- Date extract function
+- Hashing functions
 
-Certain limitations for JSONField lookups, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
-
-## Future Plans
-
-The following features and additions are planned:
-- install instructions for CLR .dll file to add SQL-based regex command support to SQL Server or Azure SQL DB
+JSONField lookups have limitations, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
 ## Contributing
 
-More details on contributing can be found [Here](CONTRIBUTING.md).
+More details on contributing can be found [here](CONTRIBUTING.md).
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
 Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
