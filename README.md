@@ -219,7 +219,6 @@ Here is an example of the database settings:
 ## Limitations
 
 The following features are currently not fully supported:
-- Altering a model field from or to AutoField at migration
 - Django annotate functions have floating point arithmetic problems in some cases
 - Annotate function with exists
 - Exists function in order_by
