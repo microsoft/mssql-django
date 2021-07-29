@@ -29,6 +29,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     requires_literal_defaults = True
     requires_sqlparse_for_splitting = False
     supports_boolean_expr_in_select_clause = False
+    supports_covering_indexes = True
     supports_deferrable_unique_constraints = False
     supports_expression_indexes = False
     supports_ignore_conflicts = False

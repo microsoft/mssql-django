@@ -10,7 +10,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 2.2, 3.0 and 3.1
+-  Supports Django 2.2, 3.0, 3.1 and 3.2
 -  Tested on Microsoft SQL Server 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -20,13 +20,11 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Dependencies
 
--  Django 2.2, 3.0 or 3.1
 -  pyodbc 3.0 or newer
 
 ## Installation
 
-1. Install pyodbc 3.0 (or newer) and Django 2.2, 3.0 or 3.1
-
+1. Install pyodbc 3.0 (or newer) and Django
 2. Install mssql-django:
 
        pip install mssql-django
@@ -220,20 +218,27 @@ Here is an example of the database settings:
 
 ## Limitations
 
-The following features are currently not supported:
-- mssql-django does not support SQL-based regex commands
-- Altering a model field from or to AutoField at migration  
+The following features are currently not fully supported:
+- Altering a model field from or to AutoField at migration
+- Django annotate functions have floating point arithmetic problems in some cases
+- Annotate function with exists
+- Exists function in order_by
+- Righthand power and arithmetic with datatimes
+- Timezones, timedeltas not fully supported
+- `bulk_update` multiple field to null
+- Rename field/model with foreign key constraint
+- Database level constraints
+- Math degrees power or radians
+- Bit-shift operators
+- Filtered index
+- Date extract function
+- Hashing functions
 
-Certain limitations for JSONField lookups, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
-
-## Future Plans
-
-The following features and additions are planned:
-- install instructions for CLR .dll file to add SQL-based regex command support to SQL Server or Azure SQL DB
+JSONField lookups have limitations, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
 ## Contributing
 
-More details on contributing can be found [Here](CONTRIBUTING.md).
+More details on contributing can be found [here](CONTRIBUTING.md).
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
 Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us

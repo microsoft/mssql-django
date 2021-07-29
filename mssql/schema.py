@@ -189,7 +189,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             output.append(sql)
 
         for index in model._meta.indexes:
-            output.append(index.create_sql(model, self))
+            if django_version >= (3, 2) and (
+                not index.contains_expressions or
+                self.connection.features.supports_expression_indexes
+            ):
+                output.append(index.create_sql(model, self))
+            else:
+                output.append(index.create_sql(model, self))
         return output
 
     def _alter_many_to_many(self, model, old_field, new_field, strict):
@@ -237,17 +243,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             name=self.quote_name(name),
             include=''
         )
-
-    def alter_db_table(self, model, old_db_table, new_db_table):
-        index_names = self._db_table_constraint_names(old_db_table, index=True)
-        for index_name in index_names:
-            self.execute(self._db_table_delete_constraint_sql(self.sql_delete_index, old_db_table, index_name))
-
-        index_names = self._db_table_constraint_names(new_db_table, index=True)
-        for index_name in index_names:
-            self.execute(self._db_table_delete_constraint_sql(self.sql_delete_index, new_db_table, index_name))
-
-        return super().alter_db_table(model, old_db_table, new_db_table)
 
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
@@ -350,9 +345,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(self._delete_constraint_sql(self.sql_delete_check, model, constraint_name))
         # Have they renamed the column?
         if old_field.column != new_field.column:
-            # remove old indices
-            self._delete_indexes(model, old_field, new_field)
-
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
             # Rename all references to the renamed column.
             for sql in self.deferred_sql:
@@ -416,7 +408,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 actions = [(", ".join(sql), sum(params, []))]
             # Apply those actions
             for sql, params in actions:
-                self._delete_indexes(model, old_field, new_field)
                 self.execute(
                     self.sql_alter_column % {
                         "table": self.quote_name(model._meta.db_table),
@@ -706,6 +697,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         statement_args = {
             "deferrable": self._deferrable_constraint_sql(deferrable)
         } if django_version >= (3, 1) else {}
+        include = self._index_include_sql(model, include) if django_version >=(3, 2) else ''
 
         if condition:
             return Statement(
@@ -715,7 +707,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 columns=columns,
                 condition=' WHERE ' + condition,
                 **statement_args,
-                include='',
+                include=include,
             ) if self.connection.features.supports_partial_indexes else None
         else:
             return Statement(
@@ -724,7 +716,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 name=name,
                 columns=columns,
                 **statement_args,
-                include='',
+                include=include,
             )
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',
@@ -747,6 +739,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             db_tablespace=db_tablespace, col_suffixes=col_suffixes, sql=sql,
             opclasses=opclasses, condition=condition,
         )
+
     def create_model(self, model):
         """
         Takes a model and creates a table for it in the database.
@@ -799,7 +792,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 definition,
             ))
             # Autoincrement SQL (for backends with post table definition variant)
-            if field.get_internal_type() in ("AutoField", "BigAutoField"):
+            if field.get_internal_type() in ("AutoField", "BigAutoField", "SmallAutoField"):
                 autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
                 if autoinc_sql:
                     self.deferred_sql.extend(autoinc_sql)
@@ -811,10 +804,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
             self.deferred_sql.append(self._create_unique_sql(model, columns, condition=condition))
 
+        constraints = [constraint.constraint_sql(model, self) for constraint in model._meta.constraints]
         # Make the table
         sql = self.sql_create_table % {
             "table": self.quote_name(model._meta.db_table),
-            "definition": ", ".join(column_sqls)
+            'definition': ', '.join(constraint for constraint in (*column_sqls, *constraints) if constraint),
         }
         if model._meta.db_tablespace:
             tablespace_sql = self.connection.ops.tablespace_sql(model._meta.db_tablespace)
@@ -831,6 +825,30 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for field in model._meta.local_many_to_many:
             if field.remote_field.through._meta.auto_created:
                 self.create_model(field.remote_field.through)
+
+    def _delete_unique_sql(
+        self, model, name, condition=None, deferrable=None, include=None,
+        opclasses=None,
+    ):
+        if (
+            (
+                deferrable and
+                not self.connection.features.supports_deferrable_unique_constraints
+            ) or
+            (condition and not self.connection.features.supports_partial_indexes) or
+            (include and not self.connection.features.supports_covering_indexes)
+        ):
+            return None
+        if condition or include or opclasses:
+            sql = self.sql_delete_index
+            with self.connection.cursor() as cursor:
+                cursor.execute("SELECT 1 FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE CONSTRAINT_NAME = '%s'" % name)
+                row = cursor.fetchone()
+                if row:
+                    sql = self.sql_delete_unique
+        else:
+            sql = self.sql_delete_unique
+        return self._delete_constraint_sql(sql, model, name)
 
     def delete_model(self, model):
         super().delete_model(model)

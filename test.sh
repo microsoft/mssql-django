@@ -109,7 +109,5 @@ coverage run tests/runtests.py --settings=testapp.settings --noinput \
     update \
     update_only_fields
 
-python -m coverage xml --include '*mssql*' --omit '*virtualenvs*'
+python -m coverage xml --include '*mssql*' --omit '*virtualenvs*' -o coverage.xml
 
-# For Azure Pipelines
-cp -f coverage.xml result.xml ~/

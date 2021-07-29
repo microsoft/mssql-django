@@ -11,11 +11,14 @@ CLASSIFIERS = [
     "Operating System :: Microsoft :: Windows",
     'Programming Language :: Python',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.5',
     'Programming Language :: Python :: 3.6',
     'Programming Language :: Python :: 3.7',
+    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
     'Framework :: Django :: 2.2',
     'Framework :: Django :: 3.0',
+    'Framework :: Django :: 3.1',
+    'Framework :: Django :: 3.2',
 ]
 
 this_directory = path.abspath(path.dirname(__file__))
@@ -24,7 +27,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='mssql-django',
-    version='1.0rc1',
+    version='1.0',
     description='Django backend for Microsoft SQL Server',
     long_description=long_description,
     long_description_content_type='text/markdown',
