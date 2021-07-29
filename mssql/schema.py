@@ -409,7 +409,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     _type = "bigint IDENTITY (1, 1)" if is_bigint(sql) else "int IDENTITY (1, 1)"
                     _type_map = {
                         "bigint IDENTITY (1, 1)": "bigint",
-                        'int IDENTITY (1, 1)': 'int'
+                        "int IDENTITY (1, 1)": "int"
                     }
                     sql = sql.replace(_type, _type_map[_type])
                     rels = _related_non_m2m_objects(old_field, new_field)
@@ -427,7 +427,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         },
                         params,
                     )
-                    # Recriate the PK constraint
+                    # Recreate the PK constraint
                     self.execute(self._create_primary_key_sql(model, new_field))
                 else:
                     self.execute(
@@ -1011,7 +1011,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         result = []
         for name, infodict in constraints.items():
             # NOTE: the ```any([column ... ])``` section was added to cover edge cases where column_names
-            # NOTE: is not equal infodict["columns"] but it holds a column identifier one may want to identify.
+            # NOTE: is not equal infodict["columns"], e.g. column_names is ["status"] and infodict["columns"]
+            # NOTE: is ["id", "status"].
             if column_names is None or column_names == infodict['columns'] or any([column in infodict["columns"] for column in column_names if column_names]):
                 if unique is not None and infodict['unique'] != unique:
                     continue
