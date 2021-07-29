@@ -1011,8 +1011,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         result = []
         for name, infodict in constraints.items():
             # NOTE: the ```any([column ... ])``` section was added to cover edge cases where column_names
-            # NOTE: is not equal infodict["columns"], e.g. column_names is ["status"] and infodict["columns"]
-            # NOTE: is ["id", "status"].
+            # NOTE: is not equal infodict["columns"], e.g. column_names is ["fk_id"] and infodict["columns"]
+            # NOTE: is ["fk_id", "status"].
             if column_names is None or column_names == infodict['columns'] or any([column in infodict["columns"] for column in column_names if column_names]):
                 if unique is not None and infodict['unique'] != unique:
                     continue
