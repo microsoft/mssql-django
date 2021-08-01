@@ -901,9 +901,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.create_model(field.remote_field.through)
 
         base_table_name = model._meta.db_table
-        not_autofield = new_field.get_internal_type() not in ('IntegerField', 'CharField')
+        autofield = new_field.get_internal_type() in ('AutoField', 'BigAutoField', 'SmallAutoField')
 
-        if not_autofield:
+        if autofield:
             # Drop Identity for bring the data from original table
             self.execute('SET IDENTITY_INSERT %(table)s ON' % {'table': f'{base_table_name}_temp'})
 
@@ -914,7 +914,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             'columns': ", ".join([field.name for field in model._meta.local_fields])
         })
 
-        if not_autofield:
+        if autofield:
             # Activate Identity for the temp data
             self.execute('SET IDENTITY_INSERT %(table)s OFF' % {'table': f'{base_table_name}_temp'})
 
