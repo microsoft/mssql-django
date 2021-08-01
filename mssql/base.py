@@ -72,8 +72,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     # be interpolated against the values of Field.__dict__ before being output.
     # If a column type is set to None, it won't be included in the output.
     data_types = {
-        'AutoField': 'int IDENTITY (1, 1)',
-        'BigAutoField': 'bigint IDENTITY (1, 1)',
+        'AutoField': 'int',
+        'BigAutoField': 'bigint',
         'BigIntegerField': 'bigint',
         'BinaryField': 'varbinary(%(max_length)s)',
         'BooleanField': 'bit',

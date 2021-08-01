@@ -3,6 +3,8 @@
 
 import binascii
 import datetime
+import random
+import string
 
 from django.db.backends.base.schema import (
     BaseDatabaseSchemaEditor,
@@ -18,7 +20,7 @@ from django.db.backends.ddl_references import (
 )
 from django import VERSION as django_version
 from django.db.models import Index, UniqueConstraint
-from django.db.models.fields import AutoField, BigAutoField
+from django.db.models.fields import AutoField, BigAutoField, IntegerField, SmallAutoField
 from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_str
@@ -55,6 +57,26 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_alter_column_type = "ALTER COLUMN %(column)s %(type)s"
     sql_create_column = "ALTER TABLE %(table)s ADD %(column)s %(definition)s"
     sql_delete_column = "ALTER TABLE %(table)s DROP COLUMN %(column)s"
+    sql_activate_identity = "SET IDENTITY_INSERT %(table)s OFF"
+    sql_select_pk_constraints = """
+        SELECT
+            pk.[name] as pk_name
+        FROM sys.tables tab
+            INNER JOIN sys.indexes pk
+                ON tab.object_id = pk.object_id
+                AND pk.is_primary_key = 1
+            INNER JOIN sys.index_columns ic
+                ON ic.object_id = pk.object_id
+                AND ic.index_id = pk.index_id
+            INNER JOIN sys.columns col
+                ON pk.object_id = col.object_id
+                AND col.column_id = ic.column_id
+        WHERE
+            tab.name = '%(table)s'
+        ORDER BY schema_name(tab.schema_id),
+            pk.[name],
+            ic.index_column_id
+"""
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
     sql_delete_table = """
         DECLARE @sql_froeign_constraint_name nvarchar(128)
@@ -79,6 +101,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_rename_table = "EXEC sp_rename %(old_table)s, %(new_table)s"
     sql_create_unique_null = "CREATE UNIQUE INDEX %(name)s ON %(table)s(%(columns)s) " \
                              "WHERE %(columns)s IS NOT NULL"
+    sql_data_replication = "IF EXISTS ( SELECT * FROM %(table)s ) INSERT INTO %(temp_table)s ( %(columns)s ) SELECT %(columns)s FROM %(table)s"
+
 
     def _alter_column_default_sql(self, model, old_field, new_field, drop=False):
         """
@@ -350,6 +374,28 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         actions = []
         null_actions = []
         post_actions = []
+
+        is_old_field_int = old_field.get_internal_type() == 'IntegerField'
+        is_new_field_int = new_field.get_internal_type() == 'IntegerField'
+        is_old_field_auto = old_field.get_internal_type() in ('AutoField', 'BigAutoField')
+        is_new_field_auto = new_field.get_internal_type() in ('AutoField', 'BigAutoField')
+        is_new_field_char = new_field.get_internal_type() == 'CharField'
+
+        # from auto to int
+        numerical_migration = is_old_field_auto and is_new_field_int
+        # from int to auto
+        auto_field_migration = is_old_field_int and is_new_field_auto
+        # from auto to nvarchar
+        varchar_field_migration = is_old_field_auto and is_new_field_char
+
+        if auto_field_migration or varchar_field_migration or numerical_migration:
+            # If old_field is int and new_field is auto
+            # we need to recreate our table, since SQL Server
+            # does not support ALTER COLUMN for IDENTITY statements.
+            model._meta.local_fields.pop(model._meta.local_fields.index(old_field))
+            model._meta.local_fields.append(new_field)
+            self.recreate_table_with_new_identity(model, new_field, old_field)
+
         # Type change?
         if old_type != new_type:
             fragment, other_actions = self._alter_column_type_sql(model, old_field, new_field, new_type)
@@ -403,32 +449,33 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 actions = [(", ".join(sql), sum(params, []))]
             # Apply those actions
             for sql, params in actions:
-                if "IDENTITY" in sql:
-                    # SQL Server does not support ALTER COLUMN commands in IDENTITY columns directly.
-                    is_bigint = lambda sql: "bigint" in sql
-                    _type = "bigint IDENTITY (1, 1)" if is_bigint(sql) else "int IDENTITY (1, 1)"
-                    _type_map = {
-                        "bigint IDENTITY (1, 1)": "bigint",
-                        "int IDENTITY (1, 1)": "int"
-                    }
-                    sql = sql.replace(_type, _type_map[_type])
+                any_auto_field = any(
+                    [
+                        isinstance(new_field, t) or isinstance(old_field, t)
+                        for t in (AutoField, BigAutoField)
+                    ]
+                )
+                if any_auto_field:
                     rels = _related_non_m2m_objects(old_field, new_field)
-                    # Drops the PK constraint
-                    self._delete_primary_key(model, strict)
+                    pk_constraint = self.execute(self.sql_select_pk_constraints % {'table': model._meta.db_table}, has_result=True)
+
+                    if pk_constraint:
+                        self._delete_primary_key(model, strict)
+
                     for old_rel, new_rel in rels:
                         # Drop fks indexes and unique constraints
                         self._delete_unique_constraints(old_rel.related_model, old_rel.field, new_rel.field, strict=False)
                         self._delete_indexes(old_rel.related_model, old_rel.field, new_rel.field)
+
                     # Alter the table
                     self.execute(
-                        self.sql_alter_column % {
-                            "table": self.quote_name(model._meta.db_table),
-                            "changes": sql,
-                        },
+                        self.sql_alter_column % {'table': self.quote_name(model._meta.db_table), 'changes': sql},
                         params,
                     )
-                    # Recreate the PK constraint
-                    self.execute(self._create_primary_key_sql(model, new_field))
+
+                    if pk_constraint:
+                        # Recreate the PK constraint
+                        self.execute(self._create_primary_key_sql(model, new_field))
                 else:
                     self.execute(
                         self.sql_alter_column % {
@@ -761,6 +808,120 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             db_tablespace=db_tablespace, col_suffixes=col_suffixes, sql=sql,
             opclasses=opclasses, condition=condition,
         )
+
+    def recreate_table_with_new_identity(self, model, new_field, old_field):
+        """
+        Creates a temporary table, migrate data from original table, drop original and renames the copy.
+        Will also create any accompanying indexes or unique constraints.
+        """
+        # Create column SQL, add FK deferreds if needed
+        column_sqls = []
+        params = []
+
+        for field in model._meta.local_fields:
+            # SQL
+            definition, extra_params = self.column_sql(model, field)
+            if definition is None:
+                continue
+
+            if (self.connection.features.supports_nullable_unique_constraints and
+                    not field.many_to_many and field.null and field.unique):
+
+                definition = definition.replace(' UNIQUE', '')
+                self.deferred_sql.append(self._create_index_sql(
+                    model, [field], sql=self.sql_create_unique_null, suffix='_uniq'
+                ))
+
+            # Check constraints can go on the column SQL here
+            db_params = field.db_parameters(connection=self.connection)
+            if db_params['check']:
+                # SQL Server requires a name for the check constraint
+                chars = string.ascii_uppercase + string.digits
+                random_term = ''.join(random.SystemRandom().choice(chars) for _ in range(3))
+                definition += self._sql_check_constraint % {
+                    'name': self._create_index_name(f'{model._meta.db_table}_{random_term}', [field.column], suffix=f'_check'),
+                    'check': db_params['check']
+                }
+            # Autoincrement SQL (for backends with inline variant)
+            col_type_suffix = field.db_type_suffix(connection=self.connection)
+            if col_type_suffix:
+                definition += ' %s' % col_type_suffix
+            params.extend(extra_params)
+            # FK
+            if field.remote_field and field.db_constraint:
+                to_table = field.remote_field.model._meta.db_table
+                to_column = field.remote_field.model._meta.get_field(field.remote_field.field_name).column
+                if self.sql_create_inline_fk:
+                    definition += ' ' + self.sql_create_inline_fk % {
+                        'to_table': self.quote_name(to_table),
+                        'to_column': self.quote_name(to_column),
+                    }
+                elif self.connection.features.supports_foreign_keys:
+                    self.deferred_sql.append(self._create_fk_sql(model, field, '_fk_%(to_table)s_%(to_column)s'))
+            # Add the SQL to our big list
+            column_sqls.append('%s %s' % (
+                self.quote_name(field.column),
+                definition,
+            ))
+            # Autoincrement SQL (for backends with post table definition variant)
+            if field.get_internal_type() in ('AutoField', 'BigAutoField', 'SmallAutoField'):
+                autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
+                if autoinc_sql:
+                    self.deferred_sql.extend(autoinc_sql)
+
+        # Add any unique_togethers (always deferred, as some fields might be
+        # created afterwards, like geometry fields with some backends)
+        for fields in model._meta.unique_together:
+            columns = [model._meta.get_field(field).column for field in fields]
+            condition = ' AND '.join(['[%s] IS NOT NULL' % col for col in columns])
+            self.deferred_sql.append(self._create_unique_sql(model, columns, condition=condition))
+
+        constraints = [constraint.constraint_sql(model, self) for constraint in model._meta.constraints]
+        # Make the table
+        sql = self.sql_create_table % {
+            'table': self.quote_name(f'{model._meta.db_table}_temp'),
+            'definition': ', '.join(constraint for constraint in (*column_sqls, *constraints) if constraint),
+        }
+
+        if model._meta.db_tablespace:
+            tablespace_sql = self.connection.ops.tablespace_sql(model._meta.db_tablespace)
+            if tablespace_sql:
+                sql += ' ' + tablespace_sql
+
+        # Prevent using [] as params, in the case a literal '%' is used in the definition
+        self.execute(sql, params or None)
+
+        # Add any field index and index_together's (deferred as SQLite3 _remake_table needs it)
+        self.deferred_sql.extend(self._model_indexes_sql(model))
+        self.deferred_sql = list(set(self.deferred_sql))
+
+        # Make M2M tables
+        for field in model._meta.local_many_to_many:
+            if field.remote_field.through._meta.auto_created:
+                self.create_model(field.remote_field.through)
+
+        base_table_name = model._meta.db_table
+        not_autofield = new_field.get_internal_type() not in ('IntegerField', 'CharField')
+
+        if not_autofield:
+            # Drop Identity for bring the data from original table
+            self.execute('SET IDENTITY_INSERT %(table)s ON' % {'table': f'{base_table_name}_temp'})
+
+        # Bring the original data
+        self.execute(self.sql_data_replication % {
+            'table': base_table_name,
+            'temp_table': f"{base_table_name}_temp",
+            'columns': ", ".join([field.name for field in model._meta.local_fields])
+        })
+
+        if not_autofield:
+            # Activate Identity for the temp data
+            self.execute('SET IDENTITY_INSERT %(table)s OFF' % {'table': f'{base_table_name}_temp'})
+
+        # Drop the table
+        self.execute('DROP TABLE %(table)s' % {'table': base_table_name})
+        self.execute(self.sql_rename_table % {'old_table': f'{base_table_name}_temp', 'new_table': base_table_name})
+
 
     def create_model(self, model):
         """
