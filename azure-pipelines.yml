@@ -186,5 +186,5 @@ jobs:
         displayName: Publish test results via jUnit
         inputs:
           testResultsFormat: 'JUnit'
-          testResultsFiles: 'result.xml'
+          testResultsFiles: 'django/result.xml'
           testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
