@@ -34,6 +34,9 @@ setup(
     author='Microsoft',
     author_email='opencode@microsoft.com',
     url='https://github.com/microsoft/mssql-django',
+    project_urls={
+    'Release Notes': 'https://github.com/microsoft/mssql-django/releases',
+    },
     license='BSD',
     packages=find_packages(),
     install_requires=[
