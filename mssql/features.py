@@ -47,26 +47,11 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_timezones = False
     supports_transactions = True
     uses_savepoints = True
-
-    @cached_property
-    def has_bulk_insert(self):
-        return self.connection.sql_server_version > 2005
-
-    @cached_property
-    def supports_nullable_unique_constraints(self):
-        return self.connection.sql_server_version > 2005
-
-    @cached_property
-    def supports_partially_nullable_unique_constraints(self):
-        return self.connection.sql_server_version > 2005
-
-    @cached_property
-    def supports_partial_indexes(self):
-        return self.connection.sql_server_version > 2005
-
-    @cached_property
-    def supports_functions_in_partial_indexes(self):
-        return self.connection.sql_server_version > 2005
+    has_bulk_insert = True
+    supports_nullable_unique_constraints = True
+    supports_partially_nullable_unique_constraints = True
+    supports_partial_indexes = True
+    supports_functions_in_partial_indexes = True
 
     @cached_property
     def has_zoneinfo_database(self):
@@ -76,4 +61,4 @@ class DatabaseFeatures(BaseDatabaseFeatures):
 
     @cached_property
     def supports_json_field(self):
-        return self.connection.sql_server_version >= 2016
+        return self.connection.sql_server_version >= 2016 or self.connection.to_azure_sql_db
