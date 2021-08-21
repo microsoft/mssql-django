@@ -104,6 +104,7 @@ coverage run tests/runtests.py --settings=testapp.settings --noinput \
     select_related \
     select_related_onetoone \
     select_related_regress \
+    serializers \
     transaction_hooks \
     transactions \
     update \
