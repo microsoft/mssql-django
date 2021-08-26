@@ -10,6 +10,7 @@ DATABASES = {
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
+        "TEST": {"COLLATION": "Latin1_General_100_CI_AI_KS_SC_UTF8", },
     },
     'other': {
         "ENGINE": "mssql",
@@ -19,6 +20,7 @@ DATABASES = {
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
+        "TEST": {"COLLATION": "Latin1_General_100_CI_AI_KS_SC_UTF8", },
     },
 }
 
