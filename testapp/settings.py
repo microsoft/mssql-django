@@ -10,7 +10,6 @@ DATABASES = {
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
-        "TEST": {"COLLATION": "Latin1_General_100_CI_AI_KS_SC_UTF8", },
     },
     'other': {
         "ENGINE": "mssql",
@@ -20,7 +19,6 @@ DATABASES = {
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
-        "TEST": {"COLLATION": "Latin1_General_100_CI_AI_KS_SC_UTF8", },
     },
 }
 
@@ -198,6 +196,7 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions_window.tests.WindowFunctionTests.test_key_transform',
 
                   # Django 3.2
+                  'constraints.tests.CheckConstraintTests.test_database_constraint_unicode',
                   'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_trunc_func_with_timezone',
                   'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_trunc_timezone_applied_before_truncation',
                   'expressions.tests.ExistsTests.test_optimizations',
