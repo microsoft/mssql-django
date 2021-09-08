@@ -16,7 +16,7 @@ jobs:
     pool:
       name: Django-1ES-pool
       demands:
-      - imageOverride -equals MMS2016
+      - imageOverride -equals JDBC-MMS2019-SQL2019
     timeoutInMinutes: 120
 
     strategy:
@@ -85,10 +85,20 @@ jobs:
           Invoke-WebRequest https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.5.2.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
           msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
           Get-OdbcDriver
+        displayName: Install ODBC
 
-          docker pull microsoft/mssql-server-windows-developer
-          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d microsoft/mssql-server-windows-developer
-          docker ps
+      - powershell: |
+          Import-Module "sqlps"
+          Invoke-Sqlcmd @"
+              EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
+              ALTER LOGIN [sa] ENABLE;
+              ALTER LOGIN [sa] WITH PASSWORD = 'MyPassword42', CHECK_POLICY=OFF;
+          "@
+        displayName: Set up SQL Server
+
+      - powershell: |
+          Restart-Service -Name MSSQLSERVER -Force
+        displayName: Restart SQL Server
 
       - powershell: |
           python -m pip install --upgrade pip wheel setuptools
