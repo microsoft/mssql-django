@@ -4,6 +4,7 @@
 import binascii
 import os
 
+from django.db.utils import InterfaceError
 from django.db.backends.base.creation import BaseDatabaseCreation
 from django import VERSION as django_version
 
@@ -15,6 +16,26 @@ class DatabaseCreation(BaseDatabaseCreation):
             return self.connection._nodb_cursor()
 
         return self.connection._nodb_connection.cursor()
+
+    def _create_test_db(self, verbosity, autoclobber, keepdb=False):
+        """
+        Internal implementation - create the test db tables.
+        """
+
+        # Try to create the test DB, but if we fail due to 28000 (Login failed for user),
+        #   it's probably because the user doesn't have permission to [dbo].[master],
+        #   so we can proceed if we're keeping the DB anyway.
+        # https://github.com/microsoft/mssql-django/issues/61
+        try:
+            return super()._create_test_db(verbosity, autoclobber, keepdb)
+        except InterfaceError as err:
+            if err.args[0] == '28000' and keepdb:
+                self.log('Received error %s, proceeding because keepdb=True' % (
+                    err.args[1],
+                ))
+            else:
+                raise err
+
 
     def _destroy_test_db(self, test_database_name, verbosity):
         """
