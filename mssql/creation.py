@@ -36,7 +36,6 @@ class DatabaseCreation(BaseDatabaseCreation):
             else:
                 raise err
 
-
     def _destroy_test_db(self, test_database_name, verbosity):
         """
         Internal implementation - remove the test db tables.
