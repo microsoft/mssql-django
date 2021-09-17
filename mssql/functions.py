@@ -10,8 +10,9 @@ from django.db.models.functions import Cast, NthValue
 from django.db.models.functions.math import ATan2, Log, Ln, Mod, Round
 from django.db.models.expressions import Case, Exists, OrderBy, When, Window
 from django.db.models.lookups import Lookup, In
-from django.db.models import lookups
+from django.db.models import lookups, CheckConstraint
 from django.db.models.fields import BinaryField, Field
+from django.db.models.sql.query import Query
 from django.core import validators
 
 if VERSION >= (3, 1):
@@ -198,6 +199,21 @@ def BinaryField_init(self, *args, **kwargs):
     else:
         self.max_length = 'max'
 
+def _get_check_sql(self, model, schema_editor):
+    if VERSION >= (3, 1):
+        query = Query(model=model, alias_cols=False)
+    else:
+        query = Query(model=model)
+    where = query.build_where(self.check)
+    compiler = query.get_compiler(connection=schema_editor.connection)
+    sql, params = where.as_sql(compiler, schema_editor.connection)
+    try:
+        for p in params: str(p).encode('ascii')
+    except UnicodeEncodeError:
+        sql = sql.replace('%s', 'N%s')
+
+    return sql % tuple(schema_editor.quote_value(p) for p in params)
+
 ATan2.as_microsoft = sqlserver_atan2
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
@@ -211,6 +227,7 @@ NthValue.as_microsoft = sqlserver_nth_value
 Round.as_microsoft = sqlserver_round
 Window.as_microsoft = sqlserver_window
 BinaryField.__init__ = BinaryField_init
+CheckConstraint._get_check_sql = _get_check_sql
 
 if VERSION >= (3, 2):
     Random.as_microsoft = sqlserver_random
