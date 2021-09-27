@@ -153,7 +153,7 @@ Dictionary. Current available keys are:
 -  extra_params
 
    String. Additional parameters for the ODBC connection. The format is
-   ``"param=value;param=value"``, [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) can be added to this field.
+   ``"param=value;param=value"``, [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) (Service Principal, Interactive, Msi) can be added to this field.
 
 -  collation
 
@@ -225,7 +225,6 @@ The following features are currently not fully supported:
 - Exists function in order_by
 - Righthand power and arithmetic with datatimes
 - Timezones, timedeltas not fully supported
-- `bulk_update` multiple field to null
 - Rename field/model with foreign key constraint
 - Database level constraints
 - Math degrees power or radians
