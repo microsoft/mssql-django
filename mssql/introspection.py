@@ -98,13 +98,20 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
 
         # map pyodbc's cursor.columns to db-api cursor description
-        if VERSION >= (3, 2):
-            columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12], ''] for c in cursor.columns(table=table_name)]
-        else:
-            columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
+        columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
 
         items = []
         for column in columns:
+            if VERSION >= (3, 2):
+                sql = """SELECT collation_name
+                        FROM sys.columns c
+                        inner join sys.tables t on c.object_id = t.object_id
+                        WHERE t.name = '%s' and c.name = '%s'
+                        """ % (table_name, column[0])
+                cursor.execute(sql)
+                collation_name = cursor.fetchone()
+                column.append(collation_name[0] if collation_name else '')
+
             if identity_check and self._is_auto_field(cursor, table_name, column[0]):
                 if column[1] == Database.SQL_BIGINT:
                     column[1] = SQL_BIGAUTOFIELD
