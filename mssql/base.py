@@ -7,6 +7,7 @@ MS SQL Server database backend for Django.
 import os
 import re
 import time
+import struct
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -53,7 +54,22 @@ def encode_connection_string(fields):
         '%s=%s' % (k, encode_value(v))
         for k, v in fields.items()
     )
+def prepare_token_for_odbc(token):
+    """
+    Will prepare token for passing it to the odbc driver, as it expects
+    bytes and not a string
+    :param token:
+    :return: packed binary byte representation of token string
+    """
+    if not isinstance(token, str):
+        raise TypeError("Invalid token format provided.")
 
+    tokenstr = token.encode()
+    exptoken = b""
+    for i in tokenstr:
+        exptoken += bytes({i})
+        exptoken += bytes(1)
+    return struct.pack("=i", len(exptoken)) + exptoken
 
 def encode_value(v):
     """If the value contains a semicolon, or starts with a left curly brace,
@@ -294,7 +310,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             cstr_parts['UID'] = user
             if 'Authentication=ActiveDirectoryInteractive' not in options_extra_params:
                 cstr_parts['PWD'] = password
-        else:
+        elif 'TOKEN' not in conn_params:
             if ms_drivers.match(driver) and 'Authentication=ActiveDirectoryMsi' not in options_extra_params:
                 cstr_parts['Trusted_Connection'] = trusted_connection
             else:
@@ -322,11 +338,17 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         conn = None
         retry_count = 0
         need_to_retry = False
+        args = {
+            'unicode_results': unicode_results,
+            'timeout': timeout,
+        }
+        if 'TOKEN' in conn_params:
+            args['attrs_before'] = {
+                1256: prepare_token_for_odbc(conn_params['TOKEN'])
+            }
         while conn is None:
             try:
-                conn = Database.connect(connstr,
-                                        unicode_results=unicode_results,
-                                        timeout=timeout)
+                conn = Database.connect(connstr, **args)
             except Exception as e:
                 for error_number in self._transient_error_numbers:
                     if error_number in e.args[1]:
