@@ -974,3 +974,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             raise NotImplementedError("The backend does not support %s conditions on unique constraint %s." %
                                       (constraint.condition.connector, constraint.name))
         super().add_constraint(model, constraint)
+
+    def _collate_sql(self, collation):
+        return ' COLLATE ' + collation

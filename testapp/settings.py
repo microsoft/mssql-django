@@ -96,7 +96,6 @@ EXCLUDED_TESTS = ['aggregation.tests.AggregateTestCase.test_expression_on_aggreg
                   'expressions.tests.ExpressionOperatorTests.test_lefthand_bitwise_right_shift_operator',
                   'expressions.tests.FTimeDeltaTests.test_invalid_operator',
                   'fixtures_regress.tests.TestFixtures.test_loaddata_raises_error_when_fixture_has_invalid_foreign_key',
-                  'inspectdb.tests.InspectDBTestCase.test_introspection_errors',
                   'invalid_models_tests.test_ordinary_fields.TextFieldTests.test_max_length_warning',
                   'model_indexes.tests.IndexesTests.test_db_tablespace',
                   'ordering.tests.OrderingTests.test_deprecated_values_annotate',
