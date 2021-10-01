@@ -8,7 +8,6 @@ from django.db.backends.base.introspection import (
     BaseDatabaseIntrospection, FieldInfo, TableInfo,
 )
 from django.db.models.indexes import Index
-from django.core.exceptions import FieldError
 from django.conf import settings
 
 SQL_AUTOFIELD = -777555
@@ -104,8 +103,6 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
 
         # map pyodbc's cursor.columns to db-api cursor description
         columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
-        if(not columns):
-            raise FieldError("table '%s' does not exist." % table_name)
 
         items = []
         for column in columns:
@@ -340,3 +337,10 @@ WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAM
             if index not in constraints:
                 constraints[index] = constraint
         return constraints
+
+    def get_primary_key_column(self, cursor, table_name):
+        cursor.execute("SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'%s'" % table_name)
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("Table %s does not exist" % table_name)
+        return super().get_primary_key_column(cursor, table_name)
