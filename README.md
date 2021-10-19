@@ -1,4 +1,4 @@
-# Project
+# SQL Server backend for Django
 
 Welcome to the MSSQL-Django 3rd party backend project!
 
