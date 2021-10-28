@@ -977,3 +977,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _collate_sql(self, collation):
         return ' COLLATE ' + collation
+
+    def _create_index_name(self, table_name, column_names, suffix=""):
+        index_name = super()._create_index_name(table_name, column_names, suffix)
+        # Check if the db_table specified a user-defined schema
+        if('].[' in index_name):
+            new_index_name = index_name.replace('[','').replace(']','').replace('.', '_')
+            return new_index_name
+        return index_name
