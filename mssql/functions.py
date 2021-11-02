@@ -132,7 +132,8 @@ def split_parameter_list_as_sql(self, compiler, connection):
     with connection.cursor() as cursor:
         cursor.execute("IF OBJECT_ID('tempdb.dbo.#Temp_params', 'U') IS NOT NULL DROP TABLE #Temp_params; ")
         parameter_data_type = self.lhs.field.db_type(connection)
-        cursor.execute(f"CREATE TABLE #Temp_params (params {parameter_data_type})")
+        Temp_table_collation = 'COLLATE DATABASE_DEFAULT' if 'char' in parameter_data_type else ''
+        cursor.execute(f"CREATE TABLE #Temp_params (params {parameter_data_type} {Temp_table_collation})")
         for offset in range(0, len(rhs_params), 1000):
             sqls_params = rhs_params[offset: offset + 1000]
             sqls_params = ", ".join("('{}')".format(item) for item in sqls_params)
