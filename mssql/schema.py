@@ -23,6 +23,9 @@ from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_str
 
+if django_version >= (4, 0):
+    from django.db.models.sql import Query
+    from django.db.backends.ddl_references import Expressions
 
 class Statement(DjStatement):
     def __hash__(self):
@@ -161,11 +164,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for fields in olds.difference(news):
             self._delete_composed_index(model, fields, {'unique': True}, self.sql_delete_index)
         # Created uniques
-        for fields in news.difference(olds):
-            columns = [model._meta.get_field(field).column for field in fields]
-            condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
-            sql = self._create_unique_sql(model, columns, condition=condition)
-            self.execute(sql)
+        if django_version >= (4, 0):
+            for field_names in news.difference(olds):
+                fields = [model._meta.get_field(field) for field in field_names]
+                columns = [model._meta.get_field(field).column for field in field_names]
+                condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                sql = self._create_unique_sql(model, fields, condition=condition)
+                self.execute(sql)
+        else:
+            for fields in news.difference(olds):
+                columns = [model._meta.get_field(field).column for field in fields]
+                condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                sql = self._create_unique_sql(model, columns, condition=condition)
+                self.execute(sql)
 
     def _model_indexes_sql(self, model):
         """
@@ -182,12 +193,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             fields = [model._meta.get_field(field) for field in field_names]
             output.append(self._create_index_sql(model, fields, suffix="_idx"))
 
-        for field_names in model._meta.unique_together:
-            columns = [model._meta.get_field(field).column for field in field_names]
-            condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
-            sql = self._create_unique_sql(model, columns, condition=condition)
-            output.append(sql)
-
+        if django_version >= (4, 0):
+            for field_names in model._meta.unique_together:
+                fields = [model._meta.get_field(field) for field in field_names]
+                columns = [model._meta.get_field(field).column for field in field_names]
+                condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                sql = self._create_unique_sql(model, fields, condition=condition)
+                output.append(sql)
+        else:
+            for field_names in model._meta.unique_together:
+                columns = [model._meta.get_field(field).column for field in field_names]
+                condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                sql = self._create_unique_sql(model, columns, condition=condition)
+                output.append(sql)
         for index in model._meta.indexes:
             if django_version >= (3, 2) and (
                 not index.contains_expressions or
@@ -452,7 +470,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     )
                 )
             else:
-                self.execute(self._create_unique_sql(model, [new_field.column]))
+                if django_version >= (4, 0):
+                    self.execute(self._create_unique_sql(model, [new_field]))
+                else:
+                    self.execute(self._create_unique_sql(model, [new_field.column]))
         # Added an index?
         # constraint will no longer be used in lieu of an index. The following
         # lines from the truth table show all True cases; the rest are False:
@@ -480,13 +501,24 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         )
                     )
                 else:
-                    self.execute(self._create_unique_sql(model, columns=[old_field.column]))
+                    if django_version >= (4, 0):
+                        self.execute(self._create_unique_sql(model, [old_field]))
+                    else:
+                        self.execute(self._create_unique_sql(model, columns=[old_field.column]))
             else:
-                for fields in model._meta.unique_together:
-                    columns = [model._meta.get_field(field).column for field in fields]
-                    if old_field.column in columns:
-                        condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
-                        self.execute(self._create_unique_sql(model, columns, condition=condition))
+                if django_version >= (4, 0):
+                    for field_names in model._meta.unique_together:
+                        columns = [model._meta.get_field(field).column for field in field_names]
+                        fields = [model._meta.get_field(field) for field in field_names]
+                        if old_field.column in columns:
+                            condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                            self.execute(self._create_unique_sql(model, fields, condition=condition))
+                else:
+                    for fields in model._meta.unique_together:
+                        columns = [model._meta.get_field(field).column for field in fields]
+                        if old_field.column in columns:
+                            condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                            self.execute(self._create_unique_sql(model, columns, condition=condition))
             # Restore indexes
             index_columns = []
             if old_field.db_index and new_field.db_index:
@@ -681,43 +713,97 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
 
-    def _create_unique_sql(self, model, columns, name=None, condition=None, deferrable=None, include=None, opclasses=None):
-        if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False)):
-            return None
+    if django_version >= (4, 0):
+        def _create_unique_sql(self, model, fields , name=None, condition=None, deferrable=None, include=None, opclasses=None, expressions=None):
+            if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False)
+            or
+                (condition and not self.connection.features.supports_partial_indexes) or
+                (include and not self.connection.features.supports_covering_indexes) or
+                (expressions and not self.connection.features.supports_expression_indexes)):
+                return None
 
-        def create_unique_name(*args, **kwargs):
-            return self.quote_name(self._create_index_name(*args, **kwargs))
+            def create_unique_name(*args, **kwargs):
+                return self.quote_name(self._create_index_name(*args, **kwargs))
 
-        table = Table(model._meta.db_table, self.quote_name)
-        if name is None:
-            name = IndexName(model._meta.db_table, columns, '_uniq', create_unique_name)
-        else:
-            name = self.quote_name(name)
-        columns = Columns(table, columns, self.quote_name)
-        statement_args = {
-            "deferrable": self._deferrable_constraint_sql(deferrable)
-        } if django_version >= (3, 1) else {}
-        include = self._index_include_sql(model, include) if django_version >=(3, 2) else ''
+            compiler = Query(model, alias_cols=False).get_compiler(connection=self.connection)
+            columns = [field.column for field in fields]
+            table = model._meta.db_table
 
-        if condition:
-            return Statement(
-                self.sql_create_unique_index,
-                table=table,
-                name=name,
-                columns=columns,
-                condition=' WHERE ' + condition,
-                **statement_args,
-                include=include,
-            ) if self.connection.features.supports_partial_indexes else None
-        else:
-            return Statement(
-                self.sql_create_unique,
-                table=table,
-                name=name,
-                columns=columns,
-                **statement_args,
-                include=include,
-            )
+            if name is None:
+                name = IndexName(table, columns, '_uniq', create_unique_name)
+            else:
+                name = self.quote_name(name)
+
+            if columns:
+                columns = self._index_columns(table, columns, col_suffixes=(), opclasses=opclasses)
+            else:
+                columns = Expressions(table, expressions, compiler, self.quote_value)
+            statement_args = {
+                "deferrable": self._deferrable_constraint_sql(deferrable)
+            }
+            include = self._index_include_sql(model, include)
+
+            if condition:
+                return Statement(
+                    self.sql_create_unique_index,
+                    table=self.quote_name(table),
+                    name=name,
+                    columns=columns,
+                    condition=' WHERE ' + condition,
+                    **statement_args,
+                    include=include,
+                ) if self.connection.features.supports_partial_indexes else None
+            else:
+                return Statement(
+                    self.sql_create_unique,
+                    table=self.quote_name(table),
+                    name=name,
+                    columns=columns,
+                    **statement_args,
+                    include=include,
+                )
+    else:
+        def _create_unique_sql(self, model, columns , name=None, condition=None, deferrable=None, include=None, opclasses=None, expressions=None):
+            if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False)
+            or
+                (condition and not self.connection.features.supports_partial_indexes) or
+                (include and not self.connection.features.supports_covering_indexes) or
+                (expressions and not self.connection.features.supports_expression_indexes)):
+                return None
+
+            def create_unique_name(*args, **kwargs):
+                return self.quote_name(self._create_index_name(*args, **kwargs))
+
+            table = Table(model._meta.db_table, self.quote_name)
+            if name is None:
+                name = IndexName(model._meta.db_table, columns, '_uniq', create_unique_name)
+            else:
+                name = self.quote_name(name)
+            columns = Columns(table, columns, self.quote_name)
+            statement_args = {
+                "deferrable": self._deferrable_constraint_sql(deferrable)
+            } if django_version >= (3, 1) else {}
+            include = self._index_include_sql(model, include) if django_version >=(3, 2) else ''
+
+            if condition:
+                return Statement(
+                    self.sql_create_unique_index,
+                    table=self.quote_name(table) if isinstance(table, str) else table,
+                    name=name,
+                    columns=columns,
+                    condition=' WHERE ' + condition,
+                    **statement_args,
+                    include=include,
+                ) if self.connection.features.supports_partial_indexes else None
+            else:
+                return Statement(
+                    self.sql_create_unique,
+                    table=self.quote_name(table) if isinstance(table, str) else table,
+                    name=name,
+                    columns=columns,
+                    **statement_args,
+                    include=include,
+                )
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',
                           db_tablespace=None, col_suffixes=(), sql=None, opclasses=(),
@@ -799,10 +885,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
         # Add any unique_togethers (always deferred, as some fields might be
         # created afterwards, like geometry fields with some backends)
-        for fields in model._meta.unique_together:
-            columns = [model._meta.get_field(field).column for field in fields]
+        for field_names in model._meta.unique_together:
+            fields = [model._meta.get_field(field) for field in field_names]
+            columns = [model._meta.get_field(field).column for field in field_names]
             condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
-            self.deferred_sql.append(self._create_unique_sql(model, columns, condition=condition))
+            if django_version >= (4, 0):
+                self.deferred_sql.append(self._create_unique_sql(model, fields, condition=condition))
+            else:
+                self.deferred_sql.append(self._create_unique_sql(model, columns, condition=condition))
 
         constraints = [constraint.constraint_sql(model, self) for constraint in model._meta.constraints]
         # Make the table
@@ -828,7 +918,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _delete_unique_sql(
         self, model, name, condition=None, deferrable=None, include=None,
-        opclasses=None,
+        opclasses=None, expressions=None
     ):
         if (
             (
@@ -836,7 +926,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 not self.connection.features.supports_deferrable_unique_constraints
             ) or
             (condition and not self.connection.features.supports_partial_indexes) or
-            (include and not self.connection.features.supports_covering_indexes)
+            (include and not self.connection.features.supports_covering_indexes) or
+            (expressions and not self.connection.features.supports_expression_indexes)
         ):
             return None
         if condition or include or opclasses:
