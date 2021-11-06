@@ -23,14 +23,14 @@ class ExcludedTestSuiteRunner(DiscoverRunner):
         tests = []
         for case in suite:
             test_name = case._testMethodName
-            if ENABLE_REGEX_TESTS:
-                if case.id() in EXCLUDED_TESTS:
-                    test_method = getattr(case, test_name)
-                    setattr(case, test_name, MarkexpectedFailure()(test_method))
-            else:
-                if case.id() in EXCLUDED_TESTS + REGEX_TESTS:
-                    test_method = getattr(case, test_name)
-                    setattr(case, test_name, MarkexpectedFailure()(test_method))
+            if (
+                ENABLE_REGEX_TESTS
+                and case.id() in EXCLUDED_TESTS
+                or not ENABLE_REGEX_TESTS
+                and case.id() in EXCLUDED_TESTS + REGEX_TESTS
+            ):
+                test_method = getattr(case, test_name)
+                setattr(case, test_name, MarkexpectedFailure()(test_method))
             tests.append(case)
         suite._tests = tests
         return suite
