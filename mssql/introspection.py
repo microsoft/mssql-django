@@ -14,8 +14,7 @@ SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 
 def get_schema_name():
-    schema_name = getattr(settings, 'SCHEMA_TO_INSPECT', 'dbo')
-    return schema_name
+    return getattr(settings, 'SCHEMA_TO_INSPECT', 'dbo')
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
     # Map type codes to Django Field types.
