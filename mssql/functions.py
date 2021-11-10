@@ -246,10 +246,10 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
     requires_casting = connections[self.db].features.requires_casted_case_in_updates
     batches = (objs[i:i + batch_size] for i in range(0, len(objs), batch_size))
     updates = []
-    value_none_counter = 0
     for batch_objs in batches:
         update_kwargs = {}
         for field in fields:
+            value_none_counter = 0
             when_statements = []
             for obj in batch_objs:
                 attr = getattr(obj, field.attname)
