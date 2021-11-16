@@ -259,7 +259,7 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
                     attr = Value(attr, output_field=field)
                 when_statements.append(When(pk=obj.pk, then=attr))
             if(value_none_counter == len(when_statements)):
-                case_statement = Case(*when_statements, output_field=field, default=default)
+                case_statement = Case(*when_statements, output_field=field, default=Value(default))
             else:
                 case_statement = Case(*when_statements, output_field=field)
             if requires_casting:
