@@ -18,7 +18,7 @@ from django.db.backends.ddl_references import (
 )
 from django import VERSION as django_version
 from django.db.models import Index, UniqueConstraint
-from django.db.models.fields import AutoField, BigAutoField
+from django.db.models.fields import AutoField, BigAutoField, TextField
 from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_str
@@ -34,6 +34,13 @@ class Statement(DjStatement):
     def __eq__(self, other):
         return self.template == other.template and str(self.parts['name']) == str(other.parts['name'])
 
+    def rename_column_references(self, table, old_column, new_column):
+        for part in self.parts.values():
+            if hasattr(part, 'rename_column_references'):
+                part.rename_column_references(table, old_column, new_column)
+            condition = self.parts['condition']
+            if condition:
+                self.parts['condition'] = condition.replace(f'[{old_column}]', f'[{new_column}]')
 
 class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
@@ -363,7 +370,30 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(self._delete_constraint_sql(self.sql_delete_check, model, constraint_name))
         # Have they renamed the column?
         if old_field.column != new_field.column:
+            sql_restore_index = ''
+            # Drop unique indexes for table to be altered
+            index_names = self._db_table_constraint_names(model._meta.db_table, index=True)
+            for index_name in index_names:
+                if(index_name.endswith('uniq')):
+                    with self.connection.cursor() as cursor:
+                        cursor.execute(f"""
+                        SELECT COL_NAME(ic.object_id,ic.column_id) AS column_name,
+                               filter_definition
+                        FROM sys.indexes AS i
+                        INNER JOIN sys.index_columns AS ic
+                            ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                        WHERE i.object_id = OBJECT_ID('{model._meta.db_table}')
+                        and i.name = '{index_name}'
+                        """)
+                        result = cursor.fetchall()
+                        columns_to_recreate_index = ', '.join(['%s' % self.quote_name(column[0]) for column in result])
+                        filter_definition = result[0][1]
+                    sql_restore_index += f'CREATE UNIQUE INDEX {index_name} ON {model._meta.db_table} ({columns_to_recreate_index}) WHERE {filter_definition};'
+                    self.execute(self._db_table_delete_constraint_sql(self.sql_delete_index, model._meta.db_table, index_name))
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
+            # Restore indexes for altered table
+            if(sql_restore_index):
+                self.execute(sql_restore_index.replace(f'[{old_field.column}]', f'[{new_field.column}]'))
             # Rename all references to the renamed column.
             for sql in self.deferred_sql:
                 if isinstance(sql, DjStatement):
@@ -410,6 +440,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     self._delete_unique_constraints(model, old_field, new_field, strict)
                     # Drop indexes, SQL Server requires explicit deletion
                     self._delete_indexes(model, old_field, new_field)
+                    if not isinstance(new_field, TextField):
+                        post_actions.append((self._create_index_sql(model, [new_field]), ()))
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
             new_field.has_default() and
@@ -557,6 +589,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             fragment, other_actions = self._alter_column_type_sql(
                 new_rel.related_model, old_rel.field, new_rel.field, rel_type
             )
+            # Drop related_model indexes, so it can be altered
+            index_names = self._db_table_constraint_names(old_rel.related_model._meta.db_table, index=True)
+            for index_name in index_names:
+                self.execute(self._db_table_delete_constraint_sql(self.sql_delete_index, old_rel.related_model._meta.db_table, index_name))
             self.execute(
                 self.sql_alter_column % {
                     "table": self.quote_name(new_rel.related_model._meta.db_table),
@@ -566,6 +602,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             )
             for sql, params in other_actions:
                 self.execute(sql, params)
+            # Restore related_model indexes
+            self.execute(self._create_index_sql(new_rel.related_model, [new_rel.field]))
         # Does it have a foreign key?
         if (new_field.remote_field and
                 (fks_dropped or not old_field.remote_field or not old_field.db_constraint) and
@@ -608,6 +646,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _delete_indexes(self, model, old_field, new_field):
         index_columns = []
+        if old_field.null != new_field.null:
+            index_columns.append([old_field.column])
         if old_field.db_index and new_field.db_index:
             index_columns.append([old_field.column])
         for fields in model._meta.index_together:
