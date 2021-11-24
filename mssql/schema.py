@@ -80,7 +80,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             @sql_drop_constraint = 'ALTER TABLE [' + OBJECT_NAME(parent_object_id) + '] ' +
             'DROP CONSTRAINT [' + @sql_froeign_constraint_name + '] '
             FROM sys.foreign_keys
-            WHERE referenced_object_id = object_id('%(table)s')
+            WHERE referenced_object_id = object_id('%(table)s') and name = @sql_froeign_constraint_name
             exec sp_executesql @sql_drop_constraint
         END
         DROP TABLE %(table)s
