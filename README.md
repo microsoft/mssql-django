@@ -1,4 +1,4 @@
-# Project
+# SQL Server backend for Django
 
 Welcome to the MSSQL-Django 3rd party backend project!
 
@@ -10,7 +10,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 2.2, 3.0, 3.1 and 3.2
+-  Supports Django 2.2, 3.0, 3.1, 3.2 and 4.0
 -  Tested on Microsoft SQL Server 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -153,7 +153,7 @@ Dictionary. Current available keys are:
 -  extra_params
 
    String. Additional parameters for the ODBC connection. The format is
-   ``"param=value;param=value"``, [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) can be added to this field.
+   ``"param=value;param=value"``, [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) (Service Principal, Interactive, Msi) can be added to this field.
 
 -  collation
 
@@ -225,7 +225,6 @@ The following features are currently not fully supported:
 - Exists function in order_by
 - Righthand power and arithmetic with datatimes
 - Timezones, timedeltas not fully supported
-- `bulk_update` multiple field to null
 - Rename field/model with foreign key constraint
 - Database level constraints
 - Math degrees power or radians

@@ -258,6 +258,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         options = conn_params.get('OPTIONS', {})
         driver = options.get('driver', 'ODBC Driver 17 for SQL Server')
         dsn = options.get('dsn', None)
+        options_extra_params = options.get('extra_params', '')
 
         # Microsoft driver names assumed here are:
         # * SQL Server Native Client 10.0/11.0
@@ -291,10 +292,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         if user:
             cstr_parts['UID'] = user
-            if 'Authentication=ActiveDirectoryInteractive' not in options.get('extra_params', ''):
+            if 'Authentication=ActiveDirectoryInteractive' not in options_extra_params:
                 cstr_parts['PWD'] = password
         else:
-            if ms_drivers.match(driver):
+            if ms_drivers.match(driver) and 'Authentication=ActiveDirectoryMsi' not in options_extra_params:
                 cstr_parts['Trusted_Connection'] = trusted_connection
             else:
                 cstr_parts['Integrated Security'] = 'SSPI'

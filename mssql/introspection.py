@@ -8,10 +8,13 @@ from django.db.backends.base.introspection import (
     BaseDatabaseIntrospection, FieldInfo, TableInfo,
 )
 from django.db.models.indexes import Index
+from django.conf import settings
 
 SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 
+def get_schema_name():
+    return getattr(settings, 'SCHEMA_TO_INSPECT', 'dbo')
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
     # Map type codes to Django Field types.
@@ -63,7 +66,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns a list of table and view names in the current database.
         """
-        sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = SCHEMA_NAME()'
+        sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ' + "'" + get_schema_name() + "'"
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
         return [TableInfo(row[0], types.get(row[1]))
@@ -98,13 +101,23 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
 
         # map pyodbc's cursor.columns to db-api cursor description
-        if VERSION >= (3, 2):
-            columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12], ''] for c in cursor.columns(table=table_name)]
-        else:
-            columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
+        columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
 
         items = []
         for column in columns:
+            if VERSION >= (3, 2):
+                if self.connection.sql_server_version >= 2019:
+                    sql = """SELECT collation_name
+                            FROM sys.columns c
+                            inner join sys.tables t on c.object_id = t.object_id
+                            WHERE t.name = '%s' and c.name = '%s'
+                            """ % (table_name, column[0])
+                    cursor.execute(sql)
+                    collation_name = cursor.fetchone()
+                    column.append(collation_name[0] if collation_name  else '')
+                else:
+                    column.append('')
+
             if identity_check and self._is_auto_field(cursor, table_name, column[0]):
                 if column[1] == Database.SQL_BIGINT:
                     column[1] = SQL_BIGAUTOFIELD
@@ -119,7 +132,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         cursor.execute("""
             SELECT c.name FROM sys.columns c
             INNER JOIN sys.tables t ON c.object_id = t.object_id
-            WHERE t.schema_id = SCHEMA_ID() AND t.name = %s AND c.is_identity = 1""",
+            WHERE t.schema_id = SCHEMA_ID(""" + "'" + get_schema_name() + "'" + """) AND t.name = %s AND c.is_identity = 1""",
                        [table_name])
         # SQL Server allows only one identity column per table
         # https://docs.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
@@ -135,7 +148,6 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         # CONSTRAINT_TABLE_USAGE:  http://msdn2.microsoft.com/en-us/library/ms179883.aspx
         # REFERENTIAL_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms179987.aspx
         # TABLE_CONSTRAINTS:       http://msdn2.microsoft.com/en-us/library/ms181757.aspx
-
         sql = """
 SELECT e.COLUMN_NAME AS column_name,
   c.TABLE_NAME AS referenced_table_name,
@@ -149,7 +161,7 @@ INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
   ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME AND c.CONSTRAINT_SCHEMA = d.CONSTRAINT_SCHEMA
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
   ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME AND a.TABLE_SCHEMA = e.TABLE_SCHEMA
-WHERE a.TABLE_SCHEMA = SCHEMA_NAME() AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
+WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         cursor.execute(sql, (table_name,))
         return dict([[item[0], (item[2], item[1])] for item in cursor.fetchall()])
 
@@ -166,7 +178,7 @@ WHERE a.TABLE_SCHEMA = SCHEMA_NAME() AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE
             INNER JOIN sys.columns c ON c.object_id = t.object_id AND c.column_id = fk.parent_column_id
             INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
             INNER JOIN sys.columns rc ON rc.object_id = rt.object_id AND rc.column_id = fk.referenced_column_id
-            WHERE t.schema_id = SCHEMA_ID() AND t.name = %s""", [table_name])
+            WHERE t.schema_id = SCHEMA_ID(""" + "'" + get_schema_name() + "'" + """) AND t.name = %s""", [table_name])
         key_columns.extend([tuple(row) for row in cursor.fetchall()])
         return key_columns
 
@@ -229,7 +241,9 @@ WHERE a.TABLE_SCHEMA = SCHEMA_NAME() AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE
                 kc.table_name = fk.table_name AND
                 kc.column_name = fk.column_name
             WHERE
-                kc.table_schema = SCHEMA_NAME() AND
+                kc.table_schema = """
+                + "'" + get_schema_name() + "'" +
+                """ AND
                 kc.table_name = %s
             ORDER BY
                 kc.constraint_name ASC,
@@ -258,7 +272,7 @@ WHERE a.TABLE_SCHEMA = SCHEMA_NAME() AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE
                 kc.constraint_name = c.constraint_name
             WHERE
                 c.constraint_type = 'CHECK' AND
-                kc.table_schema = SCHEMA_NAME() AND
+                kc.table_schema = """ + "'" + get_schema_name() + "'" + """ AND
                 kc.table_name = %s
         """, [table_name])
         for constraint, column in cursor.fetchall():
@@ -297,7 +311,7 @@ WHERE a.TABLE_SCHEMA = SCHEMA_NAME() AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE
                 ic.object_id = c.object_id AND
                 ic.column_id = c.column_id
             WHERE
-                t.schema_id = SCHEMA_ID() AND
+                t.schema_id = SCHEMA_ID(""" + "'" + get_schema_name() + "'" + """) AND
                 t.name = %s
             ORDER BY
                 i.index_id ASC,
@@ -322,3 +336,10 @@ WHERE a.TABLE_SCHEMA = SCHEMA_NAME() AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE
             if index not in constraints:
                 constraints[index] = constraint
         return constraints
+
+    def get_primary_key_column(self, cursor, table_name):
+        cursor.execute("SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'%s'" % table_name)
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("Table %s does not exist" % table_name)
+        return super().get_primary_key_column(cursor, table_name)
