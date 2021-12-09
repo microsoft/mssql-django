@@ -183,6 +183,20 @@ Dictionary. Current available keys are:
    Integer. Sets the timeout in seconds for the database query.
    Default value is ``0`` which disables the timeout.
 
+- [setencoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) and [setdecoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding)
+
+    ```python
+    # Example
+    "OPTIONS": {
+            "setdecoding": [
+                {"sqltype": pyodbc.SQL_CHAR, "encoding": 'utf-8'},
+                {"sqltype": pyodbc.SQL_WCHAR, "encoding": 'utf-8'}],
+            "setencoding": [
+                {"encoding": "utf-8"}],
+            ...
+            },
+    ```
+
 ### Backend-specific settings
 
 The following project-level settings also control the behavior of the backend:
