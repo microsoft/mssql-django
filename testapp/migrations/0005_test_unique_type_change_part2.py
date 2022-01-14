@@ -4,10 +4,10 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('testapp', '0004_test_issue45_unique_type_change_part1'),
+        ('testapp', '0004_test_unique_type_change_part1'),
     ]
 
-    # Issue #45 test
+    # Run test for issue https://github.com/ESSolutions/django-mssql-backend/issues/45
     operations = [
         # Case 1: changing max_length changes the column type - the filtered UNIQUE INDEX which implements
         # the nullable unique constraint, should be correctly reinstated after this change of column type

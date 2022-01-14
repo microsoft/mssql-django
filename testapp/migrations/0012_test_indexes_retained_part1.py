@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
         ('testapp', '0011_test_unique_constraints'),
     ]
 
-    # Issue #58 test prep
+    # Prep test for issue https://github.com/ESSolutions/django-mssql-backend/issues/58
     operations = [
         migrations.CreateModel(
             name='TestIndexesRetained',

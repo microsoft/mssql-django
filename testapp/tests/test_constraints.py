@@ -19,9 +19,10 @@ from ..models import (
 @skipUnlessDBFeature('supports_nullable_unique_constraints')
 class TestNullableUniqueColumn(TestCase):
     def test_multiple_nulls(self):
-        # Issue #45 (case 1) - after field `x` has had its type changed, the filtered UNIQUE
-        # INDEX which is implementing the nullable unique constraint should still be correctly
-        # in place - i.e. allowing multiple NULLs but still enforcing uniqueness of non-NULLs
+        # Issue https://github.com/ESSolutions/django-mssql-backend/issues/45 (case 1)
+        # After field `x` has had its type changed, the filtered UNIQUE INDEX which is
+        # implementing the nullable unique constraint should still be correctly in place
+        # i.e. allowing multiple NULLs but still enforcing uniqueness of non-NULLs
 
         # Allowed
         TestUniqueNullableModel.objects.create(x=None, test_field='randomness')
@@ -50,8 +51,9 @@ class TestPartiallyNullableUniqueTogether(TestCase):
             Post.objects.create(title="foo", author=author, alt_editor=editor)
 
     def test_after_type_change(self):
-        # Issue #45 (case 2) - after one of the fields in the `unique_together` has had its
-        # type changed in a migration, the constraint should still be correctly enforced
+        # Issue https://github.com/ESSolutions/django-mssql-backend/issues/45 (case 2)
+        # After one of the fields in the `unique_together` has had its type changed
+        # in a migration, the constraint should still be correctly enforced
 
         # Multiple rows with a=NULL are considered different
         TestNullableUniqueTogetherModel.objects.create(a=None, b='bbb', c='ccc')
