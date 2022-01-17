@@ -10,9 +10,11 @@ from mssql.base import DatabaseWrapper
 from ..models import (
     Author,
     Editor,
+    M2MOtherModel,
     Post,
     TestUniqueNullableModel,
     TestNullableUniqueTogetherModel,
+    TestRenameManyToManyFieldModel,
 )
 
 
@@ -63,6 +65,21 @@ class TestPartiallyNullableUniqueTogether(TestCase):
         TestNullableUniqueTogetherModel.objects.create(a='aaa', b='bbb', c='ccc')
         with self.assertRaises(IntegrityError):
             TestNullableUniqueTogetherModel.objects.create(a='aaa', b='bbb', c='ccc')
+
+
+class TestRenameManyToManyField(TestCase):
+    def test_uniqueness_still_enforced_afterwards(self):
+        # Issue https://github.com/microsoft/mssql-django/issues/86
+        # Prep
+        thing1 = TestRenameManyToManyFieldModel.objects.create()
+        other1 = M2MOtherModel.objects.create(name='1')
+        other2 = M2MOtherModel.objects.create(name='2')
+        thing1.others_renamed.set([other1, other2])
+        # Check that the unique_together on the through table is still enforced
+        ThroughModel = TestRenameManyToManyFieldModel.others_renamed.through
+        with self.assertRaises(IntegrityError, msg='Through model fails to enforce uniqueness after m2m rename'):
+            # This should fail due to the unique_together because (thing1, other1) is already in the through table
+            ThroughModel.objects.create(testrenamemanytomanyfieldmodel=thing1, m2mothermodel=other1)
 
 
 class TestUniqueConstraints(TransactionTestCase):

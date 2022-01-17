@@ -89,6 +89,15 @@ class TestIndexesRetainedRenamed(models.Model):
     c = models.IntegerField(db_index=True)
 
 
+class M2MOtherModel(models.Model):
+    name = models.CharField(max_length=10)
+
+
+class TestRenameManyToManyFieldModel(models.Model):
+    # Issue https://github.com/microsoft/mssql-django/issues/86
+    others_renamed = models.ManyToManyField(M2MOtherModel)
+
+
 class Topping(models.Model):
     name = models.UUIDField(primary_key=True, default=uuid.uuid4)
 
