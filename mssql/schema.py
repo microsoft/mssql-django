@@ -225,14 +225,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 output.append(index.create_sql(model, self))
         return output
 
-    def _alter_many_to_many(self, model, old_field, new_field, strict):
-        """Alter M2Ms to repoint their to= endpoints."""
-
-        for idx in self._constraint_names(old_field.remote_field.through, index=True, unique=True):
-            self.execute(self.sql_delete_index % {'name': idx, 'table': old_field.remote_field.through._meta.db_table})
-
-        return super()._alter_many_to_many(model, old_field, new_field, strict)
-
     def _db_table_constraint_names(self, db_table, column_names=None, unique=None,
                                    primary_key=None, index=None, foreign_key=None,
                                    check=None, type_=None, exclude=None):
