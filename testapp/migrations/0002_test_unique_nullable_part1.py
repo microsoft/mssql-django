@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # Issue #38 test prep
+        # Prep test for issue https://github.com/ESSolutions/django-mssql-backend/issues/38
         # Create with a field that is unique *and* nullable so it is implemented with a filtered unique index.
         migrations.CreateModel(
             name='TestUniqueNullableModel',

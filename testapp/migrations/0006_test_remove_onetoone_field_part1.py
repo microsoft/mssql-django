@@ -7,7 +7,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('testapp', '0005_test_issue45_unique_type_change_part2'),
+        ('testapp', '0005_test_unique_type_change_part2'),
     ]
 
     operations = [
