@@ -225,14 +225,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 output.append(index.create_sql(model, self))
         return output
 
-    def _alter_many_to_many(self, model, old_field, new_field, strict):
-        """Alter M2Ms to repoint their to= endpoints."""
-
-        for idx in self._constraint_names(old_field.remote_field.through, index=True, unique=True):
-            self.execute(self.sql_delete_index % {'name': idx, 'table': old_field.remote_field.through._meta.db_table})
-
-        return super()._alter_many_to_many(model, old_field, new_field, strict)
-
     def _db_table_constraint_names(self, db_table, column_names=None, unique=None,
                                    primary_key=None, index=None, foreign_key=None,
                                    check=None, type_=None, exclude=None):
@@ -442,9 +434,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     # Drop unique constraint, SQL Server requires explicit deletion
                     self._delete_unique_constraints(model, old_field, new_field, strict)
                     # Drop indexes, SQL Server requires explicit deletion
-                    self._delete_indexes(model, old_field, new_field)
-                    if not new_field.get_internal_type() in ("JSONField", "TextField") and not (old_field.db_index and new_field.db_index):
-                        post_actions.append((self._create_index_sql(model, [new_field]), ()))
+                    indexes_dropped = self._delete_indexes(model, old_field, new_field)
+                    if (
+                        new_field.get_internal_type() not in ("JSONField", "TextField") and
+                        (old_field.db_index or not new_field.db_index) and
+                        new_field.db_index or
+                        (indexes_dropped and sorted(indexes_dropped) == sorted(
+                            [index.name for index in model._meta.indexes]))
+                    ):
+                        create_index_sql_statement = self._create_index_sql(model, [new_field])
+                        if create_index_sql_statement.__str__() not in [sql.__str__() for sql in self.deferred_sql]:
+                            post_actions.append((create_index_sql_statement, ()))
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
             new_field.has_default() and
@@ -566,7 +566,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if index_columns:
                 for columns in index_columns:
                     create_index_sql_statement = self._create_index_sql(model, columns)
-                    if create_index_sql_statement.__str__() not in [sql.__str__() for sql in self.deferred_sql]:
+                    if (create_index_sql_statement.__str__()
+                        not in [sql.__str__() for sql in self.deferred_sql] + [statement[0].__str__() for statement in post_actions]
+                        ):
                         self.execute(create_index_sql_statement)
 
         # Type alteration on primary key? Then we need to alter the column
@@ -653,6 +655,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _delete_indexes(self, model, old_field, new_field):
         index_columns = []
+        index_names = []
         if old_field.db_index and new_field.db_index:
             index_columns.append([old_field.column])
         elif old_field.null != new_field.null:
@@ -671,6 +674,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 index_names = self._constraint_names(model, columns, index=True)
                 for index_name in index_names:
                     self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
+        return index_names
 
     def _delete_unique_constraints(self, model, old_field, new_field, strict=False):
         unique_columns = []

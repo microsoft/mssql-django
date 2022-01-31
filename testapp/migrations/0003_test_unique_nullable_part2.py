@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # Issue #38 test
+        # Run test for issue https://github.com/ESSolutions/django-mssql-backend/issues/38
         # Now remove the null=True to check this transition is correctly handled.
         migrations.AlterField(
             model_name='testuniquenullablemodel',

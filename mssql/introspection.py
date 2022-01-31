@@ -14,7 +14,7 @@ SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 
 def get_schema_name():
-    return getattr(settings, 'SCHEMA_TO_INSPECT', 'dbo')
+    return getattr(settings, 'SCHEMA_TO_INSPECT', 'SCHEMA_NAME()')
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
     # Map type codes to Django Field types.
@@ -66,7 +66,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns a list of table and view names in the current database.
         """
-        sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ' + "'" + get_schema_name() + "'"
+        sql = f'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = {get_schema_name()}'
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
         return [TableInfo(row[0], types.get(row[1]))
@@ -129,10 +129,10 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         return items
 
     def get_sequences(self, cursor, table_name, table_fields=()):
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT c.name FROM sys.columns c
             INNER JOIN sys.tables t ON c.object_id = t.object_id
-            WHERE t.schema_id = SCHEMA_ID(""" + "'" + get_schema_name() + "'" + """) AND t.name = %s AND c.is_identity = 1""",
+            WHERE t.schema_id = SCHEMA_ID({get_schema_name()}) AND t.name = %s AND c.is_identity = 1""",
                        [table_name])
         # SQL Server allows only one identity column per table
         # https://docs.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
@@ -148,7 +148,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         # CONSTRAINT_TABLE_USAGE:  http://msdn2.microsoft.com/en-us/library/ms179883.aspx
         # REFERENTIAL_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms179987.aspx
         # TABLE_CONSTRAINTS:       http://msdn2.microsoft.com/en-us/library/ms181757.aspx
-        sql = """
+        sql = f"""
 SELECT e.COLUMN_NAME AS column_name,
   c.TABLE_NAME AS referenced_table_name,
   d.COLUMN_NAME AS referenced_column_name
@@ -161,7 +161,7 @@ INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
   ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME AND c.CONSTRAINT_SCHEMA = d.CONSTRAINT_SCHEMA
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
   ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME AND a.TABLE_SCHEMA = e.TABLE_SCHEMA
-WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
+WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         cursor.execute(sql, (table_name,))
         return dict([[item[0], (item[2], item[1])] for item in cursor.fetchall()])
 
@@ -171,14 +171,14 @@ WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAM
         key columns in given table.
         """
         key_columns = []
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT c.name AS column_name, rt.name AS referenced_table_name, rc.name AS referenced_column_name
             FROM sys.foreign_key_columns fk
             INNER JOIN sys.tables t ON t.object_id = fk.parent_object_id
             INNER JOIN sys.columns c ON c.object_id = t.object_id AND c.column_id = fk.parent_column_id
             INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
             INNER JOIN sys.columns rc ON rc.object_id = rt.object_id AND rc.column_id = fk.referenced_column_id
-            WHERE t.schema_id = SCHEMA_ID(""" + "'" + get_schema_name() + "'" + """) AND t.name = %s""", [table_name])
+            WHERE t.schema_id = SCHEMA_ID({get_schema_name()}) AND t.name = %s""", [table_name])
         key_columns.extend([tuple(row) for row in cursor.fetchall()])
         return key_columns
 
@@ -201,7 +201,7 @@ WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAM
         constraints = {}
         # Loop over the key table, collecting things as constraints
         # This will get PKs, FKs, and uniques, but not CHECK
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 kc.constraint_name,
                 kc.column_name,
@@ -241,9 +241,7 @@ WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAM
                 kc.table_name = fk.table_name AND
                 kc.column_name = fk.column_name
             WHERE
-                kc.table_schema = """
-                + "'" + get_schema_name() + "'" +
-                """ AND
+                kc.table_schema = {get_schema_name()} AND
                 kc.table_name = %s
             ORDER BY
                 kc.constraint_name ASC,
@@ -263,7 +261,7 @@ WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAM
             # Record the details
             constraints[constraint]['columns'].append(column)
         # Now get CHECK constraint columns
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT kc.constraint_name, kc.column_name
             FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS kc
             JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS c ON
@@ -272,7 +270,7 @@ WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAM
                 kc.constraint_name = c.constraint_name
             WHERE
                 c.constraint_type = 'CHECK' AND
-                kc.table_schema = """ + "'" + get_schema_name() + "'" + """ AND
+                kc.table_schema = {get_schema_name()} AND
                 kc.table_name = %s
         """, [table_name])
         for constraint, column in cursor.fetchall():
@@ -289,7 +287,7 @@ WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAM
             # Record the details
             constraints[constraint]['columns'].append(column)
         # Now get indexes
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 i.name AS index_name,
                 i.is_unique,
@@ -311,7 +309,7 @@ WHERE a.TABLE_SCHEMA = """ + "'" + get_schema_name() + "'" + """ AND a.TABLE_NAM
                 ic.object_id = c.object_id AND
                 ic.column_id = c.column_id
             WHERE
-                t.schema_id = SCHEMA_ID(""" + "'" + get_schema_name() + "'" + """) AND
+                t.schema_id = SCHEMA_ID({get_schema_name()}) AND
                 t.name = %s
             ORDER BY
                 i.index_id ASC,

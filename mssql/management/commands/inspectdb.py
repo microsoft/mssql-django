@@ -15,5 +15,5 @@ class Command(inspectdb_Command):
 
     def handle(self, *args, **options):
         if options["schema"]:
-            settings.SCHEMA_TO_INSPECT = options["schema"]
+            settings.SCHEMA_TO_INSPECT = "'" + options["schema"] + "'"
         return super().handle(*args, **options)
