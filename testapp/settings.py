@@ -1,6 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 DATABASES = {
     "default": {
         "ENGINE": "mssql",
@@ -20,6 +23,10 @@ DATABASES = {
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
     },
+    'sqlite': {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3-0",
+    }
 }
 
 INSTALLED_APPS = (

@@ -147,3 +147,10 @@ class TestSupportableUniqueConstraint(models.Model):
 
     _type = models.CharField(max_length=50)
     status = models.CharField(max_length=50)
+
+
+class JSONModel(models.Model):
+    value = models.JSONField()
+
+    class Meta:
+        required_db_features = {'supports_json_field'}

@@ -151,11 +151,10 @@ def unquote_json_rhs(rhs_params):
     return rhs_params
 
 def json_KeyTransformExact_process_rhs(self, compiler, connection):
-    if isinstance(self.rhs, KeyTransform):
-        return super(lookups.Exact, self).process_rhs(compiler, connection)
-    rhs, rhs_params = super(KeyTransformExact, self).process_rhs(compiler, connection)
-
-    return rhs, unquote_json_rhs(rhs_params)
+    rhs, rhs_params = key_transform_exact_process_rhs(self, compiler, connection)
+    if connection.vendor == 'microsoft':
+        rhs_params = unquote_json_rhs(rhs_params)
+    return rhs, rhs_params
 
 def json_KeyTransformIn(self, compiler, connection):
     lhs, _ = super(KeyTransformIn, self).process_lhs(compiler, connection)
@@ -276,6 +275,8 @@ ATan2.as_microsoft = sqlserver_atan2
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
     KeyTransformIn.as_microsoft = json_KeyTransformIn
+    # Need copy of old KeyTransformExact.process_rhs to call later
+    key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
     HasKeyLookup.as_microsoft = json_HasKeyLookup
 Ln.as_microsoft = sqlserver_ln
