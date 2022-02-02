@@ -8,7 +8,7 @@ from ..models import (
 
 class TestIndexesRetained(TestCase):
     """
-    Issue https://github.com/ESSolutions/django-mssql-backend/issues/58
+    Issue https://github.com/microsoft/mssql-django/issues/14
     Indexes dropped during a migration should be re-created afterwards
     assuming the field still has `db_index=True`
     """
@@ -36,13 +36,13 @@ class TestIndexesRetained(TestCase):
         )
 
     def test_field_made_nullable(self):
-        # case (a) of https://github.com/ESSolutions/django-mssql-backend/issues/58
+        # case (a) of https://github.com/microsoft/mssql-django/issues/14
         self._assert_index_exists({'a'})
 
     def test_field_renamed(self):
-        # case (b) of https://github.com/ESSolutions/django-mssql-backend/issues/58
+        # case (b) of https://github.com/microsoft/mssql-django/issues/14
         self._assert_index_exists({'b_renamed'})
 
     def test_table_renamed(self):
-        # case (c) of https://github.com/ESSolutions/django-mssql-backend/issues/58
+        # case (c) of https://github.com/microsoft/mssql-django/issues/14
         self._assert_index_exists({'c'})
