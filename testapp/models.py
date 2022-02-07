@@ -59,13 +59,17 @@ class TestUniqueNullableModel(models.Model):
     # Field used for testing changing the 'type' of a field that's both unique & nullable
     x = models.CharField(max_length=11, null=True, unique=True)
 
+    # A variant of Issue https://github.com/microsoft/mssql-django/issues/14 case (b)
+    # but for a unique index (not db_index)
+    y_renamed = models.IntegerField(null=True, unique=True)
+
 
 class TestNullableUniqueTogetherModel(models.Model):
     class Meta:
         unique_together = (('a', 'b', 'c'),)
 
     # Issue https://github.com/ESSolutions/django-mssql-backend/issues/45 (case 2)
-    # Fields used for testing changing the 'type of a field that is in a `unique_together`
+    # Fields used for testing changing the type of a field that is in a `unique_together`
     a = models.CharField(max_length=51, null=True)
     b = models.CharField(max_length=50)
     c = models.CharField(max_length=50)
@@ -80,7 +84,7 @@ class TestRemoveOneToOneFieldModel(models.Model):
 
 
 class TestIndexesRetainedRenamed(models.Model):
-    # Issue https://github.com/ESSolutions/django-mssql-backend/issues/58
+    # Issue https://github.com/microsoft/mssql-django/issues/14
     # In all these cases the column index should still exist afterwards
     # case (a) `a` starts out not nullable, but then is changed to be nullable
     a = models.IntegerField(db_index=True, null=True)
