@@ -1,9 +1,13 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 
+from unittest import skipUnless
+
+from django import VERSION
 from django.test import TestCase
 
-from ..models import JSONModel
+if VERSION >= (3, 1):
+    from ..models import JSONModel
 
 
 class TestJSONField(TestCase):
@@ -28,6 +32,7 @@ class TestJSONField(TestCase):
         },
     }
 
+    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
     def test_keytransformexact_not_overriding(self):
         # Issue https://github.com/microsoft/mssql-django/issues/82
         json_obj = JSONModel(value=self.json)
