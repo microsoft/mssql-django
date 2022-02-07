@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
         ('testapp', '0012_test_indexes_retained_part1'),
     ]
 
-    # Run test for issue https://github.com/ESSolutions/django-mssql-backend/issues/58
+    # Run test for issue https://github.com/microsoft/mssql-django/issues/14
     # where the following operations should leave indexes intact
     operations = [
         migrations.AlterField(

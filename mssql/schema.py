@@ -225,10 +225,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 output.append(index.create_sql(model, self))
         return output
 
-    def _db_table_constraint_names(self, db_table, column_names=None, unique=None,
-                                   primary_key=None, index=None, foreign_key=None,
+    def _db_table_constraint_names(self, db_table, column_names=None, column_match_any=False,
+                                   unique=None, primary_key=None, index=None, foreign_key=None,
                                    check=None, type_=None, exclude=None):
-        """Return all constraint names matching the columns and conditions."""
+        """
+        Return all constraint names matching the columns and conditions. Modified from base `_constraint_names`
+        `any_column_matches`=False: (default) only return constraints covering exactly `column_names`
+        `any_column_matches`=True : return any constraints which include at least 1 of `column_names`
+        """
         if column_names is not None:
             column_names = [
                 self.connection.introspection.identifier_converter(name)
@@ -238,7 +242,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             constraints = self.connection.introspection.get_constraints(cursor, db_table)
         result = []
         for name, infodict in constraints.items():
-            if column_names is None or column_names == infodict['columns']:
+            if column_names is None or column_names == infodict['columns'] or (
+                column_match_any and any(col in infodict['columns'] for col in column_names)
+            ):
                 if unique is not None and infodict['unique'] != unique:
                     continue
                 if primary_key is not None and infodict['primary_key'] != primary_key:
@@ -365,29 +371,32 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Have they renamed the column?
         if old_field.column != new_field.column:
             sql_restore_index = ''
-            # Drop unique indexes for table to be altered
-            index_names = self._db_table_constraint_names(model._meta.db_table, index=True)
+            # Drop any unique indexes which include the column to be renamed
+            index_names = self._db_table_constraint_names(
+                db_table=model._meta.db_table, column_names=[old_field.column], column_match_any=True,
+                index=True, unique=True,
+            )
             for index_name in index_names:
-                if(index_name.endswith('uniq')):
-                    with self.connection.cursor() as cursor:
-                        cursor.execute(f"""
-                        SELECT COL_NAME(ic.object_id,ic.column_id) AS column_name,
-                               filter_definition
-                        FROM sys.indexes AS i
-                        INNER JOIN sys.index_columns AS ic
-                            ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                        WHERE i.object_id = OBJECT_ID('{model._meta.db_table}')
-                        and i.name = '{index_name}'
-                        """)
-                        result = cursor.fetchall()
-                        columns_to_recreate_index = ', '.join(['%s' % self.quote_name(column[0]) for column in result])
-                        filter_definition = result[0][1]
-                    sql_restore_index += f'CREATE UNIQUE INDEX {index_name} ON {model._meta.db_table} ({columns_to_recreate_index}) WHERE {filter_definition};'
-                    self.execute(self._db_table_delete_constraint_sql(
-                        self.sql_delete_index, model._meta.db_table, index_name))
+                # Before dropping figure out how to recreate it afterwards
+                with self.connection.cursor() as cursor:
+                    cursor.execute(f"""
+                    SELECT COL_NAME(ic.object_id,ic.column_id) AS column_name,
+                           filter_definition
+                    FROM sys.indexes AS i
+                    INNER JOIN sys.index_columns AS ic
+                        ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                    WHERE i.object_id = OBJECT_ID('{model._meta.db_table}')
+                    and i.name = '{index_name}'
+                    """)
+                    result = cursor.fetchall()
+                    columns_to_recreate_index = ', '.join(['%s' % self.quote_name(column[0]) for column in result])
+                    filter_definition = result[0][1]
+                sql_restore_index += f'CREATE UNIQUE INDEX {index_name} ON {model._meta.db_table} ({columns_to_recreate_index}) WHERE {filter_definition};'
+                self.execute(self._db_table_delete_constraint_sql(
+                    self.sql_delete_index, model._meta.db_table, index_name))
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
-            # Restore indexes for altered table
-            if(sql_restore_index):
+            # Restore index(es) now the column has been renamed
+            if sql_restore_index:
                 self.execute(sql_restore_index.replace(f'[{old_field.column}]', f'[{new_field.column}]'))
             # Rename all references to the renamed column.
             for sql in self.deferred_sql:
