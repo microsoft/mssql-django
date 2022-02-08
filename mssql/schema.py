@@ -434,12 +434,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self._delete_unique_constraints(model, old_field, new_field, strict)
                 # Drop indexes, SQL Server requires explicit deletion
                 indexes_dropped = self._delete_indexes(model, old_field, new_field)
+                auto_index_names = []
+                for index_from_meta in model._meta.indexes:
+                    auto_index_names.append(self._create_index_name(model._meta.db_table, index_from_meta.fields))
+
                 if (
                     new_field.get_internal_type() not in ("JSONField", "TextField") and
                     (old_field.db_index or not new_field.db_index) and
                     new_field.db_index or
-                    (indexes_dropped and sorted(indexes_dropped) == sorted(
-                        [index.name for index in model._meta.indexes]))
+                    ((indexes_dropped and sorted(indexes_dropped) == sorted([index.name for index in model._meta.indexes])) or
+                    (indexes_dropped and sorted(indexes_dropped) == sorted(auto_index_names)))
                 ):
                     create_index_sql_statement = self._create_index_sql(model, [new_field])
                     if create_index_sql_statement.__str__() not in [sql.__str__() for sql in self.deferred_sql]:
