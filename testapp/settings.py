@@ -1,5 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
+import os
 
 DATABASES = {
     "default": {
@@ -19,6 +20,48 @@ DATABASES = {
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
+    },
+}
+
+# Set to `True` locally if you want SQL queries logged to django_sql.log
+DEBUG = False
+
+# Logging
+LOG_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
+os.makedirs(LOG_DIR, exist_ok=True)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': True,
+    'formatters': {
+        'myformatter': {
+            'format': '%(asctime)s P%(process)05dT%(thread)05d [%(levelname)s] %(name)s: %(message)s',
+        },
+    },
+    'handlers': {
+        'db_output': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(LOG_DIR, 'django_sql.log'),
+            'formatter': 'myformatter',
+        },
+        'default': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(LOG_DIR, 'default.log'),
+            'formatter': 'myformatter',
+        }
+    },
+    'loggers': {
+        '': {
+            'handlers': ['default'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'django.db': {
+            'handlers': ['db_output'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
     },
 }
 
