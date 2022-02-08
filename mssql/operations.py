@@ -62,7 +62,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         # up 2 parameters but I've had this error when sending 2098 parameters.
         max_query_params = 2050
         # inserts are capped at 1000 rows regardless of number of query params.
-        return min(max_insert_rows, max_query_params // fields_len)
+        # bulk_update CASE...WHEN...THEN statement sometimes takes 2 parameters per field
+        return min(max_insert_rows, max_query_params // fields_len // 2)
 
     def bulk_insert_sql(self, fields, placeholder_rows):
         placeholder_rows_sql = (", ".join(row) for row in placeholder_rows)

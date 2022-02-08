@@ -1,4 +1,4 @@
-# Project
+# SQL Server backend for Django
 
 Welcome to the MSSQL-Django 3rd party backend project!
 
@@ -10,7 +10,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 2.2, 3.0, 3.1 and 3.2
+-  Supports Django 2.2, 3.0, 3.1, 3.2 and 4.0
 -  Tested on Microsoft SQL Server 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -182,6 +182,20 @@ Dictionary. Current available keys are:
 
    Integer. Sets the timeout in seconds for the database query.
    Default value is ``0`` which disables the timeout.
+
+- [setencoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) and [setdecoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding)
+
+    ```python
+    # Example
+    "OPTIONS": {
+            "setdecoding": [
+                {"sqltype": pyodbc.SQL_CHAR, "encoding": 'utf-8'},
+                {"sqltype": pyodbc.SQL_WCHAR, "encoding": 'utf-8'}],
+            "setencoding": [
+                {"encoding": "utf-8"}],
+            ...
+            },
+    ```
 
 ### Backend-specific settings
 

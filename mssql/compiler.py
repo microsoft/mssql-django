@@ -302,7 +302,8 @@ class SQLCompiler(compiler.SQLCompiler):
                     result.append('HAVING %s' % having)
                     params.extend(h_params)
 
-            if self.query.explain_query:
+            explain = self.query.explain_info if django.VERSION >= (4, 0) else self.query.explain_query
+            if explain:
                 result.insert(0, self.connection.ops.explain_query_prefix(
                     self.query.explain_format,
                     **self.query.explain_options

@@ -334,6 +334,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         retries = options.get('connection_retries', 5)
         backoff_time = options.get('connection_retry_backoff_time', 5)
         query_timeout = options.get('query_timeout', 0)
+        setencoding = options.get('setencoding', None)
+        setdecoding = options.get('setdecoding', None)
 
         conn = None
         retry_count = 0
@@ -363,6 +365,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     raise
 
         conn.timeout = query_timeout
+        if setencoding:
+            for entry in setencoding:
+                conn.setencoding(**entry)
+        if setdecoding:
+            for entry in setdecoding:
+                conn.setdecoding(**entry)
         return conn
 
     def init_connection_state(self):
