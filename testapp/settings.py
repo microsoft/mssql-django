@@ -274,6 +274,7 @@ EXCLUDED_TESTS = [
     'backends.tests.BackendTestCase.test_queries_logger',
     'migrations.test_operations.OperationTests.test_alter_field_pk_mti_fk',
     'migrations.test_operations.OperationTests.test_run_sql_add_missing_semicolon_on_collect_sql',
+    'migrations.test_operations.OperationTests.test_alter_field_pk_mti_and_fk_to_base'
 ]
 
 REGEX_TESTS = [
