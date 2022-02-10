@@ -10,6 +10,21 @@ if VERSION >= (3, 1):
     from ..models import JSONModel
 
 
+def _check_jsonfield_supported_sqlite():
+    # Info about JSONField support in SQLite: https://code.djangoproject.com/wiki/JSON1Extension
+    import sqlite3
+
+    supports_jsonfield = True
+    try:
+        conn = sqlite3.connect(':memory:')
+        cursor = conn.cursor()
+        cursor.execute('SELECT JSON(\'{"a": "b"}\')')
+    except sqlite3.OperationalError:
+        supports_jsonfield = False
+    finally:
+        return supports_jsonfield
+
+
 class TestJSONField(TestCase):
     databases = ['default', 'sqlite']
     json = {
@@ -33,6 +48,10 @@ class TestJSONField(TestCase):
     }
 
     @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    @skipUnless(
+        _check_jsonfield_supported_sqlite(),
+        "JSONField not support by SQLite on this platform and Python version",
+    )
     def test_keytransformexact_not_overriding(self):
         # Issue https://github.com/microsoft/mssql-django/issues/82
         json_obj = JSONModel(value=self.json)
