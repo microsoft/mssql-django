@@ -32,7 +32,7 @@ DATABASES = {
 if VERSION >= (3, 1):
     DATABASES['sqlite'] = {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.path.join(BASE_DIR / "db.sqlitetest"),
+        "NAME": str(BASE_DIR / "db.sqlitetest"),
     }
 
 
