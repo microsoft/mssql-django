@@ -26,7 +26,11 @@ def _check_jsonfield_supported_sqlite():
 
 
 class TestJSONField(TestCase):
-    databases = ['default', 'sqlite']
+    databases = ['default']
+    # Django 3.0 and below unit test doesn't handle more than 2 databases in DATABASES correctly
+    if VERSION >= (3, 1):
+        databases.append('sqlite')
+
     json = {
         'a': 'b',
         'b': 1,

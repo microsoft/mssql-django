@@ -1,8 +1,10 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 import os
-
 from pathlib import Path
+
+from django import VERSION
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATABASES = {
@@ -24,11 +26,15 @@ DATABASES = {
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
     },
-    'sqlite': {
+}
+
+# Django 3.0 and below unit test doesn't handle more than 2 databases in DATABASES correctly
+if VERSION >= (3, 1):
+    DATABASES['sqlite'] = {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": os.path.join(BASE_DIR / "db.sqlitetest"),
     }
-}
+
 
 # Set to `True` locally if you want SQL queries logged to django_sql.log
 DEBUG = False
