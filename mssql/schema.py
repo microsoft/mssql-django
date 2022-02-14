@@ -439,21 +439,24 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             fragment = self._alter_column_null_sql(model, old_field, new_field)
             if fragment:
                 null_actions.append(fragment)
-                if not new_field.null:
-                    # Drop unique constraint, SQL Server requires explicit deletion
-                    self._delete_unique_constraints(model, old_field, new_field, strict)
-                    # Drop indexes, SQL Server requires explicit deletion
-                    indexes_dropped = self._delete_indexes(model, old_field, new_field)
-                    if (
-                        new_field.get_internal_type() not in ("JSONField", "TextField") and
-                        (old_field.db_index or not new_field.db_index) and
-                        new_field.db_index or
-                        (indexes_dropped and sorted(indexes_dropped) == sorted(
-                            [index.name for index in model._meta.indexes]))
-                    ):
-                        create_index_sql_statement = self._create_index_sql(model, [new_field])
-                        if create_index_sql_statement.__str__() not in [sql.__str__() for sql in self.deferred_sql]:
-                            post_actions.append((create_index_sql_statement, ()))
+                # Drop unique constraint, SQL Server requires explicit deletion
+                self._delete_unique_constraints(model, old_field, new_field, strict)
+                # Drop indexes, SQL Server requires explicit deletion
+                indexes_dropped = self._delete_indexes(model, old_field, new_field)
+                auto_index_names = []
+                for index_from_meta in model._meta.indexes:
+                    auto_index_names.append(self._create_index_name(model._meta.db_table, index_from_meta.fields))
+
+                if (
+                    new_field.get_internal_type() not in ("JSONField", "TextField") and
+                    (old_field.db_index or not new_field.db_index) and
+                    new_field.db_index or
+                    ((indexes_dropped and sorted(indexes_dropped) == sorted([index.name for index in model._meta.indexes])) or
+                    (indexes_dropped and sorted(indexes_dropped) == sorted(auto_index_names)))
+                ):
+                    create_index_sql_statement = self._create_index_sql(model, [new_field])
+                    if create_index_sql_statement.__str__() not in [sql.__str__() for sql in self.deferred_sql]:
+                        post_actions.append((create_index_sql_statement, ()))
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
             new_field.has_default() and
@@ -531,7 +534,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.execute(self._create_index_sql(model, [new_field]))
 
         # Restore indexes & unique constraints deleted above, SQL Server requires explicit restoration
-        if (old_type != new_type or (old_field.null and not new_field.null)) and (
+        if (old_type != new_type or (old_field.null != new_field.null)) and (
             old_field.column == new_field.column
         ):
             # Restore unique constraints
