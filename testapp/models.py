@@ -3,6 +3,7 @@
 
 import uuid
 
+from django import VERSION
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -151,3 +152,11 @@ class TestSupportableUniqueConstraint(models.Model):
 
     _type = models.CharField(max_length=50)
     status = models.CharField(max_length=50)
+
+
+if VERSION >= (3, 1):
+    class JSONModel(models.Model):
+        value = models.JSONField()
+
+        class Meta:
+            required_db_features = {'supports_json_field'}

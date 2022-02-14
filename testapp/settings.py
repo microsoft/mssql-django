@@ -1,6 +1,11 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 import os
+from pathlib import Path
+
+from django import VERSION
+
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATABASES = {
     "default": {
@@ -22,6 +27,14 @@ DATABASES = {
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
     },
 }
+
+# Django 3.0 and below unit test doesn't handle more than 2 databases in DATABASES correctly
+if VERSION >= (3, 1):
+    DATABASES['sqlite'] = {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": str(BASE_DIR / "db.sqlitetest"),
+    }
+
 
 # Set to `True` locally if you want SQL queries logged to django_sql.log
 DEBUG = False
@@ -267,6 +280,7 @@ EXCLUDED_TESTS = [
     'backends.tests.BackendTestCase.test_queries_logger',
     'migrations.test_operations.OperationTests.test_alter_field_pk_mti_fk',
     'migrations.test_operations.OperationTests.test_run_sql_add_missing_semicolon_on_collect_sql',
+    'migrations.test_operations.OperationTests.test_alter_field_pk_mti_and_fk_to_base'
 ]
 
 REGEX_TESTS = [
