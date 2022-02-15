@@ -160,3 +160,22 @@ if VERSION >= (3, 1):
 
         class Meta:
             required_db_features = {'supports_json_field'}
+
+
+class BinaryData(models.Model):
+    binary = models.BinaryField(null=True)
+
+
+class TestCheckConstraintWithUnicode(models.Model):
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        required_db_features = {
+            'supports_table_check_constraints',
+        }
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(name__startswith='123\u0394'),
+                name='name_does_not_starts_with_123\u0394',
+            )
+        ]
