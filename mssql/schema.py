@@ -171,7 +171,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         news = {tuple(fields) for fields in new_unique_together}
         # Deleted uniques
         for fields in olds.difference(news):
-            self._delete_composed_index(model, fields, {'unique': True}, self.sql_delete_index)
+            meta_constraint_names = {constraint.name for constraint in model._meta.constraints}
+            meta_index_names = {constraint.name for constraint in model._meta.indexes}
+            columns = [model._meta.get_field(field).column for field in fields]
+            self._delete_unique_constraint_for_columns(
+                model, columns, exclude=meta_constraint_names | meta_index_names, strict=True)
+
         # Created uniques
         if django_version >= (4, 0):
             for field_names in news.difference(olds):
@@ -227,7 +232,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _db_table_constraint_names(self, db_table, column_names=None, column_match_any=False,
                                    unique=None, primary_key=None, index=None, foreign_key=None,
-                                   check=None, type_=None, exclude=None):
+                                   check=None, type_=None, exclude=None, unique_constraint=None):
         """
         Return all constraint names matching the columns and conditions. Modified from base `_constraint_names`
         `any_column_matches`=False: (default) only return constraints covering exactly `column_names`
@@ -246,6 +251,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 column_match_any and any(col in infodict['columns'] for col in column_names)
             ):
                 if unique is not None and infodict['unique'] != unique:
+                    continue
+                if unique_constraint is not None and infodict['unique_constraint'] != unique_constraint:
                     continue
                 if primary_key is not None and infodict['primary_key'] != primary_key:
                     continue
@@ -299,16 +306,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(self._delete_constraint_sql(self.sql_delete_fk, model, fk_name))
         # Has unique been removed?
         if old_field.unique and (not new_field.unique or self._field_became_primary_key(old_field, new_field)):
-            # Find the unique constraint for this field
-            constraint_names = self._constraint_names(model, [old_field.column], unique=True, primary_key=False)
-            if strict and len(constraint_names) != 1:
-                raise ValueError("Found wrong number (%s) of unique constraints for %s.%s" % (
-                    len(constraint_names),
-                    model._meta.db_table,
-                    old_field.column,
-                ))
-            for constraint_name in constraint_names:
-                self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
+            self._delete_unique_constraint_for_columns(model, [old_field.column], strict=strict)
         # Drop incoming FK constraints if the field is a primary key or unique,
         # which might be a to_field target, and things are going to change.
         drop_foreign_keys = (
@@ -694,21 +692,25 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             unique_columns.append([old_field.column])
         if unique_columns:
             for columns in unique_columns:
-                constraint_names_normal = self._constraint_names(model, columns, unique=True, index=False)
-                constraint_names_index = self._constraint_names(model, columns, unique=True, index=True)
-                constraint_names = constraint_names_normal + constraint_names_index
-                if strict and len(constraint_names) != 1:
-                    raise ValueError("Found wrong number (%s) of unique constraints for %s.%s" % (
-                        len(constraint_names),
-                        model._meta.db_table,
-                        old_field.column,
-                    ))
-                for constraint_name in constraint_names_normal:
-                    self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
-                # Unique indexes which are not table constraints must be deleted using the appropriate SQL.
-                # These may exist for example to enforce ANSI-compliant unique constraints on nullable columns.
-                for index_name in constraint_names_index:
-                    self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
+                self._delete_unique_constraint_for_columns(model, columns, strict=strict)
+
+    def _delete_unique_constraint_for_columns(self, model, columns, strict=False, **constraint_names_kwargs):
+        constraint_names_normal = self._db_table_constraint_names(
+            model._meta.db_table, columns, unique=True, unique_constraint=True, **constraint_names_kwargs)
+        constraint_names_index = self._db_table_constraint_names(
+            model._meta.db_table, columns, unique=True, unique_constraint=False, **constraint_names_kwargs)
+        constraint_names = constraint_names_normal + constraint_names_index
+        if strict and len(constraint_names) != 1:
+            raise ValueError("Found wrong number (%s) of unique constraints for columns %s" % (
+                len(constraint_names),
+                repr(columns),
+            ))
+        for constraint_name in constraint_names_normal:
+            self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
+        # Unique indexes which are not table constraints must be deleted using the appropriate SQL.
+        # These may exist for example to enforce ANSI-compliant unique constraints on nullable columns.
+        for index_name in constraint_names_index:
+            self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
 
     def _rename_field_sql(self, table, old_field, new_field, new_type):
         new_type = self._set_field_new_type_null_status(old_field, new_type)
