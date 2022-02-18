@@ -450,7 +450,6 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         fields = self.query.fields or [opts.pk]
 
         if self.query.fields:
-            fields = self.query.fields
             result.append('(%s)' % ', '.join(qn(f.column) for f in fields))
             values_format = 'VALUES (%s)'
             value_rows = [
@@ -467,21 +466,26 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         # queries and generate their own placeholders. Doing that isn't
         # necessary and it should be possible to use placeholders and
         # expressions in bulk inserts too.
-        can_bulk = self.connection.features.has_bulk_insert and bool(self.query.fields)
+        can_bulk = (not self.get_returned_fields() and self.connection.features.has_bulk_insert) and self.query.fields
 
         placeholder_rows, param_rows = self.assemble_as_sql(fields, value_rows)
 
-        if len(param_rows) == 1 and self.get_returned_fields() and self.connection.features.can_return_columns_from_insert:
-            result.insert(0, 'SET NOCOUNT ON')
-            result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
-            params = [param_rows[0]]
-            result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
-            sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
-        else:
-            if can_bulk and len(param_rows) > 1:
-                r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.returning_fields)
+        if self.get_returned_fields() and self.connection.features.can_return_id_from_insert:
+            if self.connection.features.can_return_ids_from_bulk_insert:
+                params = param_rows
+                r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
                 if r_sql:
                     result.append(r_sql)
+                    params += [self.returning_params]
+                result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
+            else:
+                result.insert(0, 'SET NOCOUNT ON')
+                result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
+                params = [param_rows[0]]
+                result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+            sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
+        else:
+            if can_bulk:
                 result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
                 sql = [(" ".join(result), tuple(p for ps in param_rows for p in ps))]
             else:
