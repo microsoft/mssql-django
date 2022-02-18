@@ -470,8 +470,8 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
         placeholder_rows, param_rows = self.assemble_as_sql(fields, value_rows)
 
-        if self.get_returned_fields() and self.connection.features.can_return_id_from_insert:
-            if self.connection.features.can_return_ids_from_bulk_insert and self.query.fields:
+        if self.get_returned_fields() and self.connection.features.can_return_columns_from_insert:
+            if self.connection.features.can_return_rows_from_bulk_insert and self.query.fields:
                 params = param_rows
                 r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
                 if r_sql:
