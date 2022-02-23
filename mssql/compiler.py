@@ -456,59 +456,58 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         # going to be column names (so we can avoid the extra overhead).
         qn = self.connection.ops.quote_name
         opts = self.query.get_meta()
-        fields = self.query.fields or [opts.pk]
-
-        if self.can_return_rows_from_bulk_insert() and not(self.query.fields) and isinstance(fields[0], django.db.models.fields.AutoField):
-            # https://dba.stackexchange.com/questions/254771/insert-multiple-rows-into-a-table-with-only-an-identity-column
-            result = ['MERGE INTO %s' % qn(opts.db_table)]
-            result.append("""
-                USING (SELECT TOP %s * FROM master..spt_values) T
-                ON 1 = 0
-                WHEN NOT MATCHED THEN
-                INSERT DEFAULT VALUES""" % len(self.query.objs))
-            r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
-            if r_sql:
-                result.append(r_sql)
-
-            sql = " ".join(result) + ";"
-
-            return [(sql, None)]
-
         result = ['INSERT INTO %s' % qn(opts.db_table)]
 
         if self.query.fields:
+            fields = self.query.fields
             result.append('(%s)' % ', '.join(qn(f.column) for f in fields))
+            values_format = 'VALUES (%s)'
             value_rows = [
                 [self.prepare_value(field, self.pre_save_val(field, obj)) for field in fields]
                 for obj in self.query.objs
             ]
         else:
+            values_format = '%s VALUES'
             # An empty object.
-            value_rows = [
-                [self.connection.ops.pk_default_value() for _ in opts.local_fields]
-                for _ in self.query.objs
-            ]
-            fields = [None for _ in opts.local_fields]
+            value_rows = [[self.connection.ops.pk_default_value()] for _ in self.query.objs]
+            fields = [None]
 
         # Currently the backends just accept values when generating bulk
         # queries and generate their own placeholders. Doing that isn't
         # necessary and it should be possible to use placeholders and
         # expressions in bulk inserts too.
-        can_bulk = (not self.get_returned_fields() and self.connection.features.has_bulk_insert)
+        can_bulk = (not self.get_returned_fields() and self.connection.features.has_bulk_insert) and self.query.fields
 
         placeholder_rows, param_rows = self.assemble_as_sql(fields, value_rows)
 
         if self.get_returned_fields() and self.can_return_columns_from_insert():
             if self.can_return_rows_from_bulk_insert():
-                params = param_rows
+                if not(self.query.fields):
+                    # There isn't really a single statement to bulk multiple DEFAULT VALUES insertions,
+                    # so we have to use a workaround:
+                    # https://dba.stackexchange.com/questions/254771/insert-multiple-rows-into-a-table-with-only-an-identity-column
+                    result = ['MERGE INTO %s' % qn(opts.db_table)]
+                    result.append("""
+                        USING (SELECT TOP %s * FROM master..spt_values) T
+                        ON 1 = 0
+                        WHEN NOT MATCHED THEN
+                        INSERT DEFAULT VALUES""" % len(self.query.objs))
+                    r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
+                    if r_sql:
+                        result.append(r_sql)
+                    sql = " ".join(result) + ";"
+                    return [(sql, None)]
+                # Regular bulk insert
+                params = []
                 r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
                 if r_sql:
                     result.append(r_sql)
                     params += [self.returning_params]
+                params += param_rows
                 result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
             else:
                 result.insert(0, 'SET NOCOUNT ON')
-                result.append('VALUES (%s);' % ', '.join(placeholder_rows[0]))
+                result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
                 params = [param_rows[0]]
                 result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
             sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
@@ -518,7 +517,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                 sql = [(" ".join(result), tuple(p for ps in param_rows for p in ps))]
             else:
                 sql = [
-                    (" ".join(result + ["VALUES (%s)" % ", ".join(p)]), vals)
+                    (" ".join(result + [values_format % ", ".join(p)]), vals)
                     for p, vals in zip(placeholder_rows, param_rows)
                 ]
 
