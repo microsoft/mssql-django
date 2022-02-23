@@ -486,12 +486,19 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                     # There isn't really a single statement to bulk multiple DEFAULT VALUES insertions,
                     # so we have to use a workaround:
                     # https://dba.stackexchange.com/questions/254771/insert-multiple-rows-into-a-table-with-only-an-identity-column
-                    result = ['MERGE INTO %s' % qn(opts.db_table)]
-                    result.append("""
-                        USING (SELECT TOP %s * FROM master..spt_values) T
-                        ON 1 = 0
-                        WHEN NOT MATCHED THEN
-                        INSERT DEFAULT VALUES""" % len(self.query.objs))
+                    result = ["""
+                    WITH empty_rows AS (
+                        SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL
+                        SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n)
+                    MERGE INTO %s
+                    USING (SELECT TOP %s * FROM 
+                    (SELECT row_number() over (order by a.n) as number
+                    FROM empty_rows as a, empty_rows as b, empty_rows as c, empty_rows as d) r) T
+                    ON 1 = 0
+                    WHEN NOT MATCHED THEN
+                    INSERT DEFAULT VALUES
+                    """ % (qn(opts.db_table), len(self.query.objs))]
+
                     r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
                     if r_sql:
                         result.append(r_sql)
