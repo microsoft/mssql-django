@@ -456,8 +456,24 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         # going to be column names (so we can avoid the extra overhead).
         qn = self.connection.ops.quote_name
         opts = self.query.get_meta()
-        result = ['INSERT INTO %s' % qn(opts.db_table)]
         fields = self.query.fields or [opts.pk]
+
+        if self.can_return_rows_from_bulk_insert() and not(self.query.fields) and isinstance(fields[0], django.db.models.fields.AutoField):
+            result = ['MERGE INTO %s' % qn(opts.db_table)]
+            result.append("""
+                USING (SELECT TOP %s * FROM master..spt_values) T
+                ON 1 = 0
+                WHEN NOT MATCHED THEN
+                INSERT DEFAULT VALUES""" % len(self.query.objs))
+            r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
+            if r_sql:
+                result.append(r_sql)
+
+            sql = " ".join(result) + ";"
+
+            return [(sql, None)]
+
+        result = ['INSERT INTO %s' % qn(opts.db_table)]
 
         if self.query.fields:
             result.append('(%s)' % ', '.join(qn(f.column) for f in fields))
