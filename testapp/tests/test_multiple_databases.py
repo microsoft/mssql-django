@@ -62,6 +62,10 @@ class TestMultpleDatabases(TestCase):
         )
 
     @skipUnlessDBFeature('supports_table_check_constraints')
+    @skipUnless(
+        VERSION >= (3, 2),
+        "Django 3.1 and below has errors from running migrations for this test",
+    )
     def test_checkconstraint_get_check_sql(self):
         TestCheckConstraintWithUnicode.objects.create(name='abc')
         try:
