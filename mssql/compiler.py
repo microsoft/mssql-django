@@ -478,11 +478,13 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
         if self.query.fields:
             result.append('(%s)' % ', '.join(qn(f.column) for f in fields))
+            values_format = 'VALUES (%s)'
             value_rows = [
                 [self.prepare_value(field, self.pre_save_val(field, obj)) for field in fields]
                 for obj in self.query.objs
             ]
         else:
+            values_format = '%s VALUES'
             # An empty object.
             value_rows = [
                 [self.connection.ops.pk_default_value() for _ in opts.local_fields]
@@ -508,7 +510,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                 result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
             else:
                 result.insert(0, 'SET NOCOUNT ON')
-                result.append('VALUES (%s);' % ', '.join(placeholder_rows[0]))
+                result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
                 params = [param_rows[0]]
                 result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
             sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
