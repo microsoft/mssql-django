@@ -459,6 +459,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         fields = self.query.fields or [opts.pk]
 
         if self.can_return_rows_from_bulk_insert() and not(self.query.fields) and isinstance(fields[0], django.db.models.fields.AutoField):
+            # https://dba.stackexchange.com/questions/254771/insert-multiple-rows-into-a-table-with-only-an-identity-column
             result = ['MERGE INTO %s' % qn(opts.db_table)]
             result.append("""
                 USING (SELECT TOP %s * FROM master..spt_values) T
