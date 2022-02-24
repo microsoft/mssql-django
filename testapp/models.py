@@ -176,7 +176,7 @@ if VERSION >= (3, 2):
             }
             constraints = [
                 models.CheckConstraint(
-                    check=~models.Q(name__startswith='\u0394'),
-                    name='name_does_not_starts_with_\u0394',
+                    check=~models.Q(name__startswith='\u00f7'),
+                    name='name_does_not_starts_with_\u00f7',
                 )
             ]
