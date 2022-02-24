@@ -190,7 +190,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def fetch_returned_insert_rows(self, cursor):
         """
-        Given a cursor object that has just performed an INSERT...
+        Given a cursor object that has just performed an INSERT...OUTPUT INSERTED
         statement into a table, return the list of returned data.
         """
         return cursor.fetchall()
