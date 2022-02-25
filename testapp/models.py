@@ -154,9 +154,29 @@ class TestSupportableUniqueConstraint(models.Model):
     status = models.CharField(max_length=50)
 
 
+class BinaryData(models.Model):
+    binary = models.BinaryField(null=True)
+
+
 if VERSION >= (3, 1):
     class JSONModel(models.Model):
         value = models.JSONField()
 
         class Meta:
             required_db_features = {'supports_json_field'}
+
+
+if VERSION >= (3, 2):
+    class TestCheckConstraintWithUnicode(models.Model):
+        name = models.CharField(max_length=100)
+
+        class Meta:
+            required_db_features = {
+                'supports_table_check_constraints',
+            }
+            constraints = [
+                models.CheckConstraint(
+                    check=~models.Q(name__startswith='\u00f7'),
+                    name='name_does_not_starts_with_\u00f7',
+                )
+            ]
