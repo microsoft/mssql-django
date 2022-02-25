@@ -8,12 +8,15 @@ from django.db import OperationalError
 from django.db.backends.sqlite3.operations import DatabaseOperations
 from django.test import TestCase, skipUnlessDBFeature
 
-from ..models import BinaryData, Pizza, Topping, TestCheckConstraintWithUnicode
+from ..models import BinaryData, Pizza, Topping
+
+if VERSION >= (3, 2):
+    from ..models import TestCheckConstraintWithUnicode
 
 
 @skipUnless(
     VERSION >= (3, 1),
-    "Django 3.0 and below doesn't support different databases in unit testing",
+    "Django 3.0 and below doesn't support different databases in unit tests",
 )
 class TestMultpleDatabases(TestCase):
     databases = ['default', 'sqlite']
@@ -25,17 +28,19 @@ class TestMultpleDatabases(TestCase):
         old_max_in_list_size = DatabaseOperations.max_in_list_size
         DatabaseOperations.max_in_list_size = lambda self: 100
 
-        iterations = 3000
-        for _ in range(iterations):
-            Pizza.objects.create()
-            Topping.objects.create()
-            Pizza.objects.using('sqlite').create()
-            Topping.objects.using('sqlite').create()
+        mssql_iterations = 3000
+        Pizza.objects.bulk_create([Pizza() for _ in range(mssql_iterations)])
+        Topping.objects.bulk_create([Topping() for _ in range(mssql_iterations)])
         prefetch_result = Pizza.objects.prefetch_related('toppings')
-        self.assertEqual(len(prefetch_result), iterations)
+        self.assertEqual(len(prefetch_result), mssql_iterations)
 
+        # Different iterations since SQLite has max host parameters of 999 for versions prior to 3.32.0
+        # Info about limit: https://www.sqlite.org/limits.html
+        sqlite_iterations = 999
+        Pizza.objects.using('sqlite').bulk_create([Pizza() for _ in range(sqlite_iterations)])
+        Topping.objects.using('sqlite').bulk_create([Topping() for _ in range(sqlite_iterations)])
         prefetch_result_sqlite = Pizza.objects.using('sqlite').prefetch_related('toppings')
-        self.assertEqual(len(prefetch_result_sqlite), iterations)
+        self.assertEqual(len(prefetch_result_sqlite), sqlite_iterations)
 
         DatabaseOperations.max_in_list_size = old_max_in_list_size
 
