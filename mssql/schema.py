@@ -695,10 +695,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self._delete_unique_constraint_for_columns(model, columns, strict=strict)
 
     def _delete_unique_constraint_for_columns(self, model, columns, strict=False, **constraint_names_kwargs):
-        constraint_names_normal = self._db_table_constraint_names(
+        constraint_names_unique = self._db_table_constraint_names(
             model._meta.db_table, columns, unique=True, unique_constraint=True, **constraint_names_kwargs)
+        constraint_names_primary = self._db_table_constraint_names(
+            model._meta.db_table, columns, unique=True, primary_key=True, **constraint_names_kwargs)
+        constraint_names_normal = constraint_names_unique + constraint_names_primary
         constraint_names_index = self._db_table_constraint_names(
-            model._meta.db_table, columns, unique=True, unique_constraint=False, **constraint_names_kwargs)
+            model._meta.db_table, columns, unique=True, unique_constraint=False, primary_key=False,
+            **constraint_names_kwargs)
         constraint_names = constraint_names_normal + constraint_names_index
         if strict and len(constraint_names) != 1:
             raise ValueError("Found wrong number (%s) of unique constraints for columns %s" % (
