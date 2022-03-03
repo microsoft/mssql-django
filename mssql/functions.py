@@ -125,6 +125,13 @@ def sqlserver_orderby(self, compiler, connection):
 
 
 def split_parameter_list_as_sql(self, compiler, connection):
+    if connection.vendor == 'microsoft':
+        return mssql_split_parameter_list_as_sql(self, compiler, connection)
+    else:
+        return in_split_parameter_list_as_sql(self, compiler, connection)
+
+
+def mssql_split_parameter_list_as_sql(self, compiler, connection):
     # Insert In clause parameters 1000 at a time into a temp table.
     lhs, _ = self.process_lhs(compiler, connection)
     _, rhs_params = self.batch_process_rhs(compiler, connection)
@@ -215,10 +222,12 @@ def _get_check_sql(self, model, schema_editor):
     where = query.build_where(self.check)
     compiler = query.get_compiler(connection=schema_editor.connection)
     sql, params = where.as_sql(compiler, schema_editor.connection)
-    try:
-        for p in params: str(p).encode('ascii')
-    except UnicodeEncodeError:
-        sql = sql.replace('%s', 'N%s')
+    if schema_editor.connection.vendor == 'microsoft':
+        try:
+            for p in params:
+                str(p).encode('ascii')
+        except UnicodeEncodeError:
+            sql = sql.replace('%s', 'N%s')
 
     return sql % tuple(schema_editor.quote_value(p) for p in params)
 
@@ -264,7 +273,7 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
                         value_none_counter += 1
                     attr = Value(attr, output_field=field)
                 when_statements.append(When(pk=obj.pk, then=attr))
-            if(value_none_counter == len(when_statements)):
+            if connections[self.db].vendor == 'microsoft' and value_none_counter == len(when_statements):
                 case_statement = Case(*when_statements, output_field=field, default=Value(default))
             else:
                 case_statement = Case(*when_statements, output_field=field)
@@ -280,6 +289,8 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
 
 
 ATan2.as_microsoft = sqlserver_atan2
+# Need copy of old In.split_parameter_list_as_sql for other backends to call
+in_split_parameter_list_as_sql = In.split_parameter_list_as_sql
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
     KeyTransformIn.as_microsoft = json_KeyTransformIn
