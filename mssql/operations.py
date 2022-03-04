@@ -350,6 +350,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             return [
                 sequence
                 for sequence in self.connection.introspection.sequence_list()
+                if sequence['table'].lower() in [table.lower() for table in tables]
             ]
 
         return []
