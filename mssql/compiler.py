@@ -451,6 +451,30 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
         return sql
 
+    def bulk_insert_default_values_sql(self, table):
+        seed_rows_number = 8
+        cross_join_power = 4  # 8^4 = 4096 > maximum allowed batch size for the backend = 1000
+
+        def generate_seed_rows(n):
+            return " UNION ALL ".join("SELECT 1 AS x" for _ in range(n))
+
+        def cross_join(p):
+            return ", ".join("SEED_ROWS AS _%s" % i for i in range(p))
+
+        return """
+        WITH SEED_ROWS AS (%s)
+            MERGE INTO %s
+            USING (
+                SELECT TOP %s * FROM (SELECT 1 as x FROM %s) FAKE_ROWS
+            ) FAKE_DATA
+            ON 1 = 0
+            WHEN NOT MATCHED THEN
+            INSERT DEFAULT VALUES
+        """ % (generate_seed_rows(seed_rows_number),
+               table,
+               len(self.query.objs),
+               cross_join(cross_join_power))
+
     def as_sql(self):
         # We don't need quote_name_unless_alias() here, since these are all
         # going to be column names (so we can avoid the extra overhead).
@@ -486,19 +510,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                     # There isn't really a single statement to bulk multiple DEFAULT VALUES insertions,
                     # so we have to use a workaround:
                     # https://dba.stackexchange.com/questions/254771/insert-multiple-rows-into-a-table-with-only-an-identity-column
-                    result = ["""
-                    WITH empty_rows AS (
-                        SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL
-                        SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n)
-                    MERGE INTO %s
-                    USING (SELECT TOP %s * FROM 
-                    (SELECT row_number() over (order by a.n) as number
-                    FROM empty_rows as a, empty_rows as b, empty_rows as c, empty_rows as d) r) T
-                    ON 1 = 0
-                    WHEN NOT MATCHED THEN
-                    INSERT DEFAULT VALUES
-                    """ % (qn(opts.db_table), len(self.query.objs))]
-
+                    result = [self.bulk_insert_default_values_sql(qn(opts.db_table))]
                     r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
                     if r_sql:
                         result.append(r_sql)
