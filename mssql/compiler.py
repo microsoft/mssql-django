@@ -492,7 +492,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                         SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n UNION ALL SELECT 1 AS n)
                     MERGE INTO %s
                     USING (SELECT TOP %s * FROM 
-                    (SELECT row_number() over (order by a.n) as number
+                    (SELECT 1 as _
                     FROM empty_rows as a, empty_rows as b, empty_rows as c, empty_rows as d) r) T
                     ON 1 = 0
                     WHEN NOT MATCHED THEN
