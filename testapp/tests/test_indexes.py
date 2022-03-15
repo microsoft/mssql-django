@@ -1,12 +1,12 @@
 import logging
 
 import django.db
+from django import VERSION
 from django.apps import apps
 from django.db import models
 from django.db.models import UniqueConstraint
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler, ProgrammingError
 from django.test import TestCase
-from django.utils.connection import ConnectionProxy
 
 from ..models import (
     TestIndexesRetainedRenamed,
@@ -16,7 +16,12 @@ from ..models import (
 
 connections = ConnectionHandler()
 
-connection = ConnectionProxy(connections, DEFAULT_DB_ALIAS)
+if (VERSION >= (3, 2)):
+    from django.utils.connection import ConnectionProxy
+    connection = ConnectionProxy(connections, DEFAULT_DB_ALIAS)
+else:
+    from django.db import DefaultConnectionProxy
+    connection = DefaultConnectionProxy()
 
 logger = logging.getLogger('mssql.tests')
 
