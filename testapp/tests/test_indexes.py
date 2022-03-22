@@ -1,14 +1,27 @@
 import logging
 
 import django.db
+from django import VERSION
 from django.apps import apps
+from django.db import models
 from django.db.models import UniqueConstraint
+from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler, ProgrammingError
 from django.test import TestCase
 
 from ..models import (
-    TestIndexesRetainedRenamed
+    TestIndexesRetainedRenamed,
+    Choice,
+    Question,
 )
 
+connections = ConnectionHandler()
+
+if (VERSION >= (3, 2)):
+    from django.utils.connection import ConnectionProxy
+    connection = ConnectionProxy(connections, DEFAULT_DB_ALIAS)
+else:
+    from django.db import DefaultConnectionProxy
+    connection = DefaultConnectionProxy()
 
 logger = logging.getLogger('mssql.tests')
 
@@ -139,3 +152,33 @@ class TestCorrectIndexes(TestCase):
                         '\n'.join(str(i) for i in col_indexes),
                     )
                 logger.debug('  Found %s index(es) as expected', len(col_indexes))
+
+
+class TestIndexesBeingDropped(TestCase):
+
+    def test_unique_index_dropped(self):
+        """
+        Issues https://github.com/microsoft/mssql-django/issues/110
+        and https://github.com/microsoft/mssql-django/issues/90
+        Unique indexes not being dropped when changing non-nullable
+        foreign key with unique_together to nullable causing
+        dependent on column error
+        """
+        old_field = Choice._meta.get_field('question')
+        new_field = models.ForeignKey(
+            Question, null=False, on_delete=models.deletion.CASCADE
+        )
+        new_field.set_attributes_from_name("question")
+        with connection.schema_editor() as editor:
+            editor.alter_field(Choice, old_field, new_field, strict=True)
+
+        old_field = new_field
+        new_field = models.ForeignKey(
+            Question, null=True, on_delete=models.deletion.CASCADE
+        )
+        new_field.set_attributes_from_name("question")
+        try:
+            with connection.schema_editor() as editor:
+                editor.alter_field(Choice, old_field, new_field, strict=True)
+        except ProgrammingError:
+            self.fail("Unique indexes not being dropped")
