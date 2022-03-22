@@ -208,7 +208,6 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk',
 
     'annotations.tests.NonAggregateAnnotationTestCase.test_combined_expression_annotation_with_aggregation',
-    'bulk_create.tests.BulkCreateTests.test_bulk_insert_nullable_fields',
     'db_functions.comparison.test_cast.CastTests.test_cast_to_integer',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_func',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_iso_weekday_func',
