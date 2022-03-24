@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 
+import datetime
 import uuid
 
 from django import VERSION
@@ -200,3 +201,15 @@ class Choice(models.Model):
 
     class Meta:
         unique_together = (('question', 'choice_text'))
+
+
+class Customer_name(models.Model):
+    Customer_name = models.CharField(max_length=100)
+    class Meta:
+        ordering = ['Customer_name']
+
+class Customer_address(models.Model):
+    Customer_name = models.ForeignKey(Customer_name, on_delete=models.CASCADE)
+    Customer_address = models.CharField(max_length=100)
+    class Meta:
+        ordering = ['Customer_address']
