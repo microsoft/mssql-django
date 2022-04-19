@@ -4,6 +4,7 @@
 from unittest import skipUnless
 
 from django import VERSION
+from django.core.exceptions import ValidationError
 from django.db import OperationalError
 from django.db.backends.sqlite3.operations import DatabaseOperations
 from django.test import TestCase, skipUnlessDBFeature
