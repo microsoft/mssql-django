@@ -10,7 +10,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 2.2, 3.0, 3.1, 3.2 and 4.0
+-  Supports Django 3.2 and 4.0
 -  Tested on Microsoft SQL Server 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
