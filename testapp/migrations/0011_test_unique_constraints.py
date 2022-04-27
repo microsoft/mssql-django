@@ -25,6 +25,9 @@ class Migration(migrations.Migration):
                 ('_type', models.CharField(max_length=50)),
                 ('status', models.CharField(max_length=50)),
             ],
+            # Stop Django attempting to automatically create migrations for this table. Instead
+            # migrations are attempted manually in `test_unsupportable_unique_constraint` where
+            # they are expected to fail.
             options={
                 'managed': False,
             },

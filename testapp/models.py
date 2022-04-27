@@ -1,8 +1,10 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 
+import datetime
 import uuid
 
+from django import VERSION
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -58,13 +60,17 @@ class TestUniqueNullableModel(models.Model):
     # Field used for testing changing the 'type' of a field that's both unique & nullable
     x = models.CharField(max_length=11, null=True, unique=True)
 
+    # A variant of Issue https://github.com/microsoft/mssql-django/issues/14 case (b)
+    # but for a unique index (not db_index)
+    y_renamed = models.IntegerField(null=True, unique=True)
+
 
 class TestNullableUniqueTogetherModel(models.Model):
     class Meta:
         unique_together = (('a', 'b', 'c'),)
 
     # Issue https://github.com/ESSolutions/django-mssql-backend/issues/45 (case 2)
-    # Fields used for testing changing the 'type of a field that is in a `unique_together`
+    # Fields used for testing changing the type of a field that is in a `unique_together`
     a = models.CharField(max_length=51, null=True)
     b = models.CharField(max_length=50)
     c = models.CharField(max_length=50)
@@ -79,7 +85,7 @@ class TestRemoveOneToOneFieldModel(models.Model):
 
 
 class TestIndexesRetainedRenamed(models.Model):
-    # Issue https://github.com/ESSolutions/django-mssql-backend/issues/58
+    # Issue https://github.com/microsoft/mssql-django/issues/14
     # In all these cases the column index should still exist afterwards
     # case (a) `a` starts out not nullable, but then is changed to be nullable
     a = models.IntegerField(db_index=True, null=True)
@@ -147,3 +153,63 @@ class TestSupportableUniqueConstraint(models.Model):
 
     _type = models.CharField(max_length=50)
     status = models.CharField(max_length=50)
+
+
+class BinaryData(models.Model):
+    binary = models.BinaryField(null=True)
+
+
+if VERSION >= (3, 1):
+    class JSONModel(models.Model):
+        value = models.JSONField()
+
+        class Meta:
+            required_db_features = {'supports_json_field'}
+
+
+if VERSION >= (3, 2):
+    class TestCheckConstraintWithUnicode(models.Model):
+        name = models.CharField(max_length=100)
+
+        class Meta:
+            required_db_features = {
+                'supports_table_check_constraints',
+            }
+            constraints = [
+                models.CheckConstraint(
+                    check=~models.Q(name__startswith='\u00f7'),
+                    name='name_does_not_starts_with_\u00f7',
+                )
+            ]
+
+
+class Question(models.Model):
+    question_text = models.CharField(max_length=200)
+    pub_date = models.DateTimeField('date published')
+
+    def __str__(self):
+        return self.question_text
+
+    def was_published_recently(self):
+        return self.pub_date >= timezone.now() - datetime.timedelta(days=1)
+
+
+class Choice(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, null=True)
+    choice_text = models.CharField(max_length=200)
+    votes = models.IntegerField(default=0)
+
+    class Meta:
+        unique_together = (('question', 'choice_text'))
+
+
+class Customer_name(models.Model):
+    Customer_name = models.CharField(max_length=100)
+    class Meta:
+        ordering = ['Customer_name']
+
+class Customer_address(models.Model):
+    Customer_name = models.ForeignKey(Customer_name, on_delete=models.CASCADE)
+    Customer_address = models.CharField(max_length=100)
+    class Meta:
+        ordering = ['Customer_address']
