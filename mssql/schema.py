@@ -280,11 +280,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                      old_db_params, new_db_params, strict=False):
         """Actually perform a "physical" (non-ManyToMany) field update."""
 
-        # the backend doesn't support altering from/to (Big)AutoField
-        # because of the limited capability of SQL Server to edit IDENTITY property
-        for t in (AutoField, BigAutoField):
-            if isinstance(old_field, t) or isinstance(new_field, t):
-                raise NotImplementedError("the backend doesn't support altering from/to %s." % t.__name__)
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
         if old_field.remote_field and old_field.db_constraint:
@@ -324,6 +319,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 )
                 for fk_name in rel_fk_names:
                     self.execute(self._delete_constraint_sql(self.sql_delete_fk, new_rel.related_model, fk_name))
+        # If working with an AutoField or BigAutoField drop all indexes on the related table
+        # This is needed when doing ALTER column statements on IDENTITY fields
+        # https://stackoverflow.com/questions/33429775/sql-server-alter-table-alter-column-giving-set-option-error
+        for t in (AutoField, BigAutoField):
+            if isinstance(old_field, t) or isinstance(new_field, t):
+                index_names = self._constraint_names(model, index=True)
+                for index_name in index_names:
+                    self.execute(
+                        self._delete_constraint_sql(self.sql_delete_index, model, index_name)
+                    )
+                break
         # Removed an index? (no strict check, as multiple indexes are possible)
         # Remove indexes if db_index switched to False or a unique constraint
         # will now be used in lieu of an index. The following lines from the
@@ -538,7 +544,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # Restore unique constraints
             # Note: if nullable they are implemented via an explicit filtered UNIQUE INDEX (not CONSTRAINT)
             # in order to get ANSI-compliant NULL behaviour (i.e. NULL != NULL, multiple are allowed)
-            if old_field.unique and new_field.unique:
+            # Note: Don't restore primary keys, we need to re-create those seperately
+            if old_field.unique and new_field.unique and not new_field.primary_key:
                 if new_field.null:
                     self.execute(
                         self._create_index_sql(
@@ -564,7 +571,47 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         if old_field.column in columns:
                             condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
                             self.execute(self._create_unique_sql(model, columns, condition=condition))
+            # Restore primary keys
+            if old_field.primary_key and new_field.primary_key:
+                self.execute(
+                    self.sql_create_pk % {
+                        "table": self.quote_name(model._meta.db_table),
+                        "name": self.quote_name(
+                            self._create_index_name(model._meta.db_table, [new_field.column], suffix="_pk")
+                        ),
+                        "columns": self.quote_name(new_field.column),
+                    }
+                )
+            # Restore unqiue_together
+            # If we have ALTERed an AutoField or BigAutoField we need to recreate all unique_together clauses
+            for t in (AutoField, BigAutoField):
+                if isinstance(old_field, t) or isinstance(new_field, t):
+                    for field_names in model._meta.unique_together:
+                        columns = [model._meta.get_field(field).column for field in field_names]
+                        fields = [model._meta.get_field(field) for field in field_names]
+                        condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                        # We need to pass fields instead of columns when using >= Django 4.0 because
+                        # of a backwards incompatible change to _create_unique_sql
+                        if django_version >= (4, 0):
+                            self.execute(
+                                self._create_unique_sql(model, fields, condition=condition)
+                            )
+                        else:
+                            self.execute(
+                                self._create_unique_sql(model, columns, condition=condition)
+                            )
+                    break
+
             # Restore indexes
+            # If we have ALTERed an AutoField or BigAutoField we need to recreate all indexes
+            for t in (AutoField, BigAutoField):
+                if isinstance(old_field, t) or isinstance(new_field, t):
+                    for field in model._meta.fields:
+                        if field.db_index:
+                            self.execute(
+                                self._create_index_sql(model, [field])
+                            )
+                    break
             index_columns = []
             if old_field.db_index and new_field.db_index:
                 index_columns.append([old_field])
@@ -622,7 +669,26 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             for sql, params in other_actions:
                 self.execute(sql, params)
             # Restore related_model indexes
-            self.execute(self._create_index_sql(new_rel.related_model, [new_rel.field]))
+            for field in new_rel.related_model._meta.fields:
+                if field.db_index:
+                    self.execute(
+                        self._create_index_sql(new_rel.related_model, [field])
+                    )
+            # Restore unique_together clauses
+            for field_names in new_rel.related_model._meta.unique_together:
+                columns = [new_rel.related_model._meta.get_field(field).column for field in field_names]
+                fields = [new_rel.related_model._meta.get_field(field) for field in field_names]
+                condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                # We need to pass fields instead of columns when using >= Django 4.0 because
+                # of a backwards incompatible change to _create_unique_sql
+                if django_version >= (4, 0):
+                    self.execute(
+                        self._create_unique_sql(new_rel.related_model, fields, condition=condition)
+                    )
+                else:
+                    self.execute(
+                        self._create_unique_sql(new_rel.related_model, columns, condition=condition)
+                    )
         # Does it have a foreign key?
         if (new_field.remote_field and
                 (fks_dropped or not old_field.remote_field or not old_field.db_constraint) and
