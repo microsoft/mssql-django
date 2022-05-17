@@ -11,6 +11,13 @@ schedules:
     - dev
   always: true
 
+variables:
+- group: DjangoTestApp
+
+env:
+  KEY_VAULT_NAME: $(KeyVaultName)
+  PASSWORD: $(TestAppPassword)
+
 jobs:
   - job: Windows
     pool:
@@ -69,7 +76,7 @@ jobs:
           Invoke-Sqlcmd @"
               EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
               ALTER LOGIN [sa] ENABLE;
-              ALTER LOGIN [sa] WITH PASSWORD = 'MyPassword42', CHECK_POLICY=OFF;
+              ALTER LOGIN [sa] WITH PASSWORD = $(TestAppPassword), CHECK_POLICY=OFF;
           "@
         displayName: Set up SQL Server
 
@@ -79,6 +86,7 @@ jobs:
 
       - powershell: |
           python -m pip install --upgrade pip wheel setuptools
+          python -m pip install azure-keyvault-keys azure-identity
           python -m pip install tox
           git clone https://github.com/django/django.git
 
@@ -125,7 +133,7 @@ jobs:
 
       - script: |
           docker pull mcr.microsoft.com/mssql/server:2019-latest
-          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest
+          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update
@@ -134,6 +142,7 @@ jobs:
 
       - script: |
           python -m pip install --upgrade pip wheel setuptools
+          pip install azure-keyvault-keys azure-identity
           pip install tox
           git clone https://github.com/django/django.git
         displayName: Install requirements

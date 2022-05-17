@@ -5,14 +5,26 @@ from pathlib import Path
 
 from django import VERSION
 
+from azure.keyvault.secrets import SecretClient
+from azure.identity import DefaultAzureCredential
+
+keyVaultName = os.environ["KEY_VAULT_NAME"]
+KVUri = f"https://{keyVaultName}.vault.azure.net"
+
+credential = DefaultAzureCredential()
+client = SecretClient(vault_url=KVUri, credential=credential)
+
+username = client.get_secret("TestAppUsername").value
+password = client.get_secret("TestAppPassword").value
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATABASES = {
     "default": {
         "ENGINE": "mssql",
         "NAME": "default",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
+        "USER": username,
+        "PASSWORD": password,
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
@@ -20,8 +32,8 @@ DATABASES = {
     'other': {
         "ENGINE": "mssql",
         "NAME": "other",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
+        "USER": username,
+        "PASSWORD": password,
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
