@@ -81,11 +81,10 @@ jobs:
         displayName: Restart SQL Server
 
       - powershell: |
-          python -c "import os; print(os.environ)"
-          gci env:* | sort-object name
+          (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassWord)' | Set-Content testapp\settings.py
         env:
           PASSWORD: $(TestAppPassword)
-        displayName: Display env variables
+        displayName: Change PASSWORD in settings.py
 
       - powershell: |
           python -m pip install --upgrade pip wheel setuptools
@@ -93,8 +92,6 @@ jobs:
           git clone https://github.com/django/django.git
 
           python -m tox -e $(tox.env)
-        env:
-          PASSWORD: $(TestAppPassword)
         displayName: Run tox
 
   - job: Linux
@@ -151,15 +148,12 @@ jobs:
         displayName: Install requirements
 
       - script: |
-          python -c "import os; print(os.environ)"
-          env | sort
+          sed -i 's/MyPassword42/$(TestAppPassword)/g' testapp/settings.py
         env:
           PASSWORD: $(TestAppPassword)
-        displayName: Display env variables
+        displayName: Change PASSWORD in settings.py
 
       - script: tox -e $(tox.env)
-        env:
-          PASSWORD: $(TestAppPassword)
         displayName: Run tox
 
       - task: PublishCodeCoverageResults@1
