@@ -14,10 +14,6 @@ schedules:
 variables:
 - group: DjangoTestApp
 
-env:
-  KEY_VAULT_NAME: $(KeyVaultName)
-  PASSWORD: $(TestAppPassword)
-
 jobs:
   - job: Windows
     pool:
