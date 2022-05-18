@@ -5,7 +5,7 @@ from pathlib import Path
 
 from django import VERSION
 
-password = os.environ["PASSWORD"]
+PASSWORD = os.environ["PASSWORD"]
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -14,7 +14,7 @@ DATABASES = {
         "ENGINE": "mssql",
         "NAME": "default",
         "USER": "sa",
-        "PASSWORD": password,
+        "PASSWORD": PASSWORD,
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
@@ -23,7 +23,7 @@ DATABASES = {
         "ENGINE": "mssql",
         "NAME": "other",
         "USER": "sa",
-        "PASSWORD": password,
+        "PASSWORD": PASSWORD,
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },

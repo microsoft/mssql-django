@@ -81,6 +81,13 @@ jobs:
         displayName: Restart SQL Server
 
       - powershell: |
+          python -c "import os; print(os.environ)"
+          gci env:* | sort-object name
+        env:
+          PASSWORD: $(TestAppPassword)
+        displayName: Display env variables
+
+      - powershell: |
           python -m pip install --upgrade pip wheel setuptools
           python -m pip install tox
           git clone https://github.com/django/django.git
@@ -142,6 +149,13 @@ jobs:
           pip install tox
           git clone https://github.com/django/django.git
         displayName: Install requirements
+
+      - script: |
+          python -c "import os; print(os.environ)"
+          env | sort
+        env:
+          PASSWORD: $(TestAppPassword)
+        displayName: Display env variables
 
       - script: tox -e $(tox.env)
         env:
