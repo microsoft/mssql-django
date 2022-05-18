@@ -82,8 +82,6 @@ jobs:
 
       - powershell: |
           (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassWord)' | Set-Content testapp\settings.py
-        env:
-          PASSWORD: $(TestAppPassword)
         displayName: Change PASSWORD in settings.py
 
       - powershell: |
@@ -149,8 +147,6 @@ jobs:
 
       - script: |
           sed -i 's/MyPassword42/$(TestAppPassword)/g' testapp/settings.py
-        env:
-          PASSWORD: $(TestAppPassword)
         displayName: Change PASSWORD in settings.py
 
       - script: tox -e $(tox.env)
