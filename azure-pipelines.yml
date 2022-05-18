@@ -72,7 +72,7 @@ jobs:
           Invoke-Sqlcmd @"
               EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
               ALTER LOGIN [sa] ENABLE;
-              ALTER LOGIN [sa] WITH PASSWORD = $(TestAppPassword), CHECK_POLICY=OFF;
+              ALTER LOGIN [sa] WITH PASSWORD = '$(TestAppPassword)', CHECK_POLICY=OFF;
           "@
         displayName: Set up SQL Server
 
@@ -82,11 +82,12 @@ jobs:
 
       - powershell: |
           python -m pip install --upgrade pip wheel setuptools
-          python -m pip install azure-keyvault-keys azure-identity
           python -m pip install tox
           git clone https://github.com/django/django.git
 
           python -m tox -e $(tox.env)
+        env:
+          PASSWORD: $(TestAppPassword)
         displayName: Run tox
 
   - job: Linux
@@ -138,12 +139,13 @@ jobs:
 
       - script: |
           python -m pip install --upgrade pip wheel setuptools
-          pip install azure-keyvault-keys azure-identity
           pip install tox
           git clone https://github.com/django/django.git
         displayName: Install requirements
 
       - script: tox -e $(tox.env)
+        env:
+          PASSWORD: $(TestAppPassword)
         displayName: Run tox
 
       - task: PublishCodeCoverageResults@1
