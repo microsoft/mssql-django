@@ -12,6 +12,7 @@ from django.conf import settings
 
 SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
+SQL_TIMESTAMP_WITH_TIMEZONE = -155
 
 def get_schema_name():
     return getattr(settings, 'SCHEMA_TO_INSPECT', 'SCHEMA_NAME()')
@@ -39,7 +40,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Database.SQL_TINYINT: 'SmallIntegerField',
         Database.SQL_TYPE_DATE: 'DateField',
         Database.SQL_TYPE_TIME: 'TimeField',
-        Database.SQL_TYPE_TIMESTAMP: 'DateTimeField',
+        SQL_TIMESTAMP_WITH_TIMEZONE: 'DateTimeField',
         Database.SQL_VARBINARY: 'BinaryField',
         Database.SQL_VARCHAR: 'TextField',
         Database.SQL_WCHAR: 'CharField',

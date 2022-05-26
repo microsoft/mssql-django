@@ -8,6 +8,7 @@ import os
 import re
 import time
 import struct
+import datetime
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -35,7 +36,7 @@ if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
 from .client import DatabaseClient  # noqa
 from .creation import DatabaseCreation  # noqa
 from .features import DatabaseFeatures  # noqa
-from .introspection import DatabaseIntrospection  # noqa
+from .introspection import DatabaseIntrospection, SQL_TIMESTAMP_WITH_TIMEZONE  # noqa
 from .operations import DatabaseOperations  # noqa
 from .schema import DatabaseSchemaEditor  # noqa
 
@@ -80,6 +81,13 @@ def encode_value(v):
     return v
 
 
+def handle_datetimeoffset(dto_value):
+    # Decode bytes returned from SQL Server
+    # source: https://github.com/mkleehammer/pyodbc/wiki/Using-an-Output-Converter-function
+    tup = struct.unpack("<6hI2h", dto_value)  # e.g., (2017, 3, 16, 10, 35, 18, 500000000)
+    return datetime.datetime(tup[0], tup[1], tup[2], tup[3], tup[4], tup[5], tup[6] // 1000)
+
+
 class DatabaseWrapper(BaseDatabaseWrapper):
     vendor = 'microsoft'
     display_name = 'SQL Server'
@@ -95,7 +103,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'BooleanField': 'bit',
         'CharField': 'nvarchar(%(max_length)s)',
         'DateField': 'date',
-        'DateTimeField': 'datetime2',
+        'DateTimeField': 'datetimeoffset',
         'DecimalField': 'numeric(%(max_digits)s, %(decimal_places)s)',
         'DurationField': 'bigint',
         'FileField': 'nvarchar(%(max_length)s)',
@@ -364,6 +372,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 if not need_to_retry:
                     raise
 
+        # Handling values from DATETIMEOFFSET columns
+        # source: https://github.com/mkleehammer/pyodbc/wiki/Using-an-Output-Converter-function
+        conn.add_output_converter(SQL_TIMESTAMP_WITH_TIMEZONE, handle_datetimeoffset)
         conn.timeout = query_timeout
         if setencoding:
             for entry in setencoding:

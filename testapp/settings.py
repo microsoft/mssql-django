@@ -279,7 +279,19 @@ EXCLUDED_TESTS = [
     'backends.tests.BackendTestCase.test_queries_logger',
     'migrations.test_operations.OperationTests.test_alter_field_pk_mti_fk',
     'migrations.test_operations.OperationTests.test_run_sql_add_missing_semicolon_on_collect_sql',
-    'migrations.test_operations.OperationTests.test_alter_field_pk_mti_and_fk_to_base'
+    'migrations.test_operations.OperationTests.test_alter_field_pk_mti_and_fk_to_base',
+
+    # Timezone
+    'timezones.tests.NewDatabaseTests.test_cursor_explicit_time_zone',
+    # Skipped next tests because pyodbc drops timezone https://github.com/mkleehammer/pyodbc/issues/810
+    #LegacyDatabaseTests
+    'timezones.tests.LegacyDatabaseTests.test_cursor_execute_accepts_naive_datetime',
+    'timezones.tests.LegacyDatabaseTests.test_cursor_execute_returns_naive_datetime',
+    # NewDatabaseTests
+    'timezones.tests.NewDatabaseTests.test_cursor_execute_accepts_naive_datetime',
+    'timezones.tests.NewDatabaseTests.test_cursor_execute_returns_naive_datetime',
+    'timezones.tests.NewDatabaseTests.test_cursor_execute_accepts_aware_datetime',
+    'timezones.tests.NewDatabaseTests.test_cursor_execute_returns_aware_datetime',
 ]
 
 REGEX_TESTS = [
