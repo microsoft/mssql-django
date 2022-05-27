@@ -690,6 +690,15 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         unique_columns = []
         if old_field.unique and new_field.unique:
             unique_columns.append([old_field.column])
+
+        # Also consider unique_together because, although this is implemented with a filtered unique INDEX now, we
+        # need to handle the possibility that we're acting on a database previously created by an older version of
+        # this backend, where unique_together used to be implemented with a CONSTRAINT
+        for fields in model._meta.unique_together:
+            columns = [model._meta.get_field(field).column for field in fields]
+            if old_field.column in columns:
+                unique_columns.append(columns)
+
         if unique_columns:
             for columns in unique_columns:
                 self._delete_unique_constraint_for_columns(model, columns, strict=strict)
