@@ -220,7 +220,7 @@ class TestUniqueConstraints(TransactionTestCase):
                     ),
                 ]
 
-            migration = TestMigration('testapp', 'test_unsupportable_unique_constraint')
+            migration = TestMigration(name='test_unsupportable_unique_constraint', app_label='testapp')
 
             with connection.schema_editor(atomic=True) as editor:
                 with self.assertRaisesRegex(
