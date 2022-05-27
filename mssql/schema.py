@@ -234,9 +234,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                                    unique=None, primary_key=None, index=None, foreign_key=None,
                                    check=None, type_=None, exclude=None, unique_constraint=None):
         """
-        Return all constraint names matching the columns and conditions. Modified from base `_constraint_names`
-        `any_column_matches`=False: (default) only return constraints covering exactly `column_names`
-        `any_column_matches`=True : return any constraints which include at least 1 of `column_names`
+        Return all constraint names matching the columns and conditions.
+        Modified from base `_constraint_names` but with the following new arguments:
+         - `unique_constraint` which explicitly finds unique implemented by CONSTRAINT not by an INDEX
+         - `column_match_any`:
+                False: (default) only return constraints covering exactly `column_names`
+                True : return any constraints which include at least 1 of `column_names`
         """
         if column_names is not None:
             column_names = [
@@ -533,7 +536,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
         # Restore indexes & unique constraints deleted above, SQL Server requires explicit restoration
         if (old_type != new_type or (old_field.null != new_field.null)) and (
-            old_field.column == new_field.column
+            old_field.column == new_field.column  # column rename is handled separately above
         ):
             # Restore unique constraints
             # Note: if nullable they are implemented via an explicit filtered UNIQUE INDEX (not CONSTRAINT)
@@ -688,8 +691,20 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _delete_unique_constraints(self, model, old_field, new_field, strict=False):
         unique_columns = []
+        # Considering just this column, we only need to drop unique constraints in advance of altering the field
+        # *if* it remains unique - if it wasn't unique before there's nothing to drop; if it won't remain unique
+        # afterwards then that is handled separately in _alter_field
         if old_field.unique and new_field.unique:
             unique_columns.append([old_field.column])
+
+        # Also consider unique_together because, although this is implemented with a filtered unique INDEX now, we
+        # need to handle the possibility that we're acting on a database previously created by an older version of
+        # this backend, where unique_together used to be implemented with a CONSTRAINT
+        for fields in model._meta.unique_together:
+            columns = [model._meta.get_field(field).column for field in fields]
+            if old_field.column in columns:
+                unique_columns.append(columns)
+
         if unique_columns:
             for columns in unique_columns:
                 self._delete_unique_constraint_for_columns(model, columns, strict=strict)
@@ -709,10 +724,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 len(constraint_names),
                 repr(columns),
             ))
+        # Delete constraints which are implemented as a table CONSTRAINT (this may include some created by an
+        # older version of this backend, even if the current version would implement it with an INDEX instead)
         for constraint_name in constraint_names_normal:
             self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
-        # Unique indexes which are not table constraints must be deleted using the appropriate SQL.
-        # These may exist for example to enforce ANSI-compliant unique constraints on nullable columns.
+        # Delete constraints which are implemented with an explicit index instead (not a table CONSTRAINT)
+        # These are used for example to enforce ANSI-compliant unique constraints on nullable columns.
         for index_name in constraint_names_index:
             self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
 

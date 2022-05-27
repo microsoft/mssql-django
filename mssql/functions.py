@@ -288,6 +288,7 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
     return rows_updated
 
 
+# `as_microsoft` called by django.db.models.sql.compiler based on connection.vendor
 ATan2.as_microsoft = sqlserver_atan2
 # Need copy of old In.split_parameter_list_as_sql for other backends to call
 in_split_parameter_list_as_sql = In.split_parameter_list_as_sql

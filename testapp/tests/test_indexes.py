@@ -8,6 +8,7 @@ from django.db.models import UniqueConstraint
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler, ProgrammingError
 from django.test import TestCase
 
+from . import get_constraints
 from ..models import (
     TestIndexesRetainedRenamed,
     Choice,
@@ -26,14 +27,6 @@ else:
 logger = logging.getLogger('mssql.tests')
 
 
-def _get_constraints(table_name):
-    connection = django.db.connections[django.db.DEFAULT_DB_ALIAS]
-    return connection.introspection.get_constraints(
-        connection.cursor(),
-        table_name=table_name,
-    )
-
-
 class TestIndexesRetained(TestCase):
     """
     Issue https://github.com/microsoft/mssql-django/issues/14
@@ -46,7 +39,7 @@ class TestIndexesRetained(TestCase):
         super().setUpClass()
         # Pre-fetch which indexes exist for the relevant test model
         # now that all the test migrations have run
-        cls.constraints = _get_constraints(table_name=TestIndexesRetainedRenamed._meta.db_table)
+        cls.constraints = get_constraints(table_name=TestIndexesRetainedRenamed._meta.db_table)
         cls.indexes = {k: v for k, v in cls.constraints.items() if v['index'] is True}
 
     def _assert_index_exists(self, columns):
@@ -97,7 +90,7 @@ class TestCorrectIndexes(TestCase):
             if not model_cls._meta.managed:
                 # Models where the table is not managed by Django migrations are irrelevant
                 continue
-            model_constraints = _get_constraints(table_name=model_cls._meta.db_table)
+            model_constraints = get_constraints(table_name=model_cls._meta.db_table)
             # Check correct indexes are in place for all fields in model
             for field in model_cls._meta.get_fields():
                 if not hasattr(field, 'column'):
