@@ -392,7 +392,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     result = cursor.fetchall()
                     columns_to_recreate_index = ', '.join(['%s' % self.quote_name(column[0]) for column in result])
                     filter_definition = result[0][1]
-                sql_restore_index += f'CREATE UNIQUE INDEX {index_name} ON {model._meta.db_table} ({columns_to_recreate_index}) WHERE {filter_definition};'
+                sql_restore_index += 'CREATE UNIQUE INDEX %s ON %s (%s) WHERE %s;' % (
+                    index_name, model._meta.db_table, columns_to_recreate_index, filter_definition)
                 self.execute(self._db_table_delete_constraint_sql(
                     self.sql_delete_index, model._meta.db_table, index_name))
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
@@ -453,7 +454,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     (old_field.db_index or not new_field.db_index) and
                     new_field.db_index or
                     ((indexes_dropped and sorted(indexes_dropped) == sorted([index.name for index in model._meta.indexes])) or
-                    (indexes_dropped and sorted(indexes_dropped) == sorted(auto_index_names)))
+                     (indexes_dropped and sorted(indexes_dropped) == sorted(auto_index_names)))
                 ):
                     create_index_sql_statement = self._create_index_sql(model, [new_field])
                     if create_index_sql_statement.__str__() not in [sql.__str__() for sql in self.deferred_sql]:
@@ -580,8 +581,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 for columns in index_columns:
                     create_index_sql_statement = self._create_index_sql(model, columns)
                     if (create_index_sql_statement.__str__()
-                        not in [sql.__str__() for sql in self.deferred_sql] + [statement[0].__str__() for statement in post_actions]
-                        ):
+                            not in [sql.__str__() for sql in self.deferred_sql] + [statement[0].__str__() for statement in post_actions]
+                            ):
                         self.execute(create_index_sql_statement)
 
         # Type alteration on primary key? Then we need to alter the column
