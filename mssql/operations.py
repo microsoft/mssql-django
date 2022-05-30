@@ -15,11 +15,6 @@ from django.utils.encoding import force_str
 from django import VERSION as django_version
 import pytz
 
-if (sys.version_info >= (3, 9)):
-    from zoneinfo import ZoneInfo
-else:
-    from backports.zoneinfo import ZoneInfo
-
 
 class DatabaseOperations(BaseDatabaseOperations):
     compiler_module = 'mssql.compiler'
