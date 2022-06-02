@@ -29,8 +29,8 @@ class TestOrderBy(TestCase):
             Customer_name(Customer_name='John'),
         ])
         names = []
-        # iterate 10 times to make sure we don't get the same result
-        for _ in range(10):
+        # iterate 20 times to make sure we don't get the same result
+        for _ in range(20):
             names.append(list(Customer_name.objects.order_by('?')))
 
-        self.assertNotEqual(names.count(names[0]), 10)
+        self.assertNotEqual(names.count(names[0]), 20)

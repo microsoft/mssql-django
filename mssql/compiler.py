@@ -312,11 +312,12 @@ class SQLCompiler(compiler.SQLCompiler):
             if order_by:
                 ordering = []
                 for expr, (o_sql, o_params, _) in order_by:
-                    src = next(iter(expr.get_source_expressions()))
-                    if isinstance(src, Random):
-                        # ORDER BY RAND() doesn't return rows in random order
-                        # replace it with NEWID()
-                        o_sql = o_sql.replace('RAND()', 'NEWID()')
+                    if expr:
+                        src = next(iter(expr.get_source_expressions()))
+                        if isinstance(src, Random):
+                            # ORDER BY RAND() doesn't return rows in random order
+                            # replace it with NEWID()
+                            o_sql = o_sql.replace('RAND()', 'NEWID()')
                     ordering.append(o_sql)
                     params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))
