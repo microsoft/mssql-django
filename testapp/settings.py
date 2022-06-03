@@ -124,8 +124,11 @@ EXCLUDED_TESTS = [
     'migrations.test_operations.OperationTests.test_add_constraint_percent_escaping',
     'migrations.test_operations.OperationTests.test_alter_field_pk',
     'migrations.test_operations.OperationTests.test_alter_field_reloads_state_on_fk_with_to_field_target_changes',
+    'schema.tests.SchemaTests.test_alter_auto_field_to_char_field',
+    'schema.tests.SchemaTests.test_alter_auto_field_to_integer_field',
     'schema.tests.SchemaTests.test_alter_implicit_id_to_explicit',
     'schema.tests.SchemaTests.test_alter_int_pk_to_autofield_pk',
+    'schema.tests.SchemaTests.test_alter_int_pk_to_bigautofield_pk',
     'schema.tests.SchemaTests.test_alter_pk_with_self_referential_field',
     'schema.tests.SchemaTests.test_no_db_constraint_added_during_primary_key_change',
     'schema.tests.SchemaTests.test_remove_field_check_does_not_remove_meta_constraints',
@@ -195,6 +198,8 @@ EXCLUDED_TESTS = [
     'expressions.tests.BasicExpressionsTests.test_filtering_on_q_that_is_boolean',
     'migrations.test_operations.OperationTests.test_alter_field_reloads_state_on_fk_with_to_field_target_type_change',
     'schema.tests.SchemaTests.test_alter_primary_key_quoted_db_table',
+    'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk',
+    
     'annotations.tests.NonAggregateAnnotationTestCase.test_combined_expression_annotation_with_aggregation',
     'db_functions.comparison.test_cast.CastTests.test_cast_to_integer',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_func',
@@ -212,6 +217,7 @@ EXCLUDED_TESTS = [
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_ordering_by_f_expression_and_alias',
     'queries.test_db_returning.ReturningValuesTests.test_insert_returning_multiple',
     'dbshell.tests.DbshellCommandTestCase.test_command_missing',
+    'schema.tests.SchemaTests.test_char_field_pk_to_auto_field',
     'datetimes.tests.DateTimesTests.test_21432',
 
     # JSONFields

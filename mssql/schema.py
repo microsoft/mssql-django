@@ -69,20 +69,20 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_delete_column = "ALTER TABLE %(table)s DROP COLUMN %(column)s"
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
     sql_delete_table = """
-        DECLARE @sql_froeign_constraint_name nvarchar(128)
+        DECLARE @sql_foreign_constraint_name nvarchar(128)
         DECLARE @sql_drop_constraint nvarchar(300)
         WHILE EXISTS(SELECT 1
             FROM sys.foreign_keys
             WHERE referenced_object_id = object_id('%(table)s'))
         BEGIN
-            SELECT TOP 1 @sql_froeign_constraint_name = name
+            SELECT TOP 1 @sql_foreign_constraint_name = name
             FROM sys.foreign_keys
             WHERE referenced_object_id = object_id('%(table)s')
             SELECT
             @sql_drop_constraint = 'ALTER TABLE [' + OBJECT_NAME(parent_object_id) + '] ' +
-            'DROP CONSTRAINT [' + @sql_froeign_constraint_name + '] '
+            'DROP CONSTRAINT [' + @sql_foreign_constraint_name + '] '
             FROM sys.foreign_keys
-            WHERE referenced_object_id = object_id('%(table)s') and name = @sql_froeign_constraint_name
+            WHERE referenced_object_id = object_id('%(table)s') and name = @sql_foreign_constraint_name
             exec sp_executesql @sql_drop_constraint
         END
         DROP TABLE %(table)s
@@ -280,6 +280,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                      old_db_params, new_db_params, strict=False):
         """Actually perform a "physical" (non-ManyToMany) field update."""
 
+        # the backend doesn't support altering a column to/from AutoField as
+        # SQL Server cannot alter columns to add and remove IDENTITY properties
+        old_is_auto = False
+        new_is_auto = False
+        for t in (AutoField, BigAutoField):
+            if isinstance(old_field, t):
+                old_is_auto = True
+            if isinstance(new_field, t):
+                new_is_auto = True
+        if (old_is_auto and not new_is_auto) or (not old_is_auto and new_is_auto):
+            raise NotImplementedError("the backend doesn't support altering from %s to %s." %
+                (old_field.get_internal_type(), new_field.get_internal_type()))
+        
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
         if old_field.remote_field and old_field.db_constraint:
