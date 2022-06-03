@@ -9,16 +9,22 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+# We are using this Mixin to test casting of BigAuto and Auto fields 
+class BigAutoFieldMixin(models.Model):
+    id = models.BigAutoField(primary_key=True)
+
+    class Meta:
+        abstract = True
 
 class Author(models.Model):
     name = models.CharField(max_length=100)
 
 
-class Editor(models.Model):
+class Editor(BigAutoFieldMixin, models.Model):
     name = models.CharField(max_length=100)
 
 
-class Post(models.Model):
+class Post(BigAutoFieldMixin, models.Model):
     title = models.CharField('title', max_length=255)
     author = models.ForeignKey(Author, models.CASCADE)
     # Optional secondary author
