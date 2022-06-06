@@ -10,7 +10,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 3.2 and 4.0
+-  Supports Django 2.2, 3.0, 3.1, 3.2 and 4.0
 -  Tested on Microsoft SQL Server 2016, 2017, 2019
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -66,13 +66,6 @@ in DATABASES control the behavior of the backend:
 -  PASSWORD
 
    String. Database user password.
-
--  TOKEN
-
-   String. Access token fetched as a user or service principal which
-   has access to the database. E.g. when using `azure.identity`, the
-   result of `DefaultAzureCredential().get_token('https://database.windows.net/.default')`
-   can be passed.
 
 -  AUTOCOMMIT
 

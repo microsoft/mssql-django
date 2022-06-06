@@ -253,14 +253,9 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 constraints[constraint] = {
                     "columns": [],
                     "primary_key": kind.lower() == "primary key",
-                    # In the sys.indexes table, primary key indexes have is_unique_constraint as false,
-                    # but is_unique as true.
                     "unique": kind.lower() in ["primary key", "unique"],
-                    "unique_constraint": kind.lower() == "unique",
                     "foreign_key": (ref_table, ref_column) if kind.lower() == "foreign key" else None,
                     "check": False,
-                    # Potentially misleading: primary key and unique constraints still have indexes attached to them.
-                    # Should probably be updated with the additional info from the sys.indexes table we fetch later on.
                     "index": False,
                 }
             # Record the details
@@ -285,7 +280,6 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     "columns": [],
                     "primary_key": False,
                     "unique": False,
-                    "unique_constraint": False,
                     "foreign_key": None,
                     "check": True,
                     "index": False,
@@ -297,7 +291,6 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
             SELECT
                 i.name AS index_name,
                 i.is_unique,
-                i.is_unique_constraint,
                 i.is_primary_key,
                 i.type,
                 i.type_desc,
@@ -323,13 +316,12 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 ic.index_column_id ASC
         """, [table_name])
         indexes = {}
-        for index, unique, unique_constraint, primary, type_, desc, order, column in cursor.fetchall():
+        for index, unique, primary, type_, desc, order, column in cursor.fetchall():
             if index not in indexes:
                 indexes[index] = {
                     "columns": [],
                     "primary_key": primary,
                     "unique": unique,
-                    "unique_constraint": unique_constraint,
                     "foreign_key": None,
                     "check": False,
                     "index": True,

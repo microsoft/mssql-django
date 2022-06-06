@@ -16,10 +16,4 @@ class Migration(migrations.Migration):
             field=models.CharField(default='', max_length=100, unique=True),
             preserve_default=False,
         ),
-        # Test for renaming of a unique+nullable column
-        migrations.RenameField(
-            model_name='testuniquenullablemodel',
-            old_name='y',
-            new_name='y_renamed',
-        ),
     ]

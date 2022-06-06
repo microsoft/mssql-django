@@ -171,12 +171,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         news = {tuple(fields) for fields in new_unique_together}
         # Deleted uniques
         for fields in olds.difference(news):
-            meta_constraint_names = {constraint.name for constraint in model._meta.constraints}
-            meta_index_names = {constraint.name for constraint in model._meta.indexes}
-            columns = [model._meta.get_field(field).column for field in fields]
-            self._delete_unique_constraint_for_columns(
-                model, columns, exclude=meta_constraint_names | meta_index_names, strict=True)
-
+            self._delete_composed_index(model, fields, {'unique': True}, self.sql_delete_index)
         # Created uniques
         if django_version >= (4, 0):
             for field_names in news.difference(olds):
@@ -230,14 +225,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 output.append(index.create_sql(model, self))
         return output
 
-    def _db_table_constraint_names(self, db_table, column_names=None, column_match_any=False,
-                                   unique=None, primary_key=None, index=None, foreign_key=None,
-                                   check=None, type_=None, exclude=None, unique_constraint=None):
-        """
-        Return all constraint names matching the columns and conditions. Modified from base `_constraint_names`
-        `any_column_matches`=False: (default) only return constraints covering exactly `column_names`
-        `any_column_matches`=True : return any constraints which include at least 1 of `column_names`
-        """
+    def _db_table_constraint_names(self, db_table, column_names=None, unique=None,
+                                   primary_key=None, index=None, foreign_key=None,
+                                   check=None, type_=None, exclude=None):
+        """Return all constraint names matching the columns and conditions."""
         if column_names is not None:
             column_names = [
                 self.connection.introspection.identifier_converter(name)
@@ -247,12 +238,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             constraints = self.connection.introspection.get_constraints(cursor, db_table)
         result = []
         for name, infodict in constraints.items():
-            if column_names is None or column_names == infodict['columns'] or (
-                column_match_any and any(col in infodict['columns'] for col in column_names)
-            ):
+            if column_names is None or column_names == infodict['columns']:
                 if unique is not None and infodict['unique'] != unique:
-                    continue
-                if unique_constraint is not None and infodict['unique_constraint'] != unique_constraint:
                     continue
                 if primary_key is not None and infodict['primary_key'] != primary_key:
                     continue
@@ -306,7 +293,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(self._delete_constraint_sql(self.sql_delete_fk, model, fk_name))
         # Has unique been removed?
         if old_field.unique and (not new_field.unique or self._field_became_primary_key(old_field, new_field)):
-            self._delete_unique_constraint_for_columns(model, [old_field.column], strict=strict)
+            # Find the unique constraint for this field
+            constraint_names = self._constraint_names(model, [old_field.column], unique=True, primary_key=False)
+            if strict and len(constraint_names) != 1:
+                raise ValueError("Found wrong number (%s) of unique constraints for %s.%s" % (
+                    len(constraint_names),
+                    model._meta.db_table,
+                    old_field.column,
+                ))
+            for constraint_name in constraint_names:
+                self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
         # Drop incoming FK constraints if the field is a primary key or unique,
         # which might be a to_field target, and things are going to change.
         drop_foreign_keys = (
@@ -369,32 +365,29 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Have they renamed the column?
         if old_field.column != new_field.column:
             sql_restore_index = ''
-            # Drop any unique indexes which include the column to be renamed
-            index_names = self._db_table_constraint_names(
-                db_table=model._meta.db_table, column_names=[old_field.column], column_match_any=True,
-                index=True, unique=True,
-            )
+            # Drop unique indexes for table to be altered
+            index_names = self._db_table_constraint_names(model._meta.db_table, index=True)
             for index_name in index_names:
-                # Before dropping figure out how to recreate it afterwards
-                with self.connection.cursor() as cursor:
-                    cursor.execute(f"""
-                    SELECT COL_NAME(ic.object_id,ic.column_id) AS column_name,
-                           filter_definition
-                    FROM sys.indexes AS i
-                    INNER JOIN sys.index_columns AS ic
-                        ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                    WHERE i.object_id = OBJECT_ID('{model._meta.db_table}')
-                    and i.name = '{index_name}'
-                    """)
-                    result = cursor.fetchall()
-                    columns_to_recreate_index = ', '.join(['%s' % self.quote_name(column[0]) for column in result])
-                    filter_definition = result[0][1]
-                sql_restore_index += f'CREATE UNIQUE INDEX {index_name} ON {model._meta.db_table} ({columns_to_recreate_index}) WHERE {filter_definition};'
-                self.execute(self._db_table_delete_constraint_sql(
-                    self.sql_delete_index, model._meta.db_table, index_name))
+                if(index_name.endswith('uniq')):
+                    with self.connection.cursor() as cursor:
+                        cursor.execute(f"""
+                        SELECT COL_NAME(ic.object_id,ic.column_id) AS column_name,
+                               filter_definition
+                        FROM sys.indexes AS i
+                        INNER JOIN sys.index_columns AS ic
+                            ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                        WHERE i.object_id = OBJECT_ID('{model._meta.db_table}')
+                        and i.name = '{index_name}'
+                        """)
+                        result = cursor.fetchall()
+                        columns_to_recreate_index = ', '.join(['%s' % self.quote_name(column[0]) for column in result])
+                        filter_definition = result[0][1]
+                    sql_restore_index += f'CREATE UNIQUE INDEX {index_name} ON {model._meta.db_table} ({columns_to_recreate_index}) WHERE {filter_definition};'
+                    self.execute(self._db_table_delete_constraint_sql(
+                        self.sql_delete_index, model._meta.db_table, index_name))
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
-            # Restore index(es) now the column has been renamed
-            if sql_restore_index:
+            # Restore indexes for altered table
+            if(sql_restore_index):
                 self.execute(sql_restore_index.replace(f'[{old_field.column}]', f'[{new_field.column}]'))
             # Rename all references to the renamed column.
             for sql in self.deferred_sql:
@@ -437,24 +430,21 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             fragment = self._alter_column_null_sql(model, old_field, new_field)
             if fragment:
                 null_actions.append(fragment)
-                # Drop unique constraint, SQL Server requires explicit deletion
-                self._delete_unique_constraints(model, old_field, new_field, strict)
-                # Drop indexes, SQL Server requires explicit deletion
-                indexes_dropped = self._delete_indexes(model, old_field, new_field)
-                auto_index_names = []
-                for index_from_meta in model._meta.indexes:
-                    auto_index_names.append(self._create_index_name(model._meta.db_table, index_from_meta.fields))
-
-                if (
-                    new_field.get_internal_type() not in ("JSONField", "TextField") and
-                    (old_field.db_index or not new_field.db_index) and
-                    new_field.db_index or
-                    ((indexes_dropped and sorted(indexes_dropped) == sorted([index.name for index in model._meta.indexes])) or
-                    (indexes_dropped and sorted(indexes_dropped) == sorted(auto_index_names)))
-                ):
-                    create_index_sql_statement = self._create_index_sql(model, [new_field])
-                    if create_index_sql_statement.__str__() not in [sql.__str__() for sql in self.deferred_sql]:
-                        post_actions.append((create_index_sql_statement, ()))
+                if not new_field.null:
+                    # Drop unique constraint, SQL Server requires explicit deletion
+                    self._delete_unique_constraints(model, old_field, new_field, strict)
+                    # Drop indexes, SQL Server requires explicit deletion
+                    indexes_dropped = self._delete_indexes(model, old_field, new_field)
+                    if (
+                        new_field.get_internal_type() not in ("JSONField", "TextField") and
+                        (old_field.db_index or not new_field.db_index) and
+                        new_field.db_index or
+                        (indexes_dropped and sorted(indexes_dropped) == sorted(
+                            [index.name for index in model._meta.indexes]))
+                    ):
+                        create_index_sql_statement = self._create_index_sql(model, [new_field])
+                        if create_index_sql_statement.__str__() not in [sql.__str__() for sql in self.deferred_sql]:
+                            post_actions.append((create_index_sql_statement, ()))
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
             new_field.has_default() and
@@ -532,7 +522,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.execute(self._create_index_sql(model, [new_field]))
 
         # Restore indexes & unique constraints deleted above, SQL Server requires explicit restoration
-        if (old_type != new_type or (old_field.null != new_field.null)) and (
+        if (old_type != new_type or (old_field.null and not new_field.null)) and (
             old_field.column == new_field.column
         ):
             # Restore unique constraints
@@ -692,29 +682,21 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             unique_columns.append([old_field.column])
         if unique_columns:
             for columns in unique_columns:
-                self._delete_unique_constraint_for_columns(model, columns, strict=strict)
-
-    def _delete_unique_constraint_for_columns(self, model, columns, strict=False, **constraint_names_kwargs):
-        constraint_names_unique = self._db_table_constraint_names(
-            model._meta.db_table, columns, unique=True, unique_constraint=True, **constraint_names_kwargs)
-        constraint_names_primary = self._db_table_constraint_names(
-            model._meta.db_table, columns, unique=True, primary_key=True, **constraint_names_kwargs)
-        constraint_names_normal = constraint_names_unique + constraint_names_primary
-        constraint_names_index = self._db_table_constraint_names(
-            model._meta.db_table, columns, unique=True, unique_constraint=False, primary_key=False,
-            **constraint_names_kwargs)
-        constraint_names = constraint_names_normal + constraint_names_index
-        if strict and len(constraint_names) != 1:
-            raise ValueError("Found wrong number (%s) of unique constraints for columns %s" % (
-                len(constraint_names),
-                repr(columns),
-            ))
-        for constraint_name in constraint_names_normal:
-            self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
-        # Unique indexes which are not table constraints must be deleted using the appropriate SQL.
-        # These may exist for example to enforce ANSI-compliant unique constraints on nullable columns.
-        for index_name in constraint_names_index:
-            self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
+                constraint_names_normal = self._constraint_names(model, columns, unique=True, index=False)
+                constraint_names_index = self._constraint_names(model, columns, unique=True, index=True)
+                constraint_names = constraint_names_normal + constraint_names_index
+                if strict and len(constraint_names) != 1:
+                    raise ValueError("Found wrong number (%s) of unique constraints for %s.%s" % (
+                        len(constraint_names),
+                        model._meta.db_table,
+                        old_field.column,
+                    ))
+                for constraint_name in constraint_names_normal:
+                    self.execute(self._delete_constraint_sql(self.sql_delete_unique, model, constraint_name))
+                # Unique indexes which are not table constraints must be deleted using the appropriate SQL.
+                # These may exist for example to enforce ANSI-compliant unique constraints on nullable columns.
+                for index_name in constraint_names_index:
+                    self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
 
     def _rename_field_sql(self, table, old_field, new_field, new_type):
         new_type = self._set_field_new_type_null_status(old_field, new_type)
