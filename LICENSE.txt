@@ -1,4 +1,4 @@
-Project Name: mssql-django
+Project Name: zilian-mssql-django
 
 BSD 3-Clause License
 
