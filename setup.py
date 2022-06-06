@@ -24,16 +24,16 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='mssql-django',
-    version='1.1.3',
+    name='zilian-mssql-django',
+    version='1.1.4',
     description='Django backend for Microsoft SQL Server',
     long_description=long_description,
     long_description_content_type='text/markdown',
     author='Microsoft',
     author_email='opencode@microsoft.com',
-    url='https://github.com/microsoft/mssql-django',
+    url='https://github.com/ziliantech-org/zilian-mssql-django',
     project_urls={
-    'Release Notes': 'https://github.com/microsoft/mssql-django/releases',
+    'Release Notes': 'https://github.com/ziliantech-org/zilian-mssql-django/releases',
     },
     license='BSD',
     packages=find_packages(),
