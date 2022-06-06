@@ -1,11 +1,5 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
-import os
-from pathlib import Path
-
-from django import VERSION
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATABASES = {
     "default": {
@@ -25,56 +19,6 @@ DATABASES = {
         "HOST": "localhost",
         "PORT": "1433",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
-    },
-}
-
-# Django 3.0 and below unit test doesn't handle more than 2 databases in DATABASES correctly
-if VERSION >= (3, 1):
-    DATABASES['sqlite'] = {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": str(BASE_DIR / "db.sqlitetest"),
-    }
-
-
-# Set to `True` locally if you want SQL queries logged to django_sql.log
-DEBUG = False
-
-# Logging
-LOG_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
-os.makedirs(LOG_DIR, exist_ok=True)
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': True,
-    'formatters': {
-        'myformatter': {
-            'format': '%(asctime)s P%(process)05dT%(thread)05d [%(levelname)s] %(name)s: %(message)s',
-        },
-    },
-    'handlers': {
-        'db_output': {
-            'level': 'DEBUG',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(LOG_DIR, 'django_sql.log'),
-            'formatter': 'myformatter',
-        },
-        'default': {
-            'level': 'DEBUG',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(LOG_DIR, 'default.log'),
-            'formatter': 'myformatter',
-        }
-    },
-    'loggers': {
-        '': {
-            'handlers': ['default'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        'django.db': {
-            'handlers': ['db_output'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
     },
 }
 
@@ -208,6 +152,7 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk',
 
     'annotations.tests.NonAggregateAnnotationTestCase.test_combined_expression_annotation_with_aggregation',
+    'bulk_create.tests.BulkCreateTests.test_bulk_insert_nullable_fields',
     'db_functions.comparison.test_cast.CastTests.test_cast_to_integer',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_func',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_iso_weekday_func',
@@ -279,7 +224,6 @@ EXCLUDED_TESTS = [
     'backends.tests.BackendTestCase.test_queries_logger',
     'migrations.test_operations.OperationTests.test_alter_field_pk_mti_fk',
     'migrations.test_operations.OperationTests.test_run_sql_add_missing_semicolon_on_collect_sql',
-    'migrations.test_operations.OperationTests.test_alter_field_pk_mti_and_fk_to_base'
 ]
 
 REGEX_TESTS = [
