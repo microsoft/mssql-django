@@ -1,12 +1,12 @@
 # SQL Server backend for Django
 
-Welcome to the MSSQL-Django 3rd party backend project!
+Welcome to the Zilian-MSSQL-Django 3rd party backend project!
 
-*mssql-django* is a fork of [django-mssql-backend](https://pypi.org/project/django-mssql-backend/). This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
+*zilian-mssql-django* is a fork of [mssql-django](https://pypi.org/project/mssql-django/). This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
 
 We'd like to give thanks to the community that made this project possible, with particular recognition of the contributors: OskarPersson, michiya, dlo and the original Google Code django-pyodbc team. Moving forward we encourage partipation in this project from both old and new contributors!
 
-We hope you enjoy using the MSSQL-Django 3rd party backend.
+We hope you enjoy using the Zilian-MSSQL-Django 3rd party backend.
 
 ## Features
 
@@ -17,7 +17,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
    [Micosoft ODBC Driver for SQL Server](https://docs.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server),
    [SQL Server Native Client](https://msdn.microsoft.com/en-us/library/ms131321(v=sql.120).aspx),
    and [FreeTDS](https://www.freetds.org/) ODBC drivers
-
+-  Supports AzureSQL serveless db reconnection
 ## Dependencies
 
 -  pyodbc 3.0 or newer
@@ -25,9 +25,9 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 ## Installation
 
 1. Install pyodbc 3.0 (or newer) and Django
-2. Install mssql-django:
+2. Install zilian-mssql-django:
 
-       pip install mssql-django
+       pip install zilian-mssql-django
 
 3. Set the `ENGINE` setting in the `settings.py` file used by
    your Django application or project to `'mssql'`:
@@ -255,31 +255,3 @@ The following features are currently not fully supported:
 - Hashing functions
 
 JSONField lookups have limitations, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
-
-## Contributing
-
-More details on contributing can be found [here](CONTRIBUTING.md).
-
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
-
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
-
-## Security Reporting Instructions
-
-For security reporting instructions please refer to the [`SECURITY.md`](SECURITY.md) file in this repository.
-
-## Trademarks
-
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
-trademarks or logos is subject to and must follow
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
