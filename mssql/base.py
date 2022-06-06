@@ -197,6 +197,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         '49918',
         '49919',
         '49920',
+        '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)',
     )
 
     def __init__(self, *args, **kwargs):
