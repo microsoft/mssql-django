@@ -188,6 +188,24 @@ class DatabaseOperations(BaseDatabaseOperations):
             sql = "CONVERT(datetime2, CONVERT(varchar, %s, 20))" % field_name
         return sql
 
+    def fetch_returned_insert_rows(self, cursor):
+        """
+        Given a cursor object that has just performed an INSERT...OUTPUT INSERTED
+        statement into a table, return the list of returned data.
+        """
+        return cursor.fetchall()
+
+    def return_insert_columns(self, fields):
+        if not fields:
+            return '', ()
+        columns = [
+            '%s.%s' % (
+                'INSERTED',
+                self.quote_name(field.column),
+            ) for field in fields
+        ]
+        return 'OUTPUT %s' % ', '.join(columns), ()
+
     def for_update_sql(self, nowait=False, skip_locked=False, of=()):
         if skip_locked:
             return 'WITH (ROWLOCK, UPDLOCK, READPAST)'
@@ -350,6 +368,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             return [
                 sequence
                 for sequence in self.connection.introspection.sequence_list()
+                if sequence['table'].lower() in [table.lower() for table in tables]
             ]
 
         return []

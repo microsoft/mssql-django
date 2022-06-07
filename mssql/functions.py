@@ -4,18 +4,16 @@
 import json
 
 from django import VERSION
-
-from django.db import NotSupportedError, connections, transaction
-from django.db.models import BooleanField, Value
-from django.db.models.functions import Cast, NthValue
-from django.db.models.functions.math import ATan2, Log, Ln, Mod, Round
-from django.db.models.expressions import Case, Exists, OrderBy, When, Window, Expression
-from django.db.models.lookups import Lookup, In
-from django.db.models import lookups, CheckConstraint
-from django.db.models.fields import BinaryField, Field
-from django.db.models.sql.query import Query
-from django.db.models.query import QuerySet
 from django.core import validators
+from django.db import NotSupportedError, connections, transaction
+from django.db.models import BooleanField, CheckConstraint, Value
+from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
+from django.db.models.fields import BinaryField, Field
+from django.db.models.functions import Cast, NthValue
+from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round
+from django.db.models.lookups import In, Lookup
+from django.db.models.query import QuerySet
+from django.db.models.sql.query import Query
 
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
@@ -67,8 +65,10 @@ def sqlserver_nth_value(self, compiler, connection, **extra_content):
 def sqlserver_round(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, template='%(function)s(%(expressions)s, 0)', **extra_context)
 
+
 def sqlserver_random(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, function='RAND', **extra_context)
+
 
 def sqlserver_window(self, compiler, connection, template=None):
     # MSSQL window functions require an OVER clause with ORDER BY
@@ -125,6 +125,13 @@ def sqlserver_orderby(self, compiler, connection):
 
 
 def split_parameter_list_as_sql(self, compiler, connection):
+    if connection.vendor == 'microsoft':
+        return mssql_split_parameter_list_as_sql(self, compiler, connection)
+    else:
+        return in_split_parameter_list_as_sql(self, compiler, connection)
+
+
+def mssql_split_parameter_list_as_sql(self, compiler, connection):
     # Insert In clause parameters 1000 at a time into a temp table.
     lhs, _ = self.process_lhs(compiler, connection)
     _, rhs_params = self.batch_process_rhs(compiler, connection)
@@ -143,6 +150,7 @@ def split_parameter_list_as_sql(self, compiler, connection):
 
     return in_clause, ()
 
+
 def unquote_json_rhs(rhs_params):
     for value in rhs_params:
         value = json.loads(value)
@@ -150,18 +158,20 @@ def unquote_json_rhs(rhs_params):
             rhs_params = [param.replace('"', '') for param in rhs_params]
     return rhs_params
 
-def json_KeyTransformExact_process_rhs(self, compiler, connection):
-    if isinstance(self.rhs, KeyTransform):
-        return super(lookups.Exact, self).process_rhs(compiler, connection)
-    rhs, rhs_params = super(KeyTransformExact, self).process_rhs(compiler, connection)
 
-    return rhs, unquote_json_rhs(rhs_params)
+def json_KeyTransformExact_process_rhs(self, compiler, connection):
+    rhs, rhs_params = key_transform_exact_process_rhs(self, compiler, connection)
+    if connection.vendor == 'microsoft':
+        rhs_params = unquote_json_rhs(rhs_params)
+    return rhs, rhs_params
+
 
 def json_KeyTransformIn(self, compiler, connection):
     lhs, _ = super(KeyTransformIn, self).process_lhs(compiler, connection)
     rhs, rhs_params = super(KeyTransformIn, self).process_rhs(compiler, connection)
 
     return (lhs + ' IN ' + rhs, unquote_json_rhs(rhs_params))
+
 
 def json_HasKeyLookup(self, compiler, connection):
     # Process JSON path from the left-hand side.
@@ -193,6 +203,7 @@ def json_HasKeyLookup(self, compiler, connection):
 
     return sql % tuple(rhs_params), []
 
+
 def BinaryField_init(self, *args, **kwargs):
     # Add max_length option for BinaryField, default to max
     kwargs.setdefault('editable', False)
@@ -202,6 +213,7 @@ def BinaryField_init(self, *args, **kwargs):
     else:
         self.max_length = 'max'
 
+
 def _get_check_sql(self, model, schema_editor):
     if VERSION >= (3, 1):
         query = Query(model=model, alias_cols=False)
@@ -210,12 +222,15 @@ def _get_check_sql(self, model, schema_editor):
     where = query.build_where(self.check)
     compiler = query.get_compiler(connection=schema_editor.connection)
     sql, params = where.as_sql(compiler, schema_editor.connection)
-    try:
-        for p in params: str(p).encode('ascii')
-    except UnicodeEncodeError:
-        sql = sql.replace('%s', 'N%s')
+    if schema_editor.connection.vendor == 'microsoft':
+        try:
+            for p in params:
+                str(p).encode('ascii')
+        except UnicodeEncodeError:
+            sql = sql.replace('%s', 'N%s')
 
     return sql % tuple(schema_editor.quote_value(p) for p in params)
+
 
 def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
     """
@@ -255,10 +270,10 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
                 attr = getattr(obj, field.attname)
                 if not isinstance(attr, Expression):
                     if attr is None:
-                        value_none_counter+=1
+                        value_none_counter += 1
                     attr = Value(attr, output_field=field)
                 when_statements.append(When(pk=obj.pk, then=attr))
-            if(value_none_counter == len(when_statements)):
+            if connections[self.db].vendor == 'microsoft' and value_none_counter == len(when_statements):
                 case_statement = Case(*when_statements, output_field=field, default=Value(default))
             else:
                 case_statement = Case(*when_statements, output_field=field)
@@ -272,10 +287,15 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
             rows_updated += self.filter(pk__in=pks).update(**update_kwargs)
     return rows_updated
 
+
 ATan2.as_microsoft = sqlserver_atan2
+# Need copy of old In.split_parameter_list_as_sql for other backends to call
+in_split_parameter_list_as_sql = In.split_parameter_list_as_sql
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
     KeyTransformIn.as_microsoft = json_KeyTransformIn
+    # Need copy of old KeyTransformExact.process_rhs to call later
+    key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
     HasKeyLookup.as_microsoft = json_HasKeyLookup
 Ln.as_microsoft = sqlserver_ln

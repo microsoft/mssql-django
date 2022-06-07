@@ -319,7 +319,9 @@ class SQLCompiler(compiler.SQLCompiler):
                 # For subqueres with an ORDER BY clause, SQL Server also
                 # requires a TOP or OFFSET clause which is not generated for
                 # Django 2.x.  See https://github.com/microsoft/mssql-django/issues/12
-                if django.VERSION < (3, 0, 0) and not (do_offset or do_limit):
+                # Add OFFSET for all Django versions.
+                # https://github.com/microsoft/mssql-django/issues/109
+                if not (do_offset or do_limit):
                     result.append("OFFSET 0 ROWS")
 
             # SQL Server requires the backend-specific emulation (2008 or earlier)
@@ -426,6 +428,16 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
             return self.returning_fields
         return self.return_id
 
+    def can_return_columns_from_insert(self):
+        if django.VERSION >= (3, 0, 0):
+            return self.connection.features.can_return_columns_from_insert
+        return self.connection.features.can_return_id_from_insert
+
+    def can_return_rows_from_bulk_insert(self):
+        if django.VERSION >= (3, 0, 0):
+            return self.connection.features.can_return_rows_from_bulk_insert
+        return self.connection.features.can_return_ids_from_bulk_insert
+
     def fix_auto(self, sql, opts, fields, qn):
         if opts.auto_field is not None:
             # db_column is None if not explicitly specified by model field
@@ -441,15 +453,39 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
         return sql
 
+    def bulk_insert_default_values_sql(self, table):
+        seed_rows_number = 8
+        cross_join_power = 4  # 8^4 = 4096 > maximum allowed batch size for the backend = 1000
+
+        def generate_seed_rows(n):
+            return " UNION ALL ".join("SELECT 1 AS x" for _ in range(n))
+
+        def cross_join(p):
+            return ", ".join("SEED_ROWS AS _%s" % i for i in range(p))
+
+        return """
+        WITH SEED_ROWS AS (%s)
+            MERGE INTO %s
+            USING (
+                SELECT TOP %s * FROM (SELECT 1 as x FROM %s) FAKE_ROWS
+            ) FAKE_DATA
+            ON 1 = 0
+            WHEN NOT MATCHED THEN
+            INSERT DEFAULT VALUES
+        """ % (generate_seed_rows(seed_rows_number),
+               table,
+               len(self.query.objs),
+               cross_join(cross_join_power))
+
     def as_sql(self):
         # We don't need quote_name_unless_alias() here, since these are all
         # going to be column names (so we can avoid the extra overhead).
         qn = self.connection.ops.quote_name
         opts = self.query.get_meta()
         result = ['INSERT INTO %s' % qn(opts.db_table)]
-        fields = self.query.fields or [opts.pk]
 
         if self.query.fields:
+            fields = self.query.fields
             result.append('(%s)' % ', '.join(qn(f.column) for f in fields))
             values_format = 'VALUES (%s)'
             value_rows = [
@@ -470,11 +506,31 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
         placeholder_rows, param_rows = self.assemble_as_sql(fields, value_rows)
 
-        if self.get_returned_fields() and self.connection.features.can_return_id_from_insert:
-            result.insert(0, 'SET NOCOUNT ON')
-            result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
-            params = [param_rows[0]]
-            result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+        if self.get_returned_fields() and self.can_return_columns_from_insert():
+            if self.can_return_rows_from_bulk_insert():
+                if not(self.query.fields):
+                    # There isn't really a single statement to bulk multiple DEFAULT VALUES insertions,
+                    # so we have to use a workaround:
+                    # https://dba.stackexchange.com/questions/254771/insert-multiple-rows-into-a-table-with-only-an-identity-column
+                    result = [self.bulk_insert_default_values_sql(qn(opts.db_table))]
+                    r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
+                    if r_sql:
+                        result.append(r_sql)
+                    sql = " ".join(result) + ";"
+                    return [(sql, None)]
+                # Regular bulk insert
+                params = []
+                r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
+                if r_sql:
+                    result.append(r_sql)
+                    params += [self.returning_params]
+                params += param_rows
+                result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
+            else:
+                result.insert(0, 'SET NOCOUNT ON')
+                result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
+                params = [param_rows[0]]
+                result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
             sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
         else:
             if can_bulk:
