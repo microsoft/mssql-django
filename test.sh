@@ -105,6 +105,7 @@ coverage run tests/runtests.py --settings=testapp.settings --noinput \
     select_related_onetoone \
     select_related_regress \
     serializers \
+    timezones \
     transaction_hooks \
     transactions \
     update \

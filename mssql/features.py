@@ -46,7 +46,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_subqueries_in_group_by = False
     supports_tablespaces = True
     supports_temporal_subtraction = True
-    supports_timezones = False
+    supports_timezones = True
     supports_transactions = True
     uses_savepoints = True
     has_bulk_insert = True

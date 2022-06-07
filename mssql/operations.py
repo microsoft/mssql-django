@@ -4,6 +4,7 @@
 import datetime
 import uuid
 import warnings
+import sys
 
 from django.conf import settings
 from django.db.backends.base.operations import BaseDatabaseOperations
@@ -26,7 +27,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         return 2048
 
     def _convert_field_to_tz(self, field_name, tzname):
-        if settings.USE_TZ and not tzname == 'UTC':
+        if tzname and settings.USE_TZ and self.connection.timezone_name != tzname:
             offset = self._get_utcoffset(tzname)
             field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
         return field_name
@@ -107,7 +108,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def convert_datetimefield_value(self, value, expression, connection):
         if value is not None:
-            if settings.USE_TZ:
+            if settings.USE_TZ and not timezone.is_aware(value):
                 value = timezone.make_aware(value, self.connection.timezone)
         return value
 
@@ -129,6 +130,8 @@ class DatabaseOperations(BaseDatabaseOperations):
             return "DATEPART(weekday, %s)" % field_name
         elif lookup_type == 'week':
             return "DATEPART(iso_week, %s)" % field_name
+        elif lookup_type == 'iso_week_day':
+            return "DATEPART(weekday, DATEADD(day, -1, %s))" % field_name
         elif lookup_type == 'iso_year':
             return "YEAR(DATEADD(day, 26 - DATEPART(isoww, %s), %s))" % (field_name, field_name)
         else:
@@ -144,7 +147,8 @@ class DatabaseOperations(BaseDatabaseOperations):
             sql = 'DATEADD(microsecond, %d%%s, CAST(%s AS datetime2))' % (timedelta.microseconds, sql)
         return sql
 
-    def date_trunc_sql(self, lookup_type, field_name, tzname=''):
+    def date_trunc_sql(self, lookup_type, field_name, tzname=None):
+        field_name = self._convert_field_to_tz(field_name, tzname)
         CONVERT_YEAR = 'CONVERT(varchar, DATEPART(year, %s))' % field_name
         CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
         CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % field_name
@@ -480,9 +484,22 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         if value is None:
             return None
-        if settings.USE_TZ and timezone.is_aware(value):
-            # pyodbc donesn't support datetimeoffset
-            value = value.astimezone(self.connection.timezone).replace(tzinfo=None)
+
+        # Expression values are adapted by the database.
+        if hasattr(value, 'resolve_expression'):
+            return value
+
+        if timezone.is_aware(value):
+            if settings.USE_TZ:
+                # When support for time zones is enabled, Django stores datetime information
+                # in UTC in the database and uses time-zone-aware objects internally
+                # source: https://docs.djangoproject.com/en/dev/topics/i18n/timezones/#overview
+                value = value.astimezone(timezone.utc)
+            else:
+                # When USE_TZ is False, settings.TIME_ZONE is the time zone in
+                # which Django will store all datetimes
+                # source: https://docs.djangoproject.com/en/dev/ref/settings/#std:setting-TIME_ZONE
+                value = timezone.make_naive(value, self.connection.timezone)
         return value
 
     def time_trunc_sql(self, lookup_type, field_name, tzname=''):

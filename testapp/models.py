@@ -219,3 +219,6 @@ class Customer_address(models.Model):
     Customer_address = models.CharField(max_length=100)
     class Meta:
         ordering = ['Customer_address']
+
+class TimeZone(models.Model):
+    date = models.DateTimeField(default=timezone.now)
