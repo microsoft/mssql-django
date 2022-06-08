@@ -9,7 +9,7 @@ from django.db import NotSupportedError, connections, transaction
 from django.db.models import BooleanField, CheckConstraint, Value
 from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
 from django.db.models.fields import BinaryField, Field
-from django.db.models.functions import Cast, NthValue
+from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round
 from django.db.models.lookups import In, Lookup
 from django.db.models.query import QuerySet
@@ -288,6 +288,72 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
     return rows_updated
 
 
+# TODO: See if want to have one function or multiple functions for other hashes
+# TODO: See if I should change to not everything is VARCHAR(64)
+def sqlserver_md5(self, compiler, connection, **extra_context):
+    expr = self.get_source_expressions()
+    multipart_identifier = compiler.compile(expr[0])[0]
+    # s = tmp.split('.')
+    # table_name = compiler.query.model._meta.db_table
+    column_name = "".join(c for c in multipart_identifier if c not in '[]')
+    # TODO: Find out why string itself hashes differently than using column_name
+    test = "CONVERT(VARCHAR(64), HASHBYTES('%s', %s), 2)" % ('%(function)s', column_name)
+    breakpoint()
+    return self.as_sql(
+        compiler,
+        connection,
+        template=test,
+        **extra_context,
+    )
+
+
+def sqlserver_sha1(self, compiler, connection, **extra_context):
+    expr = self.get_source_expressions()
+    multipart_identifier = compiler.compile(expr[0])[0]
+    column_name = "".join(c for c in multipart_identifier if c not in '[]')
+    test = "CONVERT(VARCHAR(64), HASHBYTES('%s', %s), 2)" % ('%(function)s', column_name)
+    return self.as_sql(
+        compiler,
+        connection,
+        template=test,
+        **extra_context,
+    )
+
+
+def sqlserver_sha224(self, compiler, connection, **extra_context):
+    raise NotSupportedError("SHA224 is not supported on SQL Server.")
+
+
+def sqlserver_sha256(self, compiler, connection, **extra_context):
+    expr = self.get_source_expressions()
+    multipart_identifier = compiler.compile(expr[0])[0]
+    column_name = "".join(c for c in multipart_identifier if c not in '[]')
+    test = "CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', %s), 2)" % (column_name)
+    return self.as_sql(
+        compiler,
+        connection,
+        template=test,
+        **extra_context,
+    )
+
+
+def sqlserver_sha384(self, compiler, connection, **extra_context):
+    raise NotSupportedError("SHA384 is not supported on Oracle.")
+
+
+def sqlserver_sha512(self, compiler, connection, **extra_context):
+    expr = self.get_source_expressions()
+    multipart_identifier = compiler.compile(expr[0])[0]
+    column_name = "".join(c for c in multipart_identifier if c not in '[]')
+    test = "CONVERT(VARCHAR(64), HASHBYTES('SHA2_512', %s), 2)" % (column_name)
+    return self.as_sql(
+        compiler,
+        connection,
+        template=test,
+        **extra_context,
+    )
+
+
 # `as_microsoft` called by django.db.models.sql.compiler based on connection.vendor
 ATan2.as_microsoft = sqlserver_atan2
 # Need copy of old In.split_parameter_list_as_sql for other backends to call
@@ -305,6 +371,12 @@ Mod.as_microsoft = sqlserver_mod
 NthValue.as_microsoft = sqlserver_nth_value
 Round.as_microsoft = sqlserver_round
 Window.as_microsoft = sqlserver_window
+MD5.as_microsoft = sqlserver_md5
+SHA1.as_microsoft = sqlserver_sha1
+SHA224.as_microsoft = sqlserver_sha224
+SHA256.as_microsoft = sqlserver_sha256
+SHA384.as_microsoft = sqlserver_sha384
+SHA512.as_microsoft = sqlserver_sha512
 BinaryField.__init__ = BinaryField_init
 CheckConstraint._get_check_sql = _get_check_sql
 
