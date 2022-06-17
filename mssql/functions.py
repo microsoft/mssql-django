@@ -288,21 +288,18 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
     return rows_updated
 
 
-# TODO: See if want to have one function or multiple functions for other hashes
-# TODO: See if I should change to not everything is VARCHAR(64)
 def sqlserver_md5(self, compiler, connection, **extra_context):
     expr = self.get_source_expressions()
     multipart_identifier = compiler.compile(expr[0])[0]
-    # s = tmp.split('.')
-    # table_name = compiler.query.model._meta.db_table
     column_name = "".join(c for c in multipart_identifier if c not in '[]')
-    # TODO: Find out why string itself hashes differently than using column_name
-    test = "CONVERT(VARCHAR(64), HASHBYTES('%s', %s), 2)" % ('%(function)s', column_name)
-    breakpoint()
+    # TODO: See if I should change VARCHAR(200) since size of column unknown
+    # TODO: See if I should change everything to VARCHAR(64)
+    # Because collation of SQL Server be default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
     return self.as_sql(
         compiler,
         connection,
-        template=test,
+        template="LOWER(CONVERT(CHAR(32), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(200))), 2))" % ('%(function)s', column_name),
         **extra_context,
     )
 
@@ -311,11 +308,10 @@ def sqlserver_sha1(self, compiler, connection, **extra_context):
     expr = self.get_source_expressions()
     multipart_identifier = compiler.compile(expr[0])[0]
     column_name = "".join(c for c in multipart_identifier if c not in '[]')
-    test = "CONVERT(VARCHAR(64), HASHBYTES('%s', %s), 2)" % ('%(function)s', column_name)
     return self.as_sql(
         compiler,
         connection,
-        template=test,
+        template="LOWER(CONVERT(CHAR(40), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(200))), 2))" % ('%(function)s', column_name),
         **extra_context,
     )
 
@@ -328,11 +324,10 @@ def sqlserver_sha256(self, compiler, connection, **extra_context):
     expr = self.get_source_expressions()
     multipart_identifier = compiler.compile(expr[0])[0]
     column_name = "".join(c for c in multipart_identifier if c not in '[]')
-    test = "CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', %s), 2)" % (column_name)
     return self.as_sql(
         compiler,
         connection,
-        template=test,
+        template="LOWER(CONVERT(CHAR(64), HASHBYTES('SHA2_256', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(200))), 2))" % (column_name),
         **extra_context,
     )
 
@@ -345,11 +340,10 @@ def sqlserver_sha512(self, compiler, connection, **extra_context):
     expr = self.get_source_expressions()
     multipart_identifier = compiler.compile(expr[0])[0]
     column_name = "".join(c for c in multipart_identifier if c not in '[]')
-    test = "CONVERT(VARCHAR(64), HASHBYTES('SHA2_512', %s), 2)" % (column_name)
     return self.as_sql(
         compiler,
         connection,
-        template=test,
+        template="LOWER(CONVERT(CHAR(128), HASHBYTES('SHA2_512', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(200))), 2))" % (column_name),
         **extra_context,
     )
 
