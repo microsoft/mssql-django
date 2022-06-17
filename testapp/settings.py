@@ -130,7 +130,6 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_alter_int_pk_to_autofield_pk',
     'schema.tests.SchemaTests.test_alter_int_pk_to_bigautofield_pk',
     'schema.tests.SchemaTests.test_alter_pk_with_self_referential_field',
-    'schema.tests.SchemaTests.test_no_db_constraint_added_during_primary_key_change',
     'schema.tests.SchemaTests.test_remove_field_check_does_not_remove_meta_constraints',
     'schema.tests.SchemaTests.test_remove_field_unique_does_not_remove_meta_constraints',
     'schema.tests.SchemaTests.test_text_field_with_db_index',
@@ -138,7 +137,6 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_unique_together_with_fk_with_existing_index',
     'aggregation.tests.AggregateTestCase.test_count_star',
     'aggregation_regress.tests.AggregationTests.test_values_list_annotation_args_ordering',
-    'datatypes.tests.DataTypesTestCase.test_error_on_timezone',
     'db_functions.math.test_degrees.DegreesTests.test_integer',
     'db_functions.math.test_power.PowerTests.test_integer',
     'db_functions.math.test_radians.RadiansTests.test_integer',
@@ -161,7 +159,6 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_unique_no_unnecessary_fk_drops',
     'select_for_update.tests.SelectForUpdateTests.test_for_update_after_from',
     'backends.tests.LastExecutedQueryTest.test_last_executed_query',
-    'db_functions.datetime.test_now.NowTests.test_basic',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_exact_lookup',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_greaterthan_lookup',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_lessthan_lookup',
@@ -190,14 +187,10 @@ EXCLUDED_TESTS = [
     'db_functions.text.test_sha384.SHA384Tests.test_transform',
     'db_functions.text.test_sha512.SHA512Tests.test_basic',
     'db_functions.text.test_sha512.SHA512Tests.test_transform',
-    'expressions.tests.BasicExpressionsTests.test_case_in_filter_if_boolean_output_field',
-    'expressions.tests.BasicExpressionsTests.test_subquery_in_filter',
     'expressions.tests.FTimeDeltaTests.test_date_subquery_subtraction',
     'expressions.tests.FTimeDeltaTests.test_datetime_subquery_subtraction',
     'expressions.tests.FTimeDeltaTests.test_time_subquery_subtraction',
-    'expressions.tests.BasicExpressionsTests.test_filtering_on_q_that_is_boolean',
     'migrations.test_operations.OperationTests.test_alter_field_reloads_state_on_fk_with_to_field_target_type_change',
-    'schema.tests.SchemaTests.test_alter_primary_key_quoted_db_table',
     'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk',
     
     'annotations.tests.NonAggregateAnnotationTestCase.test_combined_expression_annotation_with_aggregation',
@@ -277,10 +270,8 @@ EXCLUDED_TESTS = [
     # Timezone
     'timezones.tests.NewDatabaseTests.test_cursor_explicit_time_zone',
     # Skipped next tests because pyodbc drops timezone https://github.com/mkleehammer/pyodbc/issues/810
-    #LegacyDatabaseTests
     'timezones.tests.LegacyDatabaseTests.test_cursor_execute_accepts_naive_datetime',
     'timezones.tests.LegacyDatabaseTests.test_cursor_execute_returns_naive_datetime',
-    # NewDatabaseTests
     'timezones.tests.NewDatabaseTests.test_cursor_execute_accepts_naive_datetime',
     'timezones.tests.NewDatabaseTests.test_cursor_execute_returns_naive_datetime',
     'timezones.tests.NewDatabaseTests.test_cursor_execute_accepts_aware_datetime',
