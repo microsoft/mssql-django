@@ -289,29 +289,47 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
 
 
 def sqlserver_md5(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
     expr = self.get_source_expressions()
     multipart_identifier = compiler.compile(expr[0])[0]
     column_name = "".join(c for c in multipart_identifier if c not in '[]')
-    # TODO: See if I should change VARCHAR(200) since size of column unknown
-    # TODO: See if I should change everything to VARCHAR(64)
-    # Because collation of SQL Server be default is UTF-16 but Django always assumes UTF-8 enconding
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
     # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
     return self.as_sql(
         compiler,
         connection,
-        template="LOWER(CONVERT(CHAR(32), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(200))), 2))" % ('%(function)s', column_name),
+        template="LOWER(CONVERT(CHAR(32), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % ('%(function)s', column_name, max_size),
         **extra_context,
     )
 
 
 def sqlserver_sha1(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
     expr = self.get_source_expressions()
     multipart_identifier = compiler.compile(expr[0])[0]
     column_name = "".join(c for c in multipart_identifier if c not in '[]')
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
     return self.as_sql(
         compiler,
         connection,
-        template="LOWER(CONVERT(CHAR(40), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(200))), 2))" % ('%(function)s', column_name),
+        template="LOWER(CONVERT(CHAR(40), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % ('%(function)s', column_name, max_size),
         **extra_context,
     )
 
@@ -321,29 +339,51 @@ def sqlserver_sha224(self, compiler, connection, **extra_context):
 
 
 def sqlserver_sha256(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
     expr = self.get_source_expressions()
     multipart_identifier = compiler.compile(expr[0])[0]
     column_name = "".join(c for c in multipart_identifier if c not in '[]')
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
     return self.as_sql(
         compiler,
         connection,
-        template="LOWER(CONVERT(CHAR(64), HASHBYTES('SHA2_256', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(200))), 2))" % (column_name),
+        template="LOWER(CONVERT(CHAR(64), HASHBYTES('SHA2_256', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % (column_name, max_size),
         **extra_context,
     )
 
 
 def sqlserver_sha384(self, compiler, connection, **extra_context):
-    raise NotSupportedError("SHA384 is not supported on Oracle.")
+    raise NotSupportedError("SHA384 is not supported on SQL Server.")
 
 
 def sqlserver_sha512(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
     expr = self.get_source_expressions()
     multipart_identifier = compiler.compile(expr[0])[0]
     column_name = "".join(c for c in multipart_identifier if c not in '[]')
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
     return self.as_sql(
         compiler,
         connection,
-        template="LOWER(CONVERT(CHAR(128), HASHBYTES('SHA2_512', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(200))), 2))" % (column_name),
+        template="LOWER(CONVERT(CHAR(128), HASHBYTES('SHA2_512', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % (column_name, max_size),
         **extra_context,
     )
 
