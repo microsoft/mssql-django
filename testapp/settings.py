@@ -175,8 +175,6 @@ EXCLUDED_TESTS = [
     'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_exists',
     'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_values_collision',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_func_with_timezone',
-    'expressions.tests.BasicExpressionsTests.test_case_in_filter_if_boolean_output_field',
-    'expressions.tests.BasicExpressionsTests.test_subquery_in_filter',
     'expressions.tests.FTimeDeltaTests.test_date_subquery_subtraction',
     'expressions.tests.FTimeDeltaTests.test_datetime_subquery_subtraction',
     'expressions.tests.FTimeDeltaTests.test_time_subquery_subtraction',
