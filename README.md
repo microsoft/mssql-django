@@ -125,7 +125,7 @@ Dictionary. Current available keys are:
    for each database session. Valid values for this entry are
    `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`,
    `SNAPSHOT`, and `SERIALIZABLE`. Default is `None` which means
-   no isolation levei is set to a database session and SQL Server default
+   no isolation level is set to a database session and SQL Server default
    will be used.
 
 -  dsn
