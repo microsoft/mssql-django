@@ -9,7 +9,7 @@ from django.db import NotSupportedError, connections, transaction
 from django.db.models import BooleanField, CheckConstraint, Value
 from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
 from django.db.models.fields import BinaryField, Field
-from django.db.models.functions import Cast, NthValue
+from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round
 from django.db.models.lookups import In, Lookup
 from django.db.models.query import QuerySet
@@ -288,6 +288,98 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
     return rows_updated
 
 
+def sqlserver_md5(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
+    column_name = self.get_source_fields()[0].name
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    return self.as_sql(
+        compiler,
+        connection,
+        template="LOWER(CONVERT(CHAR(32), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % ('%(function)s', column_name, max_size),
+        **extra_context,
+    )
+
+
+def sqlserver_sha1(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
+    column_name = self.get_source_fields()[0].name
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
+    return self.as_sql(
+        compiler,
+        connection,
+        template="LOWER(CONVERT(CHAR(40), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % ('%(function)s', column_name, max_size),
+        **extra_context,
+    )
+
+
+def sqlserver_sha224(self, compiler, connection, **extra_context):
+    raise NotSupportedError("SHA224 is not supported on SQL Server.")
+
+
+def sqlserver_sha256(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
+    column_name = self.get_source_fields()[0].name
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
+    return self.as_sql(
+        compiler,
+        connection,
+        template="LOWER(CONVERT(CHAR(64), HASHBYTES('SHA2_256', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % (column_name, max_size),
+        **extra_context,
+    )
+
+
+def sqlserver_sha384(self, compiler, connection, **extra_context):
+    raise NotSupportedError("SHA384 is not supported on SQL Server.")
+
+
+def sqlserver_sha512(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
+    column_name = self.get_source_fields()[0].name
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
+    return self.as_sql(
+        compiler,
+        connection,
+        template="LOWER(CONVERT(CHAR(128), HASHBYTES('SHA2_512', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % (column_name, max_size),
+        **extra_context,
+    )
+
+
 # `as_microsoft` called by django.db.models.sql.compiler based on connection.vendor
 ATan2.as_microsoft = sqlserver_atan2
 # Need copy of old In.split_parameter_list_as_sql for other backends to call
@@ -305,6 +397,12 @@ Mod.as_microsoft = sqlserver_mod
 NthValue.as_microsoft = sqlserver_nth_value
 Round.as_microsoft = sqlserver_round
 Window.as_microsoft = sqlserver_window
+MD5.as_microsoft = sqlserver_md5
+SHA1.as_microsoft = sqlserver_sha1
+SHA224.as_microsoft = sqlserver_sha224
+SHA256.as_microsoft = sqlserver_sha256
+SHA384.as_microsoft = sqlserver_sha384
+SHA512.as_microsoft = sqlserver_sha512
 BinaryField.__init__ = BinaryField_init
 CheckConstraint._get_check_sql = _get_check_sql
 

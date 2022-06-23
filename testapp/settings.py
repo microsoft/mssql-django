@@ -175,18 +175,6 @@ EXCLUDED_TESTS = [
     'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_exists',
     'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_values_collision',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_func_with_timezone',
-    'db_functions.text.test_md5.MD5Tests.test_basic',
-    'db_functions.text.test_md5.MD5Tests.test_transform',
-    'db_functions.text.test_sha1.SHA1Tests.test_basic',
-    'db_functions.text.test_sha1.SHA1Tests.test_transform',
-    'db_functions.text.test_sha224.SHA224Tests.test_basic',
-    'db_functions.text.test_sha224.SHA224Tests.test_transform',
-    'db_functions.text.test_sha256.SHA256Tests.test_basic',
-    'db_functions.text.test_sha256.SHA256Tests.test_transform',
-    'db_functions.text.test_sha384.SHA384Tests.test_basic',
-    'db_functions.text.test_sha384.SHA384Tests.test_transform',
-    'db_functions.text.test_sha512.SHA512Tests.test_basic',
-    'db_functions.text.test_sha512.SHA512Tests.test_transform',
     'expressions.tests.FTimeDeltaTests.test_date_subquery_subtraction',
     'expressions.tests.FTimeDeltaTests.test_datetime_subquery_subtraction',
     'expressions.tests.FTimeDeltaTests.test_time_subquery_subtraction',
@@ -266,6 +254,22 @@ EXCLUDED_TESTS = [
     'migrations.test_operations.OperationTests.test_alter_field_pk_mti_fk',
     'migrations.test_operations.OperationTests.test_run_sql_add_missing_semicolon_on_collect_sql',
     'migrations.test_operations.OperationTests.test_alter_field_pk_mti_and_fk_to_base',
+
+    # Hashing
+    # UTF-8 support was added in SQL Server 2019
+    'db_functions.text.test_md5.MD5Tests.test_basic',
+    'db_functions.text.test_md5.MD5Tests.test_transform',
+    'db_functions.text.test_sha1.SHA1Tests.test_basic',
+    'db_functions.text.test_sha1.SHA1Tests.test_transform',
+    'db_functions.text.test_sha256.SHA256Tests.test_basic',
+    'db_functions.text.test_sha256.SHA256Tests.test_transform',
+    'db_functions.text.test_sha512.SHA512Tests.test_basic',
+    'db_functions.text.test_sha512.SHA512Tests.test_transform',
+    # SQL Server doesn't support SHA224 or SHA387
+    'db_functions.text.test_sha224.SHA224Tests.test_basic',
+    'db_functions.text.test_sha224.SHA224Tests.test_transform',
+    'db_functions.text.test_sha384.SHA384Tests.test_basic',
+    'db_functions.text.test_sha384.SHA384Tests.test_transform',
 
     # Timezone
     'timezones.tests.NewDatabaseTests.test_cursor_explicit_time_zone',
