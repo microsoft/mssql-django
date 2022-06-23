@@ -293,9 +293,7 @@ def sqlserver_md5(self, compiler, connection, **extra_context):
     if (connection.sql_server_version < 2019):
         raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
 
-    expr = self.get_source_expressions()
-    multipart_identifier = compiler.compile(expr[0])[0]
-    column_name = "".join(c for c in multipart_identifier if c not in '[]')
+    column_name = self.get_source_fields()[0].name
 
     with connection.cursor() as cursor:
         cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
@@ -316,9 +314,7 @@ def sqlserver_sha1(self, compiler, connection, **extra_context):
     if (connection.sql_server_version < 2019):
         raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
 
-    expr = self.get_source_expressions()
-    multipart_identifier = compiler.compile(expr[0])[0]
-    column_name = "".join(c for c in multipart_identifier if c not in '[]')
+    column_name = self.get_source_fields()[0].name
 
     # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
     # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
@@ -343,9 +339,7 @@ def sqlserver_sha256(self, compiler, connection, **extra_context):
     if (connection.sql_server_version < 2019):
         raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
 
-    expr = self.get_source_expressions()
-    multipart_identifier = compiler.compile(expr[0])[0]
-    column_name = "".join(c for c in multipart_identifier if c not in '[]')
+    column_name = self.get_source_fields()[0].name
 
     # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
     # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
@@ -370,9 +364,7 @@ def sqlserver_sha512(self, compiler, connection, **extra_context):
     if (connection.sql_server_version < 2019):
         raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
 
-    expr = self.get_source_expressions()
-    multipart_identifier = compiler.compile(expr[0])[0]
-    column_name = "".join(c for c in multipart_identifier if c not in '[]')
+    column_name = self.get_source_fields()[0].name
 
     # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
     # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
