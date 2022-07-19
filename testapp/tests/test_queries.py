@@ -7,8 +7,8 @@ from ..models import Author
 class TestTableWithTrigger(TransactionTestCase):
     def test_insert_into_table_with_trigger(self):
         connection = connections['default']
-        # Change can_return_rows_from_bulk_insert since it is
-        # initially calculated before trigger get created by this test
+        # Change can_return_rows_from_bulk_insert to be the same as when
+        # has_trigger = True
         connection.features_class.can_return_rows_from_bulk_insert = False
 
         with connection.schema_editor() as cursor:
