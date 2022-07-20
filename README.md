@@ -210,6 +210,20 @@ Dictionary. Current available keys are:
   Default value is False which allows for the backend to
   return rows from bulk insert.
 
+  ```python
+  # Examples
+  "OPTIONS": {
+      # This database has triggers so set has_trigger to True
+      # to prevent errors related to returning rows from bulk insert
+      "has_trigger": True
+  }
+
+  "OPTIONS": {
+      # This database doesn't have any triggers so don't need to 
+      # add has_trigger since it is False by default
+  }
+  ```
+
 ### Backend-specific settings
 
 The following project-level settings also control the behavior of the backend:
