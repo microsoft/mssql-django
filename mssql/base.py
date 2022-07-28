@@ -103,7 +103,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'BooleanField': 'bit',
         'CharField': 'nvarchar(%(max_length)s)',
         'DateField': 'date',
-        'DateTimeField': 'datetimeoffset',
+        'DateTimeField': 'datetime2',
         'DecimalField': 'numeric(%(max_digits)s, %(decimal_places)s)',
         'DurationField': 'bigint',
         'FileField': 'nvarchar(%(max_length)s)',
@@ -241,6 +241,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 if sql.startswith('LIKE '):
                     ops[op] = '%s COLLATE %s' % (sql, collation)
             self.operators.update(ops)
+
+        if (settings.USE_TZ):
+            self.data_types['DateTimeField'] ='datetimeoffset'
 
     def create_cursor(self, name=None):
         return CursorWrapper(self.connection.cursor(), self)
