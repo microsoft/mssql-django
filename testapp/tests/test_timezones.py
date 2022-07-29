@@ -51,7 +51,7 @@ class TestDateTimeToDateTimeOffsetMigration(TestCase):
         dto = TimeZone.objects.get(id=self.time.id).date
 
         try:
-            self.assertEquals(dt, dto.replace(tzinfo=None))
+            self.assertEqual(dt, dto.replace(tzinfo=None))
         finally:
             # Migrate back to DATETIME2 for other unit tests
             with connection.schema_editor() as cursor:
@@ -76,7 +76,7 @@ class TestDateTimeToDateTimeOffsetMigration(TestCase):
 
         try:
             # Africa/Nairobi (EAT) offset is +03:00
-            self.assertEquals(dt - datetime.timedelta(hours=3), dto.replace(tzinfo=None))
+            self.assertEqual(dt - datetime.timedelta(hours=3), dto.replace(tzinfo=None))
         finally:
             # Migrate back to DATETIME2 for other unit tests
             with connection.schema_editor() as cursor:
@@ -100,7 +100,7 @@ class TestDateTimeToDateTimeOffsetMigration(TestCase):
         dto = TimeZone.objects.get(id=self.time.id).date
 
         try:
-            self.assertEquals(dt - datetime.timedelta(hours=7), dto.replace(tzinfo=None))
+            self.assertEqual(dt - datetime.timedelta(hours=7), dto.replace(tzinfo=None))
         finally:
             # Migrate back to DATETIME2 for other unit tests
             with connection.schema_editor() as cursor:
