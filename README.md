@@ -204,23 +204,24 @@ Dictionary. Current available keys are:
             },
     ```
 
-- has_trigger
+- return_rows_bulk_insert
 
   Boolean. Sets if backend can return rows from bulk insert.
-  Default value is False which allows for the backend to
-  return rows from bulk insert.
+  Default value is False which doesn't allows for the backend to
+  return rows from bulk insert. Must be set to False if database
+  has tables with triggers to prevent errors when inserting.
 
   ```python
   # Examples
   "OPTIONS": {
-      # This database has triggers so set has_trigger to True
-      # to prevent errors related to returning rows from bulk insert
-      "has_trigger": True
+      # This database doesn't have any triggers so can use return
+      # rows from bulk insert feature
+      "return_rows_bulk_insert": True
   }
 
   "OPTIONS": {
-      # This database doesn't have any triggers so don't need to 
-      # add has_trigger since it is False by default
+      # This database has triggers so leave return_rows_bulk_insert as blank (False)
+      # to prevent errors related to inserting and returning rows from bulk insert
   }
   ```
 

@@ -424,10 +424,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         datefirst = options.get('datefirst', 7)
         cursor.execute('SET DATEFORMAT ymd; SET DATEFIRST %s' % datefirst)
 
-        # If there are triggers set can_return_rows_from_bulk_insert to
-        # False to prevent errors when inserting. See issue #130
-        if (options.get('has_trigger', False)):
-            self.features_class.can_return_rows_from_bulk_insert = False
+        # Let user choose if driver can return rows from bulk insert since
+        # inserting into tables with triggers causes errors. See issue #130
+        if (options.get('return_rows_bulk_insert', False)):
+            self.features_class.can_return_rows_from_bulk_insert = True
 
         val = self.get_system_datetime()
         if isinstance(val, str):
