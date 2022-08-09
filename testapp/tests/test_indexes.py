@@ -3,7 +3,9 @@ import logging
 import django.db
 from django import VERSION
 from django.apps import apps
-from django.db import models
+from django.db import models, migrations
+from django.db.migrations.migration import Migration
+from django.db.migrations.state import ProjectState
 from django.db.models import UniqueConstraint
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler, ProgrammingError
 from django.test import TestCase
@@ -175,3 +177,36 @@ class TestIndexesBeingDropped(TestCase):
                 editor.alter_field(Choice, old_field, new_field, strict=True)
         except ProgrammingError:
             self.fail("Unique indexes not being dropped")
+
+class TestAddAndAlterUniqueIndex(TestCase):
+
+    def test_alter_unique_nullable_to_non_nullable(self):
+        """
+        Test a single migration that creates a field with unique=True and null=True and then alters
+        the field to set null=False. See https://github.com/microsoft/mssql-django/issues/22
+        """
+        operations = [
+            migrations.CreateModel(
+                "TestAlterNullableInUniqueField",
+                [
+                    ("id", models.AutoField(primary_key=True)),
+                    ("a", models.CharField(max_length=4, unique=True, null=True)),
+                ]
+            ),
+            migrations.AlterField(
+                "testalternullableinuniquefield",
+                "a",
+                models.CharField(max_length=4, unique=True)
+            )
+        ]
+
+        project_state = ProjectState()
+        new_state = project_state.clone()
+        migration = Migration("name", "testapp")
+        migration.operations = operations
+
+        try:
+            with connection.schema_editor(atomic=True) as editor:
+                migration.apply(new_state, editor)
+        except django.db.utils.ProgrammingError as e:
+            self.fail('Check if can alter field from unique, nullable to unique non-nullable for issue #23, AlterField failed with exception: %s' % e)
