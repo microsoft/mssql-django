@@ -280,6 +280,10 @@ EXCLUDED_TESTS = [
     'timezones.tests.NewDatabaseTests.test_cursor_execute_returns_naive_datetime',
     'timezones.tests.NewDatabaseTests.test_cursor_execute_accepts_aware_datetime',
     'timezones.tests.NewDatabaseTests.test_cursor_execute_returns_aware_datetime',
+
+    # Django 4.1
+    'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_lookup_name_sql_injection',
+    'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection'
 ]
 
 REGEX_TESTS = [
