@@ -2,6 +2,7 @@
 # Licensed under the BSD license.
 
 import datetime
+import math
 import uuid
 import warnings
 import sys
@@ -105,7 +106,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         elif connector == '<<':
             return '%s * (2 * %s)' % tuple(sub_expressions)
         elif connector == '>>':
-            return '%s / (2 * %s)' % tuple(sub_expressions)
+            return 'FLOOR(CONVERT(float, %s) / POWER(2, %s))' % tuple(sub_expressions)
         return super().combine_expression(connector, sub_expressions)
 
     def convert_datetimefield_value(self, value, expression, connection):
