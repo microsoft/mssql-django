@@ -2,6 +2,7 @@
 # Licensed under the BSD license.
 
 import json
+import math
 
 from django import VERSION
 from django.core import validators
@@ -10,7 +11,7 @@ from django.db.models import BooleanField, CheckConstraint, Value
 from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
-from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round
+from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round, Degrees, Radians, Power
 from django.db.models.lookups import In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
@@ -43,6 +44,29 @@ def sqlserver_log(self, compiler, connection, **extra_context):
 def sqlserver_ln(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, function='LOG', **extra_context)
 
+def sqlserver_degrees(self, compiler, connection, **extra_context):
+    return self.as_sql(
+            compiler, connection, function='DEGREES',
+            template= '(CONVERT(float, (%%(expressions)s)) * 180 / %s)' % math.pi,
+            **extra_context
+        )
+
+def sqlserver_radians(self, compiler, connection, **extra_context):
+    return self.as_sql(
+            compiler, connection, function='RADIANS',
+            template= '((%%(expressions)s) * %s / 180)' % math.pi, 
+            **extra_context
+        )
+
+def sqlserver_power(self, compiler, connection, **extra_context):
+    expr = self.get_source_expressions()
+    number_a = compiler.compile(expr[0])
+    number_b = compiler.compile(expr[1])
+    return self.as_sql(
+            compiler, connection, function='POWER',
+            template = 'POWER(CONVERT(float,{a}),{b})'.format(a=number_a[0], b=number_b[0]),
+            **extra_context
+        )
 
 def sqlserver_mod(self, compiler, connection):
     # MSSQL doesn't have keyword MOD
@@ -391,6 +415,9 @@ if VERSION >= (3, 1):
     key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
     HasKeyLookup.as_microsoft = json_HasKeyLookup
+Degrees.as_microsoft = sqlserver_degrees
+Radians.as_microsoft = sqlserver_radians
+Power.as_microsoft = sqlserver_power
 Ln.as_microsoft = sqlserver_ln
 Log.as_microsoft = sqlserver_log
 Mod.as_microsoft = sqlserver_mod
