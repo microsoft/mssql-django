@@ -2,6 +2,8 @@
 # Licensed under the BSD license.
 
 import json
+import math
+from re import T
 
 from django import VERSION
 from django.core import validators
@@ -14,6 +16,7 @@ from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round
 from django.db.models.lookups import In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
+from django.db.models.functions.text import Replace
 
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
@@ -43,6 +46,13 @@ def sqlserver_log(self, compiler, connection, **extra_context):
 def sqlserver_ln(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, function='LOG', **extra_context)
 
+
+def sqlserver_replace(self, compiler, connection, **extra_context):
+    return self.as_sql(
+            compiler, connection, function='REPLACE',
+            template = 'REPLACE(%(expressions)s COLLATE Latin1_General_CS_AS)',
+            **extra_context
+        )
 
 def sqlserver_mod(self, compiler, connection):
     # MSSQL doesn't have keyword MOD
@@ -391,6 +401,7 @@ if VERSION >= (3, 1):
     key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
     HasKeyLookup.as_microsoft = json_HasKeyLookup
+Replace.as_microsoft = sqlserver_replace
 Ln.as_microsoft = sqlserver_ln
 Log.as_microsoft = sqlserver_log
 Mod.as_microsoft = sqlserver_mod
