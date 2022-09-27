@@ -2,7 +2,6 @@
 # Licensed under the BSD license.
 
 import json
-import math
 from re import T
 
 from django import VERSION
