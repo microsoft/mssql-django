@@ -7,6 +7,8 @@ assignees: ''
 
 ---
 
+There are some features which are not supported yet. Please check the [Limitations](https://github.com/microsoft/mssql-django#limitations) first to see if your bug is listed.
+
 **Software versions**
 * Django:
 * mssql-django:
