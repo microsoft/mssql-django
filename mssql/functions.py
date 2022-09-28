@@ -2,7 +2,6 @@
 # Licensed under the BSD license.
 
 import json
-from re import T
 
 from django import VERSION
 from django.core import validators
