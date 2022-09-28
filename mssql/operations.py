@@ -108,6 +108,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         if connector == '^':
             return 'POWER(%s)' % ','.join(sub_expressions)
+        elif connector == '#':
+            return '%s ^ %s' % tuple(sub_expressions)
         elif connector == '<<':
             return '%s * (2 * %s)' % tuple(sub_expressions)
         elif connector == '>>':

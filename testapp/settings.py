@@ -188,8 +188,6 @@ EXCLUDED_TESTS = [
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_func',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_iso_weekday_func',
     'datetimes.tests.DateTimesTests.test_datetimes_ambiguous_and_invalid_times',
-    'expressions.tests.ExpressionOperatorTests.test_lefthand_bitwise_xor',
-    'expressions.tests.ExpressionOperatorTests.test_lefthand_bitwise_xor_null',
     'inspectdb.tests.InspectDBTestCase.test_number_field_types',
     'inspectdb.tests.InspectDBTestCase.test_json_field',
     'ordering.tests.OrderingTests.test_default_ordering_by_f_expression',
