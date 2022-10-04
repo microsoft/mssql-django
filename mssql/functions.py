@@ -2,7 +2,6 @@
 # Licensed under the BSD license.
 
 import json
-import math
 
 from django import VERSION
 from django.core import validators
@@ -47,14 +46,14 @@ def sqlserver_ln(self, compiler, connection, **extra_context):
 def sqlserver_degrees(self, compiler, connection, **extra_context):
     return self.as_sql(
             compiler, connection, function='DEGREES',
-            template= '(CONVERT(float, (%%(expressions)s)) * 180 / %s)' % math.pi,
+            template= 'DEGREES(CONVERT(float, %(expressions)s))',
             **extra_context
         )
 
 def sqlserver_radians(self, compiler, connection, **extra_context):
     return self.as_sql(
             compiler, connection, function='RADIANS',
-            template= '((%%(expressions)s) * %s / 180)' % math.pi, 
+            template= 'RADIANS(CONVERT(float, %(expressions)s))', 
             **extra_context
         )
 
