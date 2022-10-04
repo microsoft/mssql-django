@@ -141,7 +141,6 @@ EXCLUDED_TESTS = [
     'db_functions.math.test_power.PowerTests.test_integer',
     'db_functions.math.test_radians.RadiansTests.test_integer',
     'db_functions.text.test_pad.PadTests.test_pad',
-    'expressions.tests.ExpressionOperatorTests.test_lefthand_bitwise_right_shift_operator',
     'expressions.tests.FTimeDeltaTests.test_invalid_operator',
     'fixtures_regress.tests.TestFixtures.test_loaddata_raises_error_when_fixture_has_invalid_foreign_key',
     'invalid_models_tests.test_ordinary_fields.TextFieldTests.test_max_length_warning',
