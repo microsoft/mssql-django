@@ -175,7 +175,10 @@ class DatabaseOperations(BaseDatabaseOperations):
     if DJANGO41:
         def date_trunc_sql(self, lookup_type, sql, params, tzname=None):
             sql, params = self._convert_sql_to_tz(sql, params, tzname)
-            CONVERT_YEAR = 'CONVERT(varchar, DATEPART(year, %s))' % sql
+            
+            # Python formats year with leading zeroes. This preserves that format for 
+            # compatibility with SQL Server's date since DATEPART drops the leading zeroes.
+            CONVERT_YEAR = 'CONVERT(varchar(4), %s)' % sql
             CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % sql
             CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % sql
             CONVERT_WEEK = "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, %s)" % (sql, sql)
@@ -194,7 +197,10 @@ class DatabaseOperations(BaseDatabaseOperations):
     else:
         def date_trunc_sql(self, lookup_type, field_name, tzname=None):
             field_name = self._convert_field_to_tz(field_name, tzname)
-            CONVERT_YEAR = 'CONVERT(varchar, DATEPART(year, %s))' % field_name
+            
+            # Python formats year with leading zeroes. This preserves that format for 
+            # compatibility with SQL Server's date since DATEPART drops the leading zeroes.
+            CONVERT_YEAR = 'CONVERT(varchar(4), %s)' % field_name
             CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
             CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % field_name
             CONVERT_WEEK = "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, %s)" % (field_name, field_name)
