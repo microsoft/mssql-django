@@ -17,7 +17,6 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     can_use_chunked_reads = False
     for_update_after_from = True
     greatest_least_ignores_nulls = True
-    has_case_insensitive_like = True
     has_json_object_function = False
     has_json_operators = False
     has_native_json_field = False
