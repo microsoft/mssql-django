@@ -281,7 +281,9 @@ class SQLCompiler(compiler.SQLCompiler):
                 if for_update_part and self.connection.features.for_update_after_from:
                     from_.insert(1, for_update_part)
 
-                result += [', '.join(out_cols), 'FROM', *from_]
+                result += [', '.join(out_cols)]
+                if from_:
+                    result += ['FROM', *from_]
                 params.extend(f_params)
 
                 if where:
