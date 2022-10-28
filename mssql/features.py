@@ -65,3 +65,10 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     @cached_property
     def supports_json_field(self):
         return self.connection.sql_server_version >= 2016 or self.connection.to_azure_sql_db
+
+    @cached_property
+    def introspected_field_types(self):
+        return {
+            **super().introspected_field_types,
+            "DurationField": "BigIntegerField",
+        }
