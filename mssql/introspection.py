@@ -110,7 +110,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
 
         if not columns:
-            raise DatabaseError("Table does not exist (empty pragma)")
+            raise DatabaseError(f"Table {table_name} does not exist.")
             
         items = []
         for column in columns:
