@@ -216,7 +216,13 @@ def json_HasKeyLookup(self, compiler, connection):
             *_, rhs_key_transforms = key.preprocess_lhs(compiler, connection)
         else:
             rhs_key_transforms = [key]
-        rhs_params.append('%s%s' % (
+        if VERSION >= (4, 1):
+            *rhs_key_transforms, final_key = rhs_key_transforms
+            rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
+            rhs_json_path += self.compile_json_path_final_key(final_key)
+            rhs_params.append(lhs_json_path + rhs_json_path)
+        else:
+            rhs_params.append('%s%s' % (
             lhs_json_path,
             compile_json_path(rhs_key_transforms, include_root=False),
         ))
