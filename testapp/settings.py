@@ -276,8 +276,12 @@ EXCLUDED_TESTS = [
     'timezones.tests.NewDatabaseTests.test_cursor_execute_returns_aware_datetime',
 
     # Django 4.1
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_on_exists',
+    'annotations.tests.NonAggregateAnnotationTestCase.test_full_expression_annotation_with_aggregation',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_lookup_name_sql_injection',
-    'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection'
+    'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection',
+    'schema.tests.SchemaTests.test_autofield_to_o2o',
+    'schema.tests.SchemaTests.test_add_auto_field',
 ]
 
 REGEX_TESTS = [
