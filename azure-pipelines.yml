@@ -131,8 +131,8 @@ jobs:
         displayName: Use Python $(python.version)
 
       - script: |
-          docker pull mcr.microsoft.com/mssql/server:2019-latest
-          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest
+          docker pull mcr.microsoft.com/mssql/server:2022-latest
+          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update
