@@ -284,6 +284,9 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_autofield_to_o2o',
     'schema.tests.SchemaTests.test_add_auto_field',
     'prefetch_related.tests.PrefetchRelatedTests.test_m2m_prefetching_iterator_with_chunks',
+     'queries.test_q.QCheckTests.test_basic',
+     'queries.test_q.QCheckTests.test_boolean_expression',
+     'queries.test_q.QCheckTests.test_expression'
 ]
 
 REGEX_TESTS = [
