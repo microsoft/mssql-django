@@ -289,6 +289,9 @@ EXCLUDED_TESTS = [
     'queries.test_q.QCheckTests.test_expression',
     'constraints.tests.CheckConstraintTests.test_validate',
     'constraints.tests.CheckConstraintTests.test_validate_boolean_expressions',
+    'constraints.tests.UniqueConstraintTests.test_model_validation_with_condition',
+    'constraints.tests.UniqueConstraintTests.test_validate_condition',
+    'constraints.tests.UniqueConstraintTests.test_validate_expression_condition',
 ]
 
 REGEX_TESTS = [
