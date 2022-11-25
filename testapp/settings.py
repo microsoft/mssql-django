@@ -292,6 +292,7 @@ EXCLUDED_TESTS = [
     'constraints.tests.UniqueConstraintTests.test_model_validation_with_condition',
     'constraints.tests.UniqueConstraintTests.test_validate_condition',
     'constraints.tests.UniqueConstraintTests.test_validate_expression_condition',
+    'migrations.test_operations.OperationTests.test_create_model_with_boolean_expression_in_check_constraint',
 ]
 
 REGEX_TESTS = [
