@@ -204,7 +204,7 @@ def json_HasKeyLookup(self, compiler, connection):
     else:
         lhs, _ = self.process_lhs(compiler, connection)
         lhs_json_path = '$'
-    if connection.sql_server_version == 2022:
+    if connection.sql_server_version >= 2022:
         sql = "JSON_PATH_EXISTS(%s, '%%s') > 0" % lhs
     else:
         sql = lhs + ' IN (SELECT ' + lhs + ' FROM ' + self.lhs.output_field.model._meta.db_table + \
