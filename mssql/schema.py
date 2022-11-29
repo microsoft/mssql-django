@@ -814,6 +814,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             model._meta.db_table, columns, unique=True, unique_constraint=False, primary_key=False,
             **constraint_names_kwargs)
         constraint_names = constraint_names_normal + constraint_names_index
+        if constraint_names and self.connection.features.allows_multiple_constraints_on_same_fields:
+            # Constraint matching the unique_together name.
+            default_name = str(
+                self._unique_constraint_name(model._meta.db_table, columns, quote=False)
+            )
+            if default_name in constraint_names:
+                constraint_names = [default_name]
         if strict and len(constraint_names) != 1:
             raise ValueError("Found wrong number (%s) of unique constraints for columns %s" % (
                 len(constraint_names),
