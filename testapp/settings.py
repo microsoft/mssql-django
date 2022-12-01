@@ -196,11 +196,7 @@ EXCLUDED_TESTS = [
     'datetimes.tests.DateTimesTests.test_21432',
 
     # JSONFields
-    'model_fields.test_jsonfield.TestQuerying.test_has_key_list',
-    'model_fields.test_jsonfield.TestQuerying.test_has_key_null_value',
     'model_fields.test_jsonfield.TestQuerying.test_key_quoted_string',
-    'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
-    'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
     'model_fields.test_jsonfield.TestQuerying.test_isnull_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
@@ -277,7 +273,15 @@ EXCLUDED_TESTS = [
 
     # Django 4.1
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_lookup_name_sql_injection',
-    'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection'
+    'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection',
+
+    # These tests pass on SQL Server 2022 or newer
+    'model_fields.test_jsonfield.TestQuerying.test_has_key_list',
+    'model_fields.test_jsonfield.TestQuerying.test_has_key_null_value',
+    'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
+    'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
+    'model_fields.test_jsonfield.TestQuerying.test_has_key_number',
+
 ]
 
 REGEX_TESTS = [
