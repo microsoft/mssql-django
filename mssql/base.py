@@ -41,7 +41,7 @@ from .operations import DatabaseOperations  # noqa
 from .schema import DatabaseSchemaEditor  # noqa
 
 EDITION_AZURE_SQL_DB = 5
-
+EDITION_AZURE_SQL_MANAGED_INSTANCE = 8
 
 def encode_connection_string(fields):
     """Encode dictionary of keys and values as an ODBC connection String.
@@ -483,7 +483,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if self.alias not in _known_azures:
             with self.temporary_connection() as cursor:
                 cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
-                _known_azures[self.alias] = cursor.fetchone()[0] == EDITION_AZURE_SQL_DB
+                edition = cursor.fetchone()[0]
+                _known_azures[self.alias] = edition == EDITION_AZURE_SQL_DB or edition == EDITION_AZURE_SQL_MANAGED_INSTANCE
         return _known_azures[self.alias]
 
     def _execute_foreach(self, sql, table_names=None):
