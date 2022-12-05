@@ -196,11 +196,7 @@ EXCLUDED_TESTS = [
     'datetimes.tests.DateTimesTests.test_21432',
 
     # JSONFields
-    'model_fields.test_jsonfield.TestQuerying.test_has_key_list',
-    'model_fields.test_jsonfield.TestQuerying.test_has_key_null_value',
     'model_fields.test_jsonfield.TestQuerying.test_key_quoted_string',
-    'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
-    'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
     'model_fields.test_jsonfield.TestQuerying.test_isnull_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
@@ -293,6 +289,12 @@ EXCLUDED_TESTS = [
     'constraints.tests.UniqueConstraintTests.test_validate_condition',
     'constraints.tests.UniqueConstraintTests.test_validate_expression_condition',
     'migrations.test_operations.OperationTests.test_create_model_with_boolean_expression_in_check_constraint',
+    # These tests pass on SQL Server 2022 or newer
+    'model_fields.test_jsonfield.TestQuerying.test_has_key_list',
+    'model_fields.test_jsonfield.TestQuerying.test_has_key_null_value',
+    'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
+    'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
+    'model_fields.test_jsonfield.TestQuerying.test_has_key_number',
 ]
 
 REGEX_TESTS = [
