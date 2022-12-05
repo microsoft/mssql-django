@@ -307,7 +307,7 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
             value_none_counter = 0
             when_statements = []
             for obj in batch_objs:
-                attr = getattr(obj, field.attname)                        
+                attr = getattr(obj, field.attname)
                 if not hasattr(attr, "resolve_expression"):
                     if attr is None:
                         value_none_counter += 1
