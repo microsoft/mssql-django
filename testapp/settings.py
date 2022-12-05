@@ -289,6 +289,7 @@ EXCLUDED_TESTS = [
     'constraints.tests.UniqueConstraintTests.test_validate_condition',
     'constraints.tests.UniqueConstraintTests.test_validate_expression_condition',
     'migrations.test_operations.OperationTests.test_create_model_with_boolean_expression_in_check_constraint',
+    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_in_subquery_related_outerref'
     # These tests pass on SQL Server 2022 or newer
     'model_fields.test_jsonfield.TestQuerying.test_has_key_list',
     'model_fields.test_jsonfield.TestQuerying.test_has_key_null_value',
