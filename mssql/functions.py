@@ -24,6 +24,7 @@ if VERSION >= (3, 2):
     from django.db.models.functions.math import Random
 
 DJANGO3 = VERSION[0] >= 3
+DJANGO41 = VERSION >= (4, 1)
 
 
 class TryCast(Cast):
@@ -286,10 +287,11 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
         raise ValueError('bulk_update() cannot be used with primary key fields.')
     if not objs:
         return 0
-    for obj in objs:
-        obj._prepare_related_fields_for_save(
-            operation_name="bulk_update", fields=fields
-        )
+    if DJANGO41:
+        for obj in objs:
+            obj._prepare_related_fields_for_save(
+                operation_name="bulk_update", fields=fields
+            )
     # PK is used twice in the resulting update query, once in the filter
     # and once in the WHEN. Each field will also have one CAST.
     self._for_write = True
@@ -305,8 +307,10 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
             value_none_counter = 0
             when_statements = []
             for obj in batch_objs:
-                attr = getattr(obj, field.attname)
+                attr = getattr(obj, field.attname)                        
                 if not hasattr(attr, "resolve_expression"):
+                    if attr is None:
+                        value_none_counter += 1
                     attr = Value(attr, output_field=field)
                 when_statements.append(When(pk=obj.pk, then=attr))
             if connection.vendor == 'microsoft' and value_none_counter == len(when_statements):
@@ -318,9 +322,10 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
             update_kwargs[field.attname] = case_statement
         updates.append(([obj.pk for obj in batch_objs], update_kwargs))
     rows_updated = 0
+    queryset = self.using(self.db)
     with transaction.atomic(using=self.db, savepoint=False):
         for pks, update_kwargs in updates:
-            rows_updated += self.filter(pk__in=pks).update(**update_kwargs)
+            rows_updated += queryset.filter(pk__in=pks).update(**update_kwargs)
     return rows_updated
 
 
