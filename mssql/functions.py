@@ -204,8 +204,11 @@ def json_HasKeyLookup(self, compiler, connection):
     else:
         lhs, _ = self.process_lhs(compiler, connection)
         lhs_json_path = '$'
-    sql = lhs + ' IN (SELECT ' + lhs + ' FROM ' + self.lhs.output_field.model._meta.db_table + \
-    ' CROSS APPLY OPENJSON(' + lhs + ') WITH ( [json_path_value] char(1) \'%s\') WHERE [json_path_value] IS NOT NULL)'
+    if connection.sql_server_version >= 2022:
+        sql = "JSON_PATH_EXISTS(%s, '%%s') > 0" % lhs
+    else:
+        sql = lhs + ' IN (SELECT ' + lhs + ' FROM ' + self.lhs.output_field.model._meta.db_table + \
+        ' CROSS APPLY OPENJSON(' + lhs + ') WITH ( [json_path_value] char(1) \'%s\') WHERE [json_path_value] IS NOT NULL)'
     # Process JSON path from the right-hand side.
     rhs = self.rhs
     rhs_params = []
@@ -216,7 +219,13 @@ def json_HasKeyLookup(self, compiler, connection):
             *_, rhs_key_transforms = key.preprocess_lhs(compiler, connection)
         else:
             rhs_key_transforms = [key]
-        rhs_params.append('%s%s' % (
+        if VERSION >= (4, 1):
+            *rhs_key_transforms, final_key = rhs_key_transforms
+            rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
+            rhs_json_path += self.compile_json_path_final_key(final_key)
+            rhs_params.append(lhs_json_path + rhs_json_path)
+        else:
+            rhs_params.append('%s%s' % (
             lhs_json_path,
             compile_json_path(rhs_key_transforms, include_root=False),
         ))

@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 
+from django.db import DatabaseError
 import pyodbc as Database
 
 from django import VERSION
@@ -108,6 +109,9 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         # map pyodbc's cursor.columns to db-api cursor description
         columns = [[c[3], c[4], None, c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
 
+        if not columns:
+            raise DatabaseError(f"Table {table_name} does not exist.")
+            
         items = []
         for column in columns:
             if VERSION >= (3, 2):
