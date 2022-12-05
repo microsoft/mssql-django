@@ -95,7 +95,7 @@ def sqlserver_random(self, compiler, connection, **extra_context):
 
 def sqlserver_window(self, compiler, connection, template=None):
     # MSSQL window functions require an OVER clause with ORDER BY
-    if self.order_by is None:
+    if VERSION < (4, 1) and self.order_by is None:
         self.order_by = Value('SELECT NULL')
     return self.as_sql(compiler, connection, template)
 
