@@ -272,16 +272,30 @@ EXCLUDED_TESTS = [
     'timezones.tests.NewDatabaseTests.test_cursor_execute_returns_aware_datetime',
 
     # Django 4.1
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_on_exists',
+    'aggregation.tests.AggregateTestCase.test_aggregation_exists_multivalued_outeref',
+    'annotations.tests.NonAggregateAnnotationTestCase.test_full_expression_annotation_with_aggregation',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_lookup_name_sql_injection',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection',
-
+    'schema.tests.SchemaTests.test_autofield_to_o2o',
+    'schema.tests.SchemaTests.test_add_auto_field',
+    'prefetch_related.tests.PrefetchRelatedTests.test_m2m_prefetching_iterator_with_chunks',
+    'queries.test_q.QCheckTests.test_basic',
+    'queries.test_q.QCheckTests.test_boolean_expression',
+    'queries.test_q.QCheckTests.test_expression',
+    'constraints.tests.CheckConstraintTests.test_validate',
+    'constraints.tests.CheckConstraintTests.test_validate_boolean_expressions',
+    'constraints.tests.UniqueConstraintTests.test_model_validation_with_condition',
+    'constraints.tests.UniqueConstraintTests.test_validate_condition',
+    'constraints.tests.UniqueConstraintTests.test_validate_expression_condition',
+    'migrations.test_operations.OperationTests.test_create_model_with_boolean_expression_in_check_constraint',
+    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_in_subquery_related_outerref',
     # These tests pass on SQL Server 2022 or newer
     'model_fields.test_jsonfield.TestQuerying.test_has_key_list',
     'model_fields.test_jsonfield.TestQuerying.test_has_key_null_value',
     'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
     'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
     'model_fields.test_jsonfield.TestQuerying.test_has_key_number',
-
 ]
 
 REGEX_TESTS = [
