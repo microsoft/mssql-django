@@ -269,8 +269,6 @@ The following features are currently not fully supported:
 - Timezones, timedeltas not fully supported
 - Rename field/model with foreign key constraint
 - Database level constraints
-- Math degrees power or radians
-- Bit-shift operators
 - Filtered index
 - Date extract function
 - Bulk insert into a table with a trigger and returning the rows inserted
