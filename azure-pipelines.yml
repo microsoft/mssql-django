@@ -11,6 +11,9 @@ schedules:
     - dev
   always: true
 
+variables:
+- group: DjangoTestApp
+
 jobs:
   - job: Windows
     pool:
@@ -21,6 +24,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.10 - Django 4.1:
+          python.version: '3.10'
+          tox.env: 'py310-django41'
+        Python 3.9 - Django 4.1:
+          python.version: '3.9'
+          tox.env: 'py39-django41'
+        Python 3.8 - Django 4.1:
+          python.version: '3.8'
+          tox.env: 'py38-django41'
+
         Python3.10 - Django 4.0:
           python.version: '3.10'
           tox.env: 'py310-django40'
@@ -43,39 +56,6 @@ jobs:
         Python 3.6 - Django 3.2:
           python.version: '3.6'
           tox.env: 'py36-django32'
-
-        Python 3.9 - Django 3.1:
-          python.version: '3.9'
-          tox.env: 'py39-django31'
-        Python 3.8 - Django 3.1:
-          python.version: '3.8'
-          tox.env: 'py38-django31'
-        Python 3.7 - Django 3.1:
-          python.version: '3.7'
-          tox.env: 'py37-django31'
-        Python 3.6 - Django 3.1:
-          python.version: '3.6'
-          tox.env: 'py36-django31'
-
-        Python 3.9 - Django 3.0:
-          python.version: '3.9'
-          tox.env: 'py39-django30'
-        Python 3.8 - Django 3.0:
-          python.version: '3.8'
-          tox.env: 'py38-django30'
-        Python 3.7 - Django 3.0:
-          python.version: '3.7'
-          tox.env: 'py37-django30'
-        Python 3.6 - Django 3.0:
-          python.version: '3.6'
-          tox.env: 'py36-django30'
-
-        Python 3.7 - Django 2.2:
-          python.version: '3.7'
-          tox.env: 'py37-django22'
-        Python 3.6 - Django 2.2:
-          python.version: '3.6'
-          tox.env: 'py36-django22'
 
     steps:
       - task: CredScan@2
@@ -102,13 +82,17 @@ jobs:
           Invoke-Sqlcmd @"
               EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
               ALTER LOGIN [sa] ENABLE;
-              ALTER LOGIN [sa] WITH PASSWORD = 'MyPassword42', CHECK_POLICY=OFF;
+              ALTER LOGIN [sa] WITH PASSWORD = '$(TestAppPassword)', CHECK_POLICY=OFF;
           "@
         displayName: Set up SQL Server
 
       - powershell: |
           Restart-Service -Name MSSQLSERVER -Force
         displayName: Restart SQL Server
+
+      - powershell: |
+          (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassWord)' | Set-Content testapp\settings.py
+        displayName: Change PASSWORD in settings.py
 
       - powershell: |
           python -m pip install --upgrade pip wheel setuptools
@@ -127,6 +111,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.10 - Django 4.1:
+          python.version: '3.10'
+          tox.env: 'py310-django41'
+        Python 3.9 - Django 4.1:
+          python.version: '3.9'
+          tox.env: 'py39-django41'
+        Python 3.8 - Django 4.1:
+          python.version: '3.8'
+          tox.env: 'py38-django41'
+
         Python3.10 - Django 4.0:
           python.version: '3.10'
           tox.env: 'py310-django40'
@@ -150,39 +144,6 @@ jobs:
           python.version: '3.6'
           tox.env: 'py36-django32'
 
-        Python 3.9 - Django 3.1:
-          python.version: '3.9'
-          tox.env: 'py39-django31'
-        Python 3.8 - Django 3.1:
-          python.version: '3.8'
-          tox.env: 'py38-django31'
-        Python 3.7 - Django 3.1:
-          python.version: '3.7'
-          tox.env: 'py37-django31'
-        Python 3.6 - Django 3.1:
-          python.version: '3.6'
-          tox.env: 'py36-django31'
-
-        Python 3.9 - Django 3.0:
-          python.version: '3.9'
-          tox.env: 'py39-django30'
-        Python 3.8 - Django 3.0:
-          python.version: '3.8'
-          tox.env: 'py38-django30'
-        Python 3.7 - Django 3.0:
-          python.version: '3.7'
-          tox.env: 'py37-django30'
-        Python 3.6 - Django 3.0:
-          python.version: '3.6'
-          tox.env: 'py36-django30'
-
-        Python 3.7 - Django 2.2:
-          python.version: '3.7'
-          tox.env: 'py37-django22'
-        Python 3.6 - Django 2.2:
-          python.version: '3.6'
-          tox.env: 'py36-django22'
-
     steps:
       - task: UsePythonVersion@0
         inputs:
@@ -190,8 +151,8 @@ jobs:
         displayName: Use Python $(python.version)
 
       - script: |
-          docker pull mcr.microsoft.com/mssql/server:2019-latest
-          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest
+          docker pull mcr.microsoft.com/mssql/server:2022-latest
+          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update
@@ -203,6 +164,10 @@ jobs:
           pip install tox
           git clone https://github.com/django/django.git
         displayName: Install requirements
+
+      - script: |
+          sed -i 's/MyPassword42/$(TestAppPassword)/g' testapp/settings.py
+        displayName: Change PASSWORD in settings.py
 
       - script: tox -e $(tox.env)
         displayName: Run tox

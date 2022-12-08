@@ -125,7 +125,7 @@ Dictionary. Current available keys are:
    for each database session. Valid values for this entry are
    `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`,
    `SNAPSHOT`, and `SERIALIZABLE`. Default is `None` which means
-   no isolation levei is set to a database session and SQL Server default
+   no isolation level is set to a database session and SQL Server default
    will be used.
 
 -  dsn
@@ -204,6 +204,27 @@ Dictionary. Current available keys are:
             },
     ```
 
+- return_rows_bulk_insert
+
+  Boolean. Sets if backend can return rows from bulk insert.
+  Default value is False which doesn't allows for the backend to
+  return rows from bulk insert. Must be set to False if database
+  has tables with triggers to prevent errors when inserting.
+
+  ```python
+  # Examples
+  "OPTIONS": {
+      # This database doesn't have any triggers so can use return
+      # rows from bulk insert feature
+      "return_rows_bulk_insert": True
+  }
+
+  "OPTIONS": {
+      # This database has triggers so leave return_rows_bulk_insert as blank (False)
+      # to prevent errors related to inserting and returning rows from bulk insert
+  }
+  ```
+
 ### Backend-specific settings
 
 The following project-level settings also control the behavior of the backend:
@@ -248,11 +269,9 @@ The following features are currently not fully supported:
 - Timezones, timedeltas not fully supported
 - Rename field/model with foreign key constraint
 - Database level constraints
-- Math degrees power or radians
-- Bit-shift operators
 - Filtered index
 - Date extract function
-- Hashing functions
+- Bulk insert into a table with a trigger and returning the rows inserted
 
 JSONField lookups have limitations, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
 

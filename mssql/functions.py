@@ -9,8 +9,8 @@ from django.db import NotSupportedError, connections, transaction
 from django.db.models import BooleanField, CheckConstraint, Value
 from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
 from django.db.models.fields import BinaryField, Field
-from django.db.models.functions import Cast, NthValue
-from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round
+from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
+from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round, Degrees, Radians, Power
 from django.db.models.lookups import In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
@@ -24,6 +24,7 @@ if VERSION >= (3, 2):
     from django.db.models.functions.math import Random
 
 DJANGO3 = VERSION[0] >= 3
+DJANGO41 = VERSION >= (4, 1)
 
 
 class TryCast(Cast):
@@ -43,6 +44,29 @@ def sqlserver_log(self, compiler, connection, **extra_context):
 def sqlserver_ln(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, function='LOG', **extra_context)
 
+def sqlserver_degrees(self, compiler, connection, **extra_context):
+    return self.as_sql(
+            compiler, connection, function='DEGREES',
+            template= 'DEGREES(CONVERT(float, %(expressions)s))',
+            **extra_context
+        )
+
+def sqlserver_radians(self, compiler, connection, **extra_context):
+    return self.as_sql(
+            compiler, connection, function='RADIANS',
+            template= 'RADIANS(CONVERT(float, %(expressions)s))', 
+            **extra_context
+        )
+
+def sqlserver_power(self, compiler, connection, **extra_context):
+    expr = self.get_source_expressions()
+    number_a = compiler.compile(expr[0])
+    number_b = compiler.compile(expr[1])
+    return self.as_sql(
+            compiler, connection, function='POWER',
+            template = 'POWER(CONVERT(float,{a}),{b})'.format(a=number_a[0], b=number_b[0]),
+            **extra_context
+        )
 
 def sqlserver_mod(self, compiler, connection):
     # MSSQL doesn't have keyword MOD
@@ -72,7 +96,7 @@ def sqlserver_random(self, compiler, connection, **extra_context):
 
 def sqlserver_window(self, compiler, connection, template=None):
     # MSSQL window functions require an OVER clause with ORDER BY
-    if self.order_by is None:
+    if VERSION < (4, 1) and self.order_by is None:
         self.order_by = Value('SELECT NULL')
     return self.as_sql(compiler, connection, template)
 
@@ -181,8 +205,11 @@ def json_HasKeyLookup(self, compiler, connection):
     else:
         lhs, _ = self.process_lhs(compiler, connection)
         lhs_json_path = '$'
-    sql = lhs + ' IN (SELECT ' + lhs + ' FROM ' + self.lhs.output_field.model._meta.db_table + \
-    ' CROSS APPLY OPENJSON(' + lhs + ') WITH ( [json_path_value] char(1) \'%s\') WHERE [json_path_value] IS NOT NULL)'
+    if connection.sql_server_version >= 2022:
+        sql = "JSON_PATH_EXISTS(%s, '%%s') > 0" % lhs
+    else:
+        sql = lhs + ' IN (SELECT ' + lhs + ' FROM ' + self.lhs.output_field.model._meta.db_table + \
+        ' CROSS APPLY OPENJSON(' + lhs + ') WITH ( [json_path_value] char(1) \'%s\') WHERE [json_path_value] IS NOT NULL)'
     # Process JSON path from the right-hand side.
     rhs = self.rhs
     rhs_params = []
@@ -193,7 +220,13 @@ def json_HasKeyLookup(self, compiler, connection):
             *_, rhs_key_transforms = key.preprocess_lhs(compiler, connection)
         else:
             rhs_key_transforms = [key]
-        rhs_params.append('%s%s' % (
+        if VERSION >= (4, 1):
+            *rhs_key_transforms, final_key = rhs_key_transforms
+            rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
+            rhs_json_path += self.compile_json_path_final_key(final_key)
+            rhs_params.append(lhs_json_path + rhs_json_path)
+        else:
+            rhs_params.append('%s%s' % (
             lhs_json_path,
             compile_json_path(rhs_key_transforms, include_root=False),
         ))
@@ -254,11 +287,18 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
         raise ValueError('bulk_update() cannot be used with primary key fields.')
     if not objs:
         return 0
+    if DJANGO41:
+        for obj in objs:
+            obj._prepare_related_fields_for_save(
+                operation_name="bulk_update", fields=fields
+            )
     # PK is used twice in the resulting update query, once in the filter
     # and once in the WHEN. Each field will also have one CAST.
-    max_batch_size = connections[self.db].ops.bulk_batch_size(['pk', 'pk'] + fields, objs)
+    self._for_write = True
+    connection = connections[self.db]
+    max_batch_size = connection.ops.bulk_batch_size(['pk', 'pk'] + fields, objs)
     batch_size = min(batch_size, max_batch_size) if batch_size else max_batch_size
-    requires_casting = connections[self.db].features.requires_casted_case_in_updates
+    requires_casting = connection.features.requires_casted_case_in_updates
     batches = (objs[i:i + batch_size] for i in range(0, len(objs), batch_size))
     updates = []
     for batch_objs in batches:
@@ -268,12 +308,12 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
             when_statements = []
             for obj in batch_objs:
                 attr = getattr(obj, field.attname)
-                if not isinstance(attr, Expression):
+                if not hasattr(attr, "resolve_expression"):
                     if attr is None:
                         value_none_counter += 1
                     attr = Value(attr, output_field=field)
                 when_statements.append(When(pk=obj.pk, then=attr))
-            if connections[self.db].vendor == 'microsoft' and value_none_counter == len(when_statements):
+            if connection.vendor == 'microsoft' and value_none_counter == len(when_statements):
                 case_statement = Case(*when_statements, output_field=field, default=Value(default))
             else:
                 case_statement = Case(*when_statements, output_field=field)
@@ -282,12 +322,106 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
             update_kwargs[field.attname] = case_statement
         updates.append(([obj.pk for obj in batch_objs], update_kwargs))
     rows_updated = 0
+    queryset = self.using(self.db)
     with transaction.atomic(using=self.db, savepoint=False):
         for pks, update_kwargs in updates:
-            rows_updated += self.filter(pk__in=pks).update(**update_kwargs)
+            rows_updated += queryset.filter(pk__in=pks).update(**update_kwargs)
     return rows_updated
 
 
+def sqlserver_md5(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
+    column_name = self.get_source_fields()[0].name
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    return self.as_sql(
+        compiler,
+        connection,
+        template="LOWER(CONVERT(CHAR(32), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % ('%(function)s', column_name, max_size),
+        **extra_context,
+    )
+
+
+def sqlserver_sha1(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
+    column_name = self.get_source_fields()[0].name
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
+    return self.as_sql(
+        compiler,
+        connection,
+        template="LOWER(CONVERT(CHAR(40), HASHBYTES('%s', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % ('%(function)s', column_name, max_size),
+        **extra_context,
+    )
+
+
+def sqlserver_sha224(self, compiler, connection, **extra_context):
+    raise NotSupportedError("SHA224 is not supported on SQL Server.")
+
+
+def sqlserver_sha256(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
+    column_name = self.get_source_fields()[0].name
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
+    return self.as_sql(
+        compiler,
+        connection,
+        template="LOWER(CONVERT(CHAR(64), HASHBYTES('SHA2_256', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % (column_name, max_size),
+        **extra_context,
+    )
+
+
+def sqlserver_sha384(self, compiler, connection, **extra_context):
+    raise NotSupportedError("SHA384 is not supported on SQL Server.")
+
+
+def sqlserver_sha512(self, compiler, connection, **extra_context):
+    # UTF-8 support added in SQL Server 2019
+    if (connection.sql_server_version < 2019):
+        raise NotSupportedError("Hashing is not supported on this version SQL Server. Upgrade to 2019 or above")
+
+    column_name = self.get_source_fields()[0].name
+
+    # Collation of SQL Server by default is UTF-16 but Django always assumes UTF-8 enconding
+    # https://docs.djangoproject.com/en/4.0/ref/unicode/#general-string-handling
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(DATALENGTH(%s)) FROM %s" % (column_name, compiler.query.model._meta.db_table))
+        max_size = cursor.fetchone()[0]
+
+    return self.as_sql(
+        compiler,
+        connection,
+        template="LOWER(CONVERT(CHAR(128), HASHBYTES('SHA2_512', CAST(%s COLLATE Latin1_General_100_CI_AI_SC_UTF8 AS VARCHAR(%s))), 2))" % (column_name, max_size),
+        **extra_context,
+    )
+
+
+# `as_microsoft` called by django.db.models.sql.compiler based on connection.vendor
 ATan2.as_microsoft = sqlserver_atan2
 # Need copy of old In.split_parameter_list_as_sql for other backends to call
 in_split_parameter_list_as_sql = In.split_parameter_list_as_sql
@@ -298,12 +432,21 @@ if VERSION >= (3, 1):
     key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
     HasKeyLookup.as_microsoft = json_HasKeyLookup
+Degrees.as_microsoft = sqlserver_degrees
+Radians.as_microsoft = sqlserver_radians
+Power.as_microsoft = sqlserver_power
 Ln.as_microsoft = sqlserver_ln
 Log.as_microsoft = sqlserver_log
 Mod.as_microsoft = sqlserver_mod
 NthValue.as_microsoft = sqlserver_nth_value
 Round.as_microsoft = sqlserver_round
 Window.as_microsoft = sqlserver_window
+MD5.as_microsoft = sqlserver_md5
+SHA1.as_microsoft = sqlserver_sha1
+SHA224.as_microsoft = sqlserver_sha224
+SHA256.as_microsoft = sqlserver_sha256
+SHA384.as_microsoft = sqlserver_sha384
+SHA512.as_microsoft = sqlserver_sha512
 BinaryField.__init__ = BinaryField_init
 CheckConstraint._get_check_sql = _get_check_sql
 

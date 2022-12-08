@@ -4,6 +4,7 @@
 import datetime
 import uuid
 import warnings
+import sys
 
 from django.conf import settings
 from django.db.backends.base.operations import BaseDatabaseOperations
@@ -13,6 +14,8 @@ from django.utils import timezone
 from django.utils.encoding import force_str
 from django import VERSION as django_version
 import pytz
+
+DJANGO41 = django_version >= (4, 1)
 
 
 class DatabaseOperations(BaseDatabaseOperations):
@@ -26,10 +29,16 @@ class DatabaseOperations(BaseDatabaseOperations):
         return 2048
 
     def _convert_field_to_tz(self, field_name, tzname):
-        if settings.USE_TZ and not tzname == 'UTC':
+        if tzname and settings.USE_TZ and self.connection.timezone_name != tzname:
             offset = self._get_utcoffset(tzname)
             field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
         return field_name
+
+    def _convert_sql_to_tz(self, sql, params, tzname):
+        if tzname and settings.USE_TZ and self.connection.timezone_name != tzname:
+            offset = self._get_utcoffset(tzname)
+            sql = 'DATEADD(second, %d, %s)' % (offset, sql)
+        return sql, params
 
     def _get_utcoffset(self, tzname):
         """
@@ -99,15 +108,17 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         if connector == '^':
             return 'POWER(%s)' % ','.join(sub_expressions)
+        elif connector == '#':
+            return '%s ^ %s' % tuple(sub_expressions)
         elif connector == '<<':
-            return '%s * (2 * %s)' % tuple(sub_expressions)
+            return '%s * POWER(2, %s)' % tuple(sub_expressions)
         elif connector == '>>':
-            return '%s / (2 * %s)' % tuple(sub_expressions)
+            return 'FLOOR(CONVERT(float, %s) / POWER(2, %s))' % tuple(sub_expressions)
         return super().combine_expression(connector, sub_expressions)
 
     def convert_datetimefield_value(self, value, expression, connection):
         if value is not None:
-            if settings.USE_TZ:
+            if settings.USE_TZ and not timezone.is_aware(value):
                 value = timezone.make_aware(value, self.connection.timezone)
         return value
 
@@ -124,15 +135,32 @@ class DatabaseOperations(BaseDatabaseOperations):
     def convert_booleanfield_value(self, value, expression, connection):
         return bool(value) if value in (0, 1) else value
 
-    def date_extract_sql(self, lookup_type, field_name):
-        if lookup_type == 'week_day':
-            return "DATEPART(weekday, %s)" % field_name
-        elif lookup_type == 'week':
-            return "DATEPART(iso_week, %s)" % field_name
-        elif lookup_type == 'iso_year':
-            return "YEAR(DATEADD(day, 26 - DATEPART(isoww, %s), %s))" % (field_name, field_name)
-        else:
-            return "DATEPART(%s, %s)" % (lookup_type, field_name)
+
+    if DJANGO41:
+        def date_extract_sql(self, lookup_type, sql, params):
+            if lookup_type == 'week_day':
+                sql = "DATEPART(weekday, %s)" % sql
+            elif lookup_type == 'week':
+                sql = "DATEPART(iso_week, %s)" % sql
+            elif lookup_type == 'iso_week_day':
+                sql = "DATEPART(weekday, DATEADD(day, -1, %s))" % sql
+            elif lookup_type == 'iso_year':
+                sql = "YEAR(DATEADD(day, 26 - DATEPART(isoww, %s), %s))" % (sql, sql)
+            else:
+                sql = "DATEPART(%s, %s)" % (lookup_type, sql)
+            return sql, params
+    else:
+        def date_extract_sql(self, lookup_type, field_name):
+            if lookup_type == 'week_day':
+                return "DATEPART(weekday, %s)" % field_name
+            elif lookup_type == 'week':
+                return "DATEPART(iso_week, %s)" % field_name
+            elif lookup_type == 'iso_week_day':
+                return "DATEPART(weekday, DATEADD(day, -1, %s))" % field_name
+            elif lookup_type == 'iso_year':
+                return "YEAR(DATEADD(day, 26 - DATEPART(isoww, %s), %s))" % (field_name, field_name)
+            else:
+                return "DATEPART(%s, %s)" % (lookup_type, field_name)
 
     def date_interval_sql(self, timedelta):
         """
@@ -144,49 +172,106 @@ class DatabaseOperations(BaseDatabaseOperations):
             sql = 'DATEADD(microsecond, %d%%s, CAST(%s AS datetime2))' % (timedelta.microseconds, sql)
         return sql
 
-    def date_trunc_sql(self, lookup_type, field_name, tzname=''):
-        CONVERT_YEAR = 'CONVERT(varchar, DATEPART(year, %s))' % field_name
-        CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
-        CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % field_name
-        CONVERT_WEEK = "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, %s)" % (field_name, field_name)
+    if DJANGO41:
+        def date_trunc_sql(self, lookup_type, sql, params, tzname=None):
+            sql, params = self._convert_sql_to_tz(sql, params, tzname)
+            
+            # Python formats year with leading zeroes. This preserves that format for 
+            # compatibility with SQL Server's date since DATEPART drops the leading zeroes.
+            CONVERT_YEAR = 'CONVERT(varchar(4), %s)' % sql
+            CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % sql
+            CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % sql
+            CONVERT_WEEK = "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, %s)" % (sql, sql)
 
-        if lookup_type == 'year':
-            return "CONVERT(datetime2, %s + '/01/01')" % CONVERT_YEAR
-        if lookup_type == 'quarter':
-            return "CONVERT(datetime2, %s + '/' + %s + '/01')" % (CONVERT_YEAR, CONVERT_QUARTER)
-        if lookup_type == 'month':
-            return "CONVERT(datetime2, %s + '/' + %s + '/01')" % (CONVERT_YEAR, CONVERT_MONTH)
-        if lookup_type == 'week':
-            return "CONVERT(datetime2, CONVERT(varchar, %s, 112))" % CONVERT_WEEK
-        if lookup_type == 'day':
-            return "CONVERT(datetime2, CONVERT(varchar(12), %s, 112))" % field_name
+            if lookup_type == 'year':
+                sql = "CONVERT(datetime2, %s + '/01/01')" % CONVERT_YEAR
+            if lookup_type == 'quarter':
+                sql = "CONVERT(datetime2, %s + '/' + %s + '/01')" % (CONVERT_YEAR, CONVERT_QUARTER)
+            if lookup_type == 'month':
+                sql = "CONVERT(datetime2, %s + '/' + %s + '/01')" % (CONVERT_YEAR, CONVERT_MONTH)
+            if lookup_type == 'week':
+                sql = "CONVERT(datetime2, CONVERT(varchar, %s, 112))" % CONVERT_WEEK
+            if lookup_type == 'day':
+                sql = "CONVERT(datetime2, CONVERT(varchar(12), %s, 112))" % sql
+            return sql, params
+    else:
+        def date_trunc_sql(self, lookup_type, field_name, tzname=None):
+            field_name = self._convert_field_to_tz(field_name, tzname)
+            
+            # Python formats year with leading zeroes. This preserves that format for 
+            # compatibility with SQL Server's date since DATEPART drops the leading zeroes.
+            CONVERT_YEAR = 'CONVERT(varchar(4), %s)' % field_name
+            CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
+            CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % field_name
+            CONVERT_WEEK = "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, %s)" % (field_name, field_name)
 
-    def datetime_cast_date_sql(self, field_name, tzname):
-        field_name = self._convert_field_to_tz(field_name, tzname)
-        sql = 'CAST(%s AS date)' % field_name
-        return sql
+            if lookup_type == 'year':
+                return "CONVERT(datetime2, %s + '/01/01')" % CONVERT_YEAR
+            if lookup_type == 'quarter':
+                return "CONVERT(datetime2, %s + '/' + %s + '/01')" % (CONVERT_YEAR, CONVERT_QUARTER)
+            if lookup_type == 'month':
+                return "CONVERT(datetime2, %s + '/' + %s + '/01')" % (CONVERT_YEAR, CONVERT_MONTH)
+            if lookup_type == 'week':
+                return "CONVERT(datetime2, CONVERT(varchar, %s, 112))" % CONVERT_WEEK
+            if lookup_type == 'day':
+                return "CONVERT(datetime2, CONVERT(varchar(12), %s, 112))" % field_name
 
-    def datetime_cast_time_sql(self, field_name, tzname):
-        field_name = self._convert_field_to_tz(field_name, tzname)
-        sql = 'CAST(%s AS time)' % field_name
-        return sql
+    if DJANGO41:
+        def datetime_cast_date_sql(self, sql, params, tzname):
+            sql, params = self._convert_sql_to_tz(sql, params, tzname)
+            sql = 'CAST(%s AS date)' % sql
+            return sql, params
+    else:
+        def datetime_cast_date_sql(self, field_name, tzname):
+            field_name = self._convert_field_to_tz(field_name, tzname)
+            sql = 'CAST(%s AS date)' % field_name
+            return sql
 
-    def datetime_extract_sql(self, lookup_type, field_name, tzname):
-        field_name = self._convert_field_to_tz(field_name, tzname)
-        return self.date_extract_sql(lookup_type, field_name)
+    if DJANGO41:
+        def datetime_cast_time_sql(self, sql, params, tzname):
+            sql, params = self._convert_sql_to_tz(sql, params, tzname)
+            sql = 'CAST(%s AS time)' % sql
+            return sql, params
+    else:
+        def datetime_cast_time_sql(self, field_name, tzname):
+            field_name = self._convert_field_to_tz(field_name, tzname)
+            sql = 'CAST(%s AS time)' % field_name
+            return sql
 
-    def datetime_trunc_sql(self, lookup_type, field_name, tzname):
-        field_name = self._convert_field_to_tz(field_name, tzname)
-        sql = ''
-        if lookup_type in ('year', 'quarter', 'month', 'week', 'day'):
-            sql = self.date_trunc_sql(lookup_type, field_name)
-        elif lookup_type == 'hour':
-            sql = "CONVERT(datetime2, SUBSTRING(CONVERT(varchar, %s, 20), 0, 14) + ':00:00')" % field_name
-        elif lookup_type == 'minute':
-            sql = "CONVERT(datetime2, SUBSTRING(CONVERT(varchar, %s, 20), 0, 17) + ':00')" % field_name
-        elif lookup_type == 'second':
-            sql = "CONVERT(datetime2, CONVERT(varchar, %s, 20))" % field_name
-        return sql
+    if DJANGO41:
+        def datetime_extract_sql(self, lookup_type, sql, params, tzname):
+            sql, params = self._convert_sql_to_tz(sql, params, tzname)
+            return self.date_extract_sql(lookup_type, sql, params)
+    else:
+        def datetime_extract_sql(self, lookup_type, field_name, tzname):
+            field_name = self._convert_field_to_tz(field_name, tzname)
+            return self.date_extract_sql(lookup_type, field_name)
+
+    if DJANGO41:
+        def datetime_trunc_sql(self, lookup_type, sql, params, tzname):
+            sql, params = self._convert_sql_to_tz(sql, params, tzname)
+            if lookup_type in ('year', 'quarter', 'month', 'week', 'day'):
+                return self.date_trunc_sql(lookup_type, sql, params)
+            elif lookup_type == 'hour':
+                sql = "CONVERT(datetime2, SUBSTRING(CONVERT(varchar, %s, 20), 0, 14) + ':00:00')" % sql
+            elif lookup_type == 'minute':
+                sql = "CONVERT(datetime2, SUBSTRING(CONVERT(varchar, %s, 20), 0, 17) + ':00')" % sql
+            elif lookup_type == 'second':
+                sql = "CONVERT(datetime2, CONVERT(varchar, %s, 20))" % sql
+            return sql, params
+    else:
+        def datetime_trunc_sql(self, lookup_type, field_name, tzname):
+            field_name = self._convert_field_to_tz(field_name, tzname)
+            sql = ''
+            if lookup_type in ('year', 'quarter', 'month', 'week', 'day'):
+                sql = self.date_trunc_sql(lookup_type, field_name)
+            elif lookup_type == 'hour':
+                sql = "CONVERT(datetime2, SUBSTRING(CONVERT(varchar, %s, 20), 0, 14) + ':00:00')" % field_name
+            elif lookup_type == 'minute':
+                sql = "CONVERT(datetime2, SUBSTRING(CONVERT(varchar, %s, 20), 0, 17) + ':00')" % field_name
+            elif lookup_type == 'second':
+                sql = "CONVERT(datetime2, CONVERT(varchar, %s, 20))" % field_name
+            return sql
 
     def fetch_returned_insert_rows(self, cursor):
         """
@@ -480,26 +565,56 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         if value is None:
             return None
-        if settings.USE_TZ and timezone.is_aware(value):
-            # pyodbc donesn't support datetimeoffset
-            value = value.astimezone(self.connection.timezone).replace(tzinfo=None)
+
+        # Expression values are adapted by the database.
+        if hasattr(value, 'resolve_expression'):
+            return value
+
+        if timezone.is_aware(value):
+            if settings.USE_TZ:
+                # When support for time zones is enabled, Django stores datetime information
+                # in UTC in the database and uses time-zone-aware objects internally
+                # source: https://docs.djangoproject.com/en/dev/topics/i18n/timezones/#overview
+                value = value.astimezone(datetime.timezone.utc)
+            else:
+                # When USE_TZ is False, settings.TIME_ZONE is the time zone in
+                # which Django will store all datetimes
+                # source: https://docs.djangoproject.com/en/dev/ref/settings/#std:setting-TIME_ZONE
+                value = timezone.make_naive(value, self.connection.timezone)
         return value
 
-    def time_trunc_sql(self, lookup_type, field_name, tzname=''):
-        # if self.connection.sql_server_version >= 2012:
-        #    fields = {
-        #        'hour': 'DATEPART(hour, %s)' % field_name,
-        #        'minute': 'DATEPART(minute, %s)' % field_name if lookup_type != 'hour' else '0',
-        #        'second': 'DATEPART(second, %s)' % field_name if lookup_type == 'second' else '0',
-        #    }
-        #    sql = 'TIMEFROMPARTS(%(hour)s, %(minute)s, %(second)s, 0, 0)' % fields
-        if lookup_type == 'hour':
-            sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 3) + ':00:00')" % field_name
-        elif lookup_type == 'minute':
-            sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 6) + ':00')" % field_name
-        elif lookup_type == 'second':
-            sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 9))" % field_name
-        return sql
+    if DJANGO41:
+        def time_trunc_sql(self, lookup_type, sql, params, tzname=None):
+            # if self.connection.sql_server_version >= 2012:
+            #    fields = {
+            #        'hour': 'DATEPART(hour, %s)' % field_name,
+            #        'minute': 'DATEPART(minute, %s)' % field_name if lookup_type != 'hour' else '0',
+            #        'second': 'DATEPART(second, %s)' % field_name if lookup_type == 'second' else '0',
+            #    }
+            #    sql = 'TIMEFROMPARTS(%(hour)s, %(minute)s, %(second)s, 0, 0)' % fields
+            if lookup_type == 'hour':
+                sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 3) + ':00:00')" % sql
+            elif lookup_type == 'minute':
+                sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 6) + ':00')" % sql
+            elif lookup_type == 'second':
+                sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 9))" % sql
+            return sql, params
+    else:
+        def time_trunc_sql(self, lookup_type, field_name, tzname=''):
+            # if self.connection.sql_server_version >= 2012:
+            #    fields = {
+            #        'hour': 'DATEPART(hour, %s)' % field_name,
+            #        'minute': 'DATEPART(minute, %s)' % field_name if lookup_type != 'hour' else '0',
+            #        'second': 'DATEPART(second, %s)' % field_name if lookup_type == 'second' else '0',
+            #    }
+            #    sql = 'TIMEFROMPARTS(%(hour)s, %(minute)s, %(second)s, 0, 0)' % fields
+            if lookup_type == 'hour':
+                sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 3) + ':00:00')" % field_name
+            elif lookup_type == 'minute':
+                sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 6) + ':00')" % field_name
+            elif lookup_type == 'second':
+                sql = "CONVERT(time, SUBSTRING(CONVERT(varchar, %s, 114), 0, 9))" % field_name
+            return sql
 
     def conditional_expression_supported_in_where_clause(self, expression):
         """

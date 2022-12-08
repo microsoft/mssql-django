@@ -12,11 +12,12 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     can_introspect_small_integer_field = True
     can_return_columns_from_insert = True
     can_return_id_from_insert = True
-    can_return_rows_from_bulk_insert = True
+    can_return_rows_from_bulk_insert = False
     can_rollback_ddl = True
     can_use_chunked_reads = False
     for_update_after_from = True
     greatest_least_ignores_nulls = True
+    has_case_insensitive_like = True
     has_json_object_function = False
     has_json_operators = False
     has_native_json_field = False
@@ -46,7 +47,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_subqueries_in_group_by = False
     supports_tablespaces = True
     supports_temporal_subtraction = True
-    supports_timezones = False
+    supports_timezones = True
     supports_transactions = True
     uses_savepoints = True
     has_bulk_insert = True
@@ -64,3 +65,10 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     @cached_property
     def supports_json_field(self):
         return self.connection.sql_server_version >= 2016 or self.connection.to_azure_sql_db
+
+    @cached_property
+    def introspected_field_types(self):
+        return {
+            **super().introspected_field_types,
+            "DurationField": "BigIntegerField",
+        }

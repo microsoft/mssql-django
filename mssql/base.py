@@ -8,6 +8,7 @@ import os
 import re
 import time
 import struct
+import datetime
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -35,12 +36,12 @@ if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
 from .client import DatabaseClient  # noqa
 from .creation import DatabaseCreation  # noqa
 from .features import DatabaseFeatures  # noqa
-from .introspection import DatabaseIntrospection  # noqa
+from .introspection import DatabaseIntrospection, SQL_TIMESTAMP_WITH_TIMEZONE  # noqa
 from .operations import DatabaseOperations  # noqa
 from .schema import DatabaseSchemaEditor  # noqa
 
 EDITION_AZURE_SQL_DB = 5
-
+EDITION_AZURE_SQL_MANAGED_INSTANCE = 8
 
 def encode_connection_string(fields):
     """Encode dictionary of keys and values as an ODBC connection String.
@@ -78,6 +79,13 @@ def encode_value(v):
     if ';' in v or v.strip(' ').startswith('{'):
         return '{%s}' % (v.replace('}', '}}'),)
     return v
+
+
+def handle_datetimeoffset(dto_value):
+    # Decode bytes returned from SQL Server
+    # source: https://github.com/mkleehammer/pyodbc/wiki/Using-an-Output-Converter-function
+    tup = struct.unpack("<6hI2h", dto_value)  # e.g., (2017, 3, 16, 10, 35, 18, 500000000)
+    return datetime.datetime(tup[0], tup[1], tup[2], tup[3], tup[4], tup[5], tup[6] // 1000)
 
 
 class DatabaseWrapper(BaseDatabaseWrapper):
@@ -184,6 +192,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         13: 2016,
         14: 2017,
         15: 2019,
+        16: 2022,
     }
 
     # https://azure.microsoft.com/en-us/documentation/articles/sql-database-develop-csharp-retry-windows/
@@ -233,6 +242,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 if sql.startswith('LIKE '):
                     ops[op] = '%s COLLATE %s' % (sql, collation)
             self.operators.update(ops)
+
+        if (settings.USE_TZ):
+            self.data_types['DateTimeField'] ='datetimeoffset'
 
     def create_cursor(self, name=None):
         return CursorWrapper(self.connection.cursor(), self)
@@ -364,6 +376,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 if not need_to_retry:
                     raise
 
+        # Handling values from DATETIMEOFFSET columns
+        # source: https://github.com/mkleehammer/pyodbc/wiki/Using-an-Output-Converter-function
+        conn.add_output_converter(SQL_TIMESTAMP_WITH_TIMEZONE, handle_datetimeoffset)
         conn.timeout = query_timeout
         if setencoding:
             for entry in setencoding:
@@ -409,6 +424,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # hasn't told us otherwise
         datefirst = options.get('datefirst', 7)
         cursor.execute('SET DATEFORMAT ymd; SET DATEFIRST %s' % datefirst)
+
+        # Let user choose if driver can return rows from bulk insert since
+        # inserting into tables with triggers causes errors. See issue #130
+        if (options.get('return_rows_bulk_insert', False)):
+            self.features_class.can_return_rows_from_bulk_insert = True
 
         val = self.get_system_datetime()
         if isinstance(val, str):
@@ -464,7 +484,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if self.alias not in _known_azures:
             with self.temporary_connection() as cursor:
                 cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
-                _known_azures[self.alias] = cursor.fetchone()[0] == EDITION_AZURE_SQL_DB
+                edition = cursor.fetchone()[0]
+                _known_azures[self.alias] = edition == EDITION_AZURE_SQL_DB or edition == EDITION_AZURE_SQL_MANAGED_INSTANCE
         return _known_azures[self.alias]
 
     def _execute_foreach(self, sql, table_names=None):

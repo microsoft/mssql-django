@@ -20,3 +20,17 @@ class TestOrderBy(TestCase):
         names = Customer_name.objects.select_for_update().all()
         addresses = Customer_address.objects.filter(Customer_address='123 Main St', Customer_name__in=names)
         self.assertEqual(len(addresses), 1)
+
+    def test_random_order_by(self):
+        # https://code.djangoproject.com/ticket/33531
+        Customer_name.objects.bulk_create([
+            Customer_name(Customer_name='Jack'),
+            Customer_name(Customer_name='Jane'),
+            Customer_name(Customer_name='John'),
+        ])
+        names = []
+        # iterate 20 times to make sure we don't get the same result
+        for _ in range(20):
+            names.append(list(Customer_name.objects.order_by('?')))
+
+        self.assertNotEqual(names.count(names[0]), 20)
