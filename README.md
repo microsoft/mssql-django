@@ -10,8 +10,8 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 3.2 and 4.0
--  Tested on Microsoft SQL Server 2016, 2017, 2019
+-  Supports Django 3.2, 4.0, and 4.1
+-  Tested on Microsoft SQL Server 2016, 2017, 2019, 2022
 -  Passes most of the tests of the Django test suite
 -  Compatible with
    [Micosoft ODBC Driver for SQL Server](https://docs.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server),
