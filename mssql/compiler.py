@@ -364,7 +364,7 @@ class SQLCompiler(compiler.SQLCompiler):
                 # Django 2.x.  See https://github.com/microsoft/mssql-django/issues/12
                 # Add OFFSET for all Django versions.
                 # https://github.com/microsoft/mssql-django/issues/109
-                if not (do_offset or do_limit):
+                if not (do_offset or do_limit) and supports_offset_clause:
                     result.append("OFFSET 0 ROWS")
 
             # SQL Server requires the backend-specific emulation (2008 or earlier)
