@@ -11,6 +11,7 @@ from django.db.models.expressions import Case, Exists, Expression, OrderBy, When
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round, Degrees, Radians, Power
+from django.db.models.functions.text import Replace
 from django.db.models.lookups import In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
@@ -43,6 +44,19 @@ def sqlserver_log(self, compiler, connection, **extra_context):
 
 def sqlserver_ln(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, function='LOG', **extra_context)
+
+
+def sqlserver_replace(self, compiler, connection, **extra_context):
+    current_db = "CONVERT(varchar, (SELECT DB_NAME()))"
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT CONVERT(varchar, DATABASEPROPERTYEX(%s, 'collation'))" % current_db)
+        default_collation = cursor.fetchone()[0]
+    current_collation = default_collation.replace('_CI', '_CS')
+    return self.as_sql(
+            compiler, connection, function='REPLACE',
+            template = 'REPLACE(%s COLLATE %s)' % ('%(expressions)s', current_collation),
+            **extra_context
+        )
 
 def sqlserver_degrees(self, compiler, connection, **extra_context):
     return self.as_sql(
@@ -441,6 +455,7 @@ Mod.as_microsoft = sqlserver_mod
 NthValue.as_microsoft = sqlserver_nth_value
 Round.as_microsoft = sqlserver_round
 Window.as_microsoft = sqlserver_window
+Replace.as_microsoft = sqlserver_replace
 MD5.as_microsoft = sqlserver_md5
 SHA1.as_microsoft = sqlserver_sha1
 SHA224.as_microsoft = sqlserver_sha224
