@@ -48,15 +48,13 @@ def sqlserver_ln(self, compiler, connection, **extra_context):
 
 def sqlserver_replace(self, compiler, connection, **extra_context):
     current_db = "CONVERT(varchar, (SELECT DB_NAME()))"
-    default_collation = "CONVERT (varchar, DATABASEPROPERTYEX(%s, 'collation'))" % current_db
-
     with connection.cursor() as cursor:
-        cursor.execute("SELECT REPLACE(%s, 'CI', 'CS')" % default_collation)
-        case_sensitive = cursor.fetchone()[0]
-
+        cursor.execute("SELECT CONVERT(varchar, DATABASEPROPERTYEX(%s, 'collation'))" % current_db)
+        default_collation = cursor.fetchone()[0]
+    current_collation = default_collation.replace('_CI', '_CS')
     return self.as_sql(
             compiler, connection, function='REPLACE',
-            template = 'REPLACE(%s COLLATE %s)' % ('%(expressions)s', case_sensitive),
+            template = 'REPLACE(%s COLLATE %s)' % ('%(expressions)s', current_collation),
             **extra_context
         )
 
