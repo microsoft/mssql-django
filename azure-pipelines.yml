@@ -172,6 +172,9 @@ jobs:
       - script: tox -e $(tox.env)
         displayName: Run tox
 
+      - script: coverage combine /django
+        displayName: Combine code coverage results
+
       - task: PublishCodeCoverageResults@1
         inputs:
           codeCoverageTool: 'Cobertura'
