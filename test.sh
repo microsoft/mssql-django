@@ -111,7 +111,7 @@ coverage run tests/runtests.py --settings=testapp.settings --noinput \
     update \
     update_only_fields
 
-coverage combine \django
+python -m coverage combine \django
 
 python -m coverage xml --include '*mssql*' --omit '*virtualenvs*' -o coverage.xml
 
