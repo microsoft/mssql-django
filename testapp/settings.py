@@ -137,7 +137,6 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_unique_together_with_fk_with_existing_index',
     'aggregation.tests.AggregateTestCase.test_count_star',
     'aggregation_regress.tests.AggregationTests.test_values_list_annotation_args_ordering',
-    'db_functions.text.test_pad.PadTests.test_pad',
     'expressions.tests.FTimeDeltaTests.test_invalid_operator',
     'fixtures_regress.tests.TestFixtures.test_loaddata_raises_error_when_fixture_has_invalid_foreign_key',
     'invalid_models_tests.test_ordinary_fields.TextFieldTests.test_max_length_warning',

@@ -76,8 +76,9 @@ def _as_sql_lpad(self, compiler, connection):
     params.extend(length_arg)
     params.extend(expression_arg)
     params.extend(expression_arg)
-    template = ('LEFT(REPLICATE(%(fill_text)s, %(length)s), CASE WHEN %(length)s > LEN(%(expression)s) '
-                'THEN %(length)s - LEN(%(expression)s) ELSE 0 END) + %(expression)s')
+    params.extend(length_arg)
+    template = ('LEFT(LEFT(REPLICATE(%(fill_text)s, %(length)s), CASE WHEN %(length)s > LEN(%(expression)s) '
+                'THEN %(length)s - LEN(%(expression)s) ELSE 0 END) + %(expression)s, %(length)s)')
     return template % {'expression': expression, 'length': length, 'fill_text': fill_text}, params
 
 
