@@ -66,7 +66,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_alter_column_no_default = "DROP CONSTRAINT %(column)s"
     sql_alter_column_not_null = "ALTER COLUMN %(column)s %(type)s NOT NULL"
     sql_alter_column_null = "ALTER COLUMN %(column)s %(type)s NULL"
-    sql_alter_column_type = "ALTER COLUMN %(column)s %(type)s %(collation)s"
+    sql_alter_column_type = "ALTER COLUMN %(column)s %(type)s"
     sql_create_column = "ALTER TABLE %(table)s ADD %(column)s %(definition)s"
     sql_delete_column = "ALTER TABLE %(table)s DROP COLUMN %(column)s"
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
