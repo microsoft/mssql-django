@@ -5,7 +5,6 @@ import types
 from itertools import chain
 
 import django
-from django.core.exceptions import FullResultSet
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
 from django.db.models.expressions import Ref, Subquery, Value, Window
 from django.db.models.functions import (
@@ -16,6 +15,8 @@ from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
 if django.VERSION >= (3, 1):
     from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
+if django.VERSION >= (4, 2):
+    from django.core.exceptions import FullResultSet
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -234,14 +235,18 @@ class SQLCompiler(compiler.SQLCompiler):
                 # This must come after 'select', 'ordering', and 'distinct' -- see
                 # docstring of get_from_clause() for details.
                 from_, f_params = self.get_from_clause()
-                try:
+                if django.VERSION >= (4, 2):
+                    try:
+                        where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+                    except FullResultSet:
+                        where, w_params = "", []
+                    try:
+                        having, h_params = self.compile(self.having) if self.having is not None else ("", [])
+                    except FullResultSet:
+                        having, h_params = "", []
+                else:
                     where, w_params = self.compile(self.where) if self.where is not None else ("", [])
-                except FullResultSet:
-                    where, w_params = "", []
-                try:
                     having, h_params = self.compile(self.having) if self.having is not None else ("", [])
-                except FullResultSet:
-                    having, h_params = "", []
                 params = []
                 result = ['SELECT']
 
