@@ -5,6 +5,7 @@ import types
 from itertools import chain
 
 import django
+from django.core.exceptions import FullResultSet
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
 from django.db.models.expressions import Ref, Subquery, Value, Window
 from django.db.models.functions import (
@@ -233,8 +234,14 @@ class SQLCompiler(compiler.SQLCompiler):
                 # This must come after 'select', 'ordering', and 'distinct' -- see
                 # docstring of get_from_clause() for details.
                 from_, f_params = self.get_from_clause()
-                where, w_params = self.compile(self.where) if self.where is not None else ("", [])
-                having, h_params = self.compile(self.having) if self.having is not None else ("", [])
+                try:
+                    where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+                except FullResultSet:
+                    where, w_params = "", []
+                try:
+                    having, h_params = self.compile(self.having) if self.having is not None else ("", [])
+                except FullResultSet:
+                    having, h_params = "", []
                 params = []
                 result = ['SELECT']
 
