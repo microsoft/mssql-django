@@ -1268,8 +1268,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                                       (constraint.condition.connector, constraint.name))
         super().add_constraint(model, constraint)
 
-    def _collate_sql(self, collation):
-        return ' COLLATE ' + collation
+    def _collate_sql(self, collation, old_collation=None, table_name=None):
+        return ' COLLATE ' + collation if collation else ""
 
     def _create_index_name(self, table_name, column_names, suffix=""):
         index_name = super()._create_index_name(table_name, column_names, suffix)
