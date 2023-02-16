@@ -66,7 +66,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_alter_column_no_default = "DROP CONSTRAINT %(column)s"
     sql_alter_column_not_null = "ALTER COLUMN %(column)s %(type)s NOT NULL"
     sql_alter_column_null = "ALTER COLUMN %(column)s %(type)s NULL"
-    sql_alter_column_type = "ALTER COLUMN %(column)s %(type)s"
+    sql_alter_column_type = "ALTER COLUMN %(column)s %(type)s %(collation)s"
     sql_create_column = "ALTER TABLE %(table)s ADD %(column)s %(definition)s"
     sql_delete_column = "ALTER TABLE %(table)s DROP COLUMN %(column)s"
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
@@ -161,9 +161,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 [],
             )
 
-    def _alter_column_type_sql(self, model, old_field, new_field, new_type):
+    def _alter_column_type_sql(self, model, old_field, new_field, new_type, old_collation, new_collation):
         new_type = self._set_field_new_type_null_status(old_field, new_type)
-        return super()._alter_column_type_sql(model, old_field, new_field, new_type)
+        return super()._alter_column_type_sql(model, old_field, new_field, new_type, old_collation, new_collation)
 
     def alter_unique_together(self, model, old_unique_together, new_unique_together):
         """
@@ -442,8 +442,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         null_actions = []
         post_actions = []
         # Type change?
+        old_collation = old_db_params.get("collation")
+        new_collation = new_db_params.get("collation")
         if old_type != new_type:
-            fragment, other_actions = self._alter_column_type_sql(model, old_field, new_field, new_type)
+            fragment, other_actions = self._alter_column_type_sql(model, old_field, new_field, new_type, old_collation, new_collation)
             actions.append(fragment)
             post_actions.extend(other_actions)
             # Drop unique constraint, SQL Server requires explicit deletion
@@ -683,8 +685,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for old_rel, new_rel in rels_to_update:
             rel_db_params = new_rel.field.db_parameters(connection=self.connection)
             rel_type = rel_db_params['type']
+            rel_collation = rel_db_params.get("collation")
+            old_rel_db_params = old_rel.field.db_parameters(connection=self.connection)
+            old_rel_collation = old_rel_db_params.get("collation")
             fragment, other_actions = self._alter_column_type_sql(
-                new_rel.related_model, old_rel.field, new_rel.field, rel_type
+                new_rel.related_model, old_rel.field, new_rel.field, rel_type, old_rel_collation,
+                rel_collation,
             )
             # Drop related_model indexes, so it can be altered
             index_names = self._db_table_constraint_names(old_rel.related_model._meta.db_table, index=True)
