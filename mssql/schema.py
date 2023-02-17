@@ -695,8 +695,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             rel_type = rel_db_params['type']
             if django_version >= (4, 2):
                 fragment, other_actions = self._alter_column_type_sql(
-                    new_rel.related_model, old_rel.field, new_rel.field, rel_type, 
-                    old_rel_collation=None, rel_collation=None
+                    new_rel.related_model, old_rel.field, new_rel.field, rel_type, None, None
                 )
             else:
                 fragment, other_actions = self._alter_column_type_sql(
