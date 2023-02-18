@@ -9,6 +9,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+
 # We are using this Mixin to test casting of BigAuto and Auto fields 
 class BigAutoFieldMixin(models.Model):
     id = models.BigAutoField(primary_key=True)
@@ -31,9 +32,7 @@ class Post(BigAutoFieldMixin, models.Model):
     alt_editor = models.ForeignKey(Editor, models.SET_NULL, blank=True, null=True)
 
     class Meta:
-        unique_together = (
-            ('author', 'title', 'alt_editor'),
-        )
+        unique_together = (('author', 'title', 'alt_editor'), )
 
     def __str__(self):
         return self.title
@@ -73,7 +72,7 @@ class TestUniqueNullableModel(models.Model):
 
 class TestNullableUniqueTogetherModel(models.Model):
     class Meta:
-        unique_together = (('a', 'b', 'c'),)
+        unique_together = (('a', 'b', 'c'), )
 
     # Issue https://github.com/ESSolutions/django-mssql-backend/issues/45 (case 2)
     # Fields used for testing changing the type of a field that is in a `unique_together`
@@ -119,22 +118,15 @@ class Pizza(models.Model):
     toppings = models.ManyToManyField(Topping)
 
     def __str__(self):
-        return "%s (%s)" % (
-            self.name,
-            ", ".join(topping.name for topping in self.toppings.all()),
-        )
+        return "%s (%s)" % (self.name, ", ".join(topping.name for topping in self.toppings.all()), )
 
 
 class TestUnsupportableUniqueConstraint(models.Model):
     class Meta:
         managed = False
-        constraints = [
-            models.UniqueConstraint(
-                name='or_constraint',
-                fields=['_type'],
-                condition=(Q(status='in_progress') | Q(status='needs_changes')),
-            ),
-        ]
+        constraints = [models.UniqueConstraint(name='or_constraint', 
+                                               fields=['_type'], 
+                                               condition=(Q(status='in_progress') | Q(status='needs_changes')), ), ]
 
     _type = models.CharField(max_length=50)
     status = models.CharField(max_length=50)
@@ -142,20 +134,12 @@ class TestUnsupportableUniqueConstraint(models.Model):
 
 class TestSupportableUniqueConstraint(models.Model):
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                name='and_constraint',
-                fields=['_type'],
-                condition=(
-                    Q(status='in_progress') & Q(status='needs_changes') & Q(status='published')
-                ),
-            ),
-            models.UniqueConstraint(
-                name='in_constraint',
-                fields=['_type'],
-                condition=(Q(status__in=['in_progress', 'needs_changes'])),
-            ),
-        ]
+        constraints = [models.UniqueConstraint(name='and_constraint', 
+                                               fields=['_type'], 
+                                               condition=(Q(status='in_progress') & Q(status='needs_changes') & Q(status='published')), ), 
+                       models.UniqueConstraint(name='in_constraint', 
+                                               fields=['_type'], 
+                                               condition=(Q(status__in=['in_progress', 'needs_changes'])), ), ]
 
     _type = models.CharField(max_length=50)
     status = models.CharField(max_length=50)
@@ -178,15 +162,9 @@ if VERSION >= (3, 2):
         name = models.CharField(max_length=100)
 
         class Meta:
-            required_db_features = {
-                'supports_table_check_constraints',
-            }
-            constraints = [
-                models.CheckConstraint(
-                    check=~models.Q(name__startswith='\u00f7'),
-                    name='name_does_not_starts_with_\u00f7',
-                )
-            ]
+            required_db_features = {'supports_table_check_constraints', }
+            constraints = [models.CheckConstraint(check=~models.Q(name__startswith='\u00f7'), 
+                                                  name='name_does_not_starts_with_\u00f7', )]
 
 
 class Question(models.Model):
