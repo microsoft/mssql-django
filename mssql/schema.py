@@ -161,9 +161,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 [],
             )
 
-    def _alter_column_type_sql(self, model, old_field, new_field, new_type):
-        new_type = self._set_field_new_type_null_status(old_field, new_type)
-        return super()._alter_column_type_sql(model, old_field, new_field, new_type)
+    if django_version >= (4, 2):
+        def _alter_column_type_sql(self, model, old_field, new_field, new_type, old_collation, new_collation):
+            new_type = self._set_field_new_type_null_status(old_field, new_type)
+            return super()._alter_column_type_sql(model, old_field, new_field, new_type, old_collation, new_collation)
+    else:
+        def _alter_column_type_sql(self, model, old_field, new_field, new_type):
+            new_type = self._set_field_new_type_null_status(old_field, new_type)
+            return super()._alter_column_type_sql(model, old_field, new_field, new_type)
 
     def alter_unique_together(self, model, old_unique_together, new_unique_together):
         """
@@ -443,7 +448,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         post_actions = []
         # Type change?
         if old_type != new_type:
-            fragment, other_actions = self._alter_column_type_sql(model, old_field, new_field, new_type)
+            if django_version >= (4, 2):
+                fragment, other_actions = self._alter_column_type_sql(
+                    model, old_field, new_field, new_type, old_collation=None, new_collation=None
+                )
+            else:
+                fragment, other_actions =  self._alter_column_type_sql(model, old_field, new_field, new_type)
             actions.append(fragment)
             post_actions.extend(other_actions)
             # Drop unique constraint, SQL Server requires explicit deletion
@@ -683,9 +693,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for old_rel, new_rel in rels_to_update:
             rel_db_params = new_rel.field.db_parameters(connection=self.connection)
             rel_type = rel_db_params['type']
-            fragment, other_actions = self._alter_column_type_sql(
-                new_rel.related_model, old_rel.field, new_rel.field, rel_type
-            )
+            if django_version >= (4, 2):
+                fragment, other_actions = self._alter_column_type_sql(
+                    new_rel.related_model, old_rel.field, new_rel.field, rel_type, old_collation=None, new_collation=None
+                )
+            else:
+                fragment, other_actions = self._alter_column_type_sql(
+                    new_rel.related_model, old_rel.field, new_rel.field, rel_type
+                )
             # Drop related_model indexes, so it can be altered
             index_names = self._db_table_constraint_names(old_rel.related_model._meta.db_table, index=True)
             for index_name in index_names:
@@ -1262,8 +1277,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                                       (constraint.condition.connector, constraint.name))
         super().add_constraint(model, constraint)
 
-    def _collate_sql(self, collation):
-        return ' COLLATE ' + collation
+    if django_version >= (4, 2):
+        def _collate_sql(self, collation, old_collation=None, table_name=None):
+            return ' COLLATE ' + collation if collation else ""
+    else:
+        def _collate_sql(self, collation):
+            return ' COLLATE ' + collation
 
     def _create_index_name(self, table_name, column_names, suffix=""):
         index_name = super()._create_index_name(table_name, column_names, suffix)
