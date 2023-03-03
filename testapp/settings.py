@@ -152,7 +152,6 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_unique_and_reverse_m2m',
     'schema.tests.SchemaTests.test_unique_no_unnecessary_fk_drops',
     'select_for_update.tests.SelectForUpdateTests.test_for_update_after_from',
-    'backends.tests.LastExecutedQueryTest.test_last_executed_query',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_exact_lookup',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_greaterthan_lookup',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_lessthan_lookup',
