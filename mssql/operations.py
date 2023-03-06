@@ -404,7 +404,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         """Return LIMIT/OFFSET SQL clause."""
         limit, offset = self._get_limit_offset_params(low_mark, high_mark)
         return '%s%s' % (
-            (' OFFSET %d ROWS' % offset) if offset else '',
+            (' OFFSET %d ROWS' % offset) if offset else ' OFFSET 0 ROWS',
             (' FETCH FIRST %d ROWS ONLY' % limit) if limit else '',
         )
 
