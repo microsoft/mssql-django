@@ -99,11 +99,8 @@ USE_TZ = False
 
 TEST_RUNNER = "testapp.runners.ExcludedTestSuiteRunner"
 EXCLUDED_TESTS = [
-    'aggregation.tests.AggregateTestCase.test_expression_on_aggregation',
-    'aggregation_regress.tests.AggregationTests.test_annotated_conditional_aggregate',
     'aggregation_regress.tests.AggregationTests.test_annotation_with_value',
     'aggregation.tests.AggregateTestCase.test_distinct_on_aggregate',
-    'annotations.tests.NonAggregateAnnotationTestCase.test_annotate_exists',
     'custom_lookups.tests.BilateralTransformTests.test_transform_order_by',
     'expressions.tests.BasicExpressionsTests.test_filtering_on_annotate_that_uses_q',
     'expressions.tests.BasicExpressionsTests.test_order_by_exists',
@@ -165,17 +162,13 @@ EXCLUDED_TESTS = [
     'backends.tests.BackendTestCase.test_queries',
     'introspection.tests.IntrospectionTests.test_smallautofield',
     'schema.tests.SchemaTests.test_inline_fk',
-    'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_exists',
-    'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_values_collision',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_func_with_timezone',
     'expressions.tests.FTimeDeltaTests.test_date_subquery_subtraction',
     'expressions.tests.FTimeDeltaTests.test_datetime_subquery_subtraction',
     'expressions.tests.FTimeDeltaTests.test_time_subquery_subtraction',
     'migrations.test_operations.OperationTests.test_alter_field_reloads_state_on_fk_with_to_field_target_type_change',
     'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk',
-    
     'annotations.tests.NonAggregateAnnotationTestCase.test_combined_expression_annotation_with_aggregation',
-    'db_functions.comparison.test_cast.CastTests.test_cast_to_integer',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_func',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_iso_weekday_func',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_func',
@@ -271,7 +264,6 @@ EXCLUDED_TESTS = [
     # Django 4.1
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_on_exists',
     'aggregation.tests.AggregateTestCase.test_aggregation_exists_multivalued_outeref',
-    'annotations.tests.NonAggregateAnnotationTestCase.test_full_expression_annotation_with_aggregation',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_lookup_name_sql_injection',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection',
     'schema.tests.SchemaTests.test_autofield_to_o2o',
