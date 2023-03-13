@@ -230,6 +230,9 @@ class SQLCompiler(compiler.SQLCompiler):
                 if not getattr(features, 'supports_select_{}'.format(combinator)):
                     raise NotSupportedError('{} is not supported on this database backend.'.format(combinator))
                 result, params = self.get_combinator_sql(combinator, self.query.combinator_all)
+            elif self.qualify:
+                result, params = self.get_qualify_sql()
+                order_by = None
             else:
                 distinct_fields, distinct_params = self.get_distinct()
                 # This must come after 'select', 'ordering', and 'distinct' -- see
@@ -258,10 +261,6 @@ class SQLCompiler(compiler.SQLCompiler):
                     result += distinct_result
                     params += distinct_params
 
-                # SQL Server requires the keword for limitting at the begenning
-                if do_limit and not do_offset:
-                    result.append('TOP %d' % high_mark)
-
                 out_cols = []
                 col_idx = 1
                 for _, (s_sql, s_params), alias in self.select + extra_select:
@@ -274,7 +273,7 @@ class SQLCompiler(compiler.SQLCompiler):
                     out_cols.append(s_sql)
 
                 # SQL Server requires an order-by clause for offsetting
-                if do_offset:
+                if do_limit:
                     meta = self.query.get_meta()
                     qn = self.quote_name_unless_alias
                     offsetting_order_by = '%s.%s' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))
@@ -382,7 +381,7 @@ class SQLCompiler(compiler.SQLCompiler):
 
             # SQL Server requires the backend-specific emulation (2008 or earlier)
             # or an offset clause (2012 or newer) for offsetting
-            if do_offset:
+            if do_limit:
                 if do_offset_emulation:
                     # Construct the final SQL clause, using the initial select SQL
                     # obtained above.
