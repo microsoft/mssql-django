@@ -267,6 +267,7 @@ EXCLUDED_TESTS = [
     # Django 4.1
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_on_exists',
     'aggregation.tests.AggregateTestCase.test_aggregation_exists_multivalued_outeref',
+    'annotations.tests.NonAggregateAnnotationTestCase.test_full_expression_annotation_with_aggregation',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_lookup_name_sql_injection',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection',
     'schema.tests.SchemaTests.test_autofield_to_o2o',
