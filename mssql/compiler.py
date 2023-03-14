@@ -230,7 +230,7 @@ class SQLCompiler(compiler.SQLCompiler):
                 if not getattr(features, 'supports_select_{}'.format(combinator)):
                     raise NotSupportedError('{} is not supported on this database backend.'.format(combinator))
                 result, params = self.get_combinator_sql(combinator, self.query.combinator_all)
-            elif self.qualify:
+            elif django.VERSION >= (4, 2) and self.qualify:
                 result, params = self.get_qualify_sql()
                 order_by = None
             else:
