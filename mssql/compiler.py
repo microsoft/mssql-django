@@ -264,7 +264,6 @@ class SQLCompiler(compiler.SQLCompiler):
                 # SQL Server requires the keword for limitting at the begenning
                 if do_limit and not do_offset:
                     result.append('TOP %d' % high_mark)
-                
                 out_cols = []
                 col_idx = 1
                 for _, (s_sql, s_params), alias in self.select + extra_select:
