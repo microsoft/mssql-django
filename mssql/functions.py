@@ -10,6 +10,7 @@ from django.db.models import BooleanField, CheckConstraint, Value
 from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
+from django.db.models.functions.datetime import Now
 from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round, Degrees, Radians, Power
 from django.db.models.functions.text import Replace
 from django.db.models.lookups import In, Lookup
@@ -123,6 +124,10 @@ def sqlserver_exists(self, compiler, connection, template=None, **extra_context)
     sql = 'CASE WHEN {} THEN 1 ELSE 0 END'.format(sql)
     return sql, params
 
+def sqlserver_now(self, compiler, connection, **extra_context):
+        return self.as_sql(
+            compiler, connection, template="SYSDATETIME()", **extra_context
+        )
 
 def sqlserver_lookup(self, compiler, connection):
     # MSSQL doesn't allow EXISTS() to be compared to another expression
@@ -456,6 +461,7 @@ NthValue.as_microsoft = sqlserver_nth_value
 Round.as_microsoft = sqlserver_round
 Window.as_microsoft = sqlserver_window
 Replace.as_microsoft = sqlserver_replace
+Now.as_microsoft = sqlserver_now
 MD5.as_microsoft = sqlserver_md5
 SHA1.as_microsoft = sqlserver_sha1
 SHA224.as_microsoft = sqlserver_sha224
