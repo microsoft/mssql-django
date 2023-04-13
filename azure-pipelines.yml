@@ -15,8 +15,12 @@ variables:
 - group: DjangoTestApp
 
 parameters:
-  python_versions: ['3.6', '3.7', '3.8', '3.9', '3.10']
-  django_versions: ['3.2', '4.0', '4.1']
+  - name: python_versions
+    type: object
+    default: ['3.6', '3.7', '3.8', '3.9', '3.10']
+  - name: django_versions
+    type: object
+    default: ['3.2', '4.0', '4.1']
 
 stages:
 - stage: Windows
