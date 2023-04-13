@@ -79,13 +79,13 @@ stages:
               python -m tox -e "py$($(python_version))-django$($(django_version))".replace(".", "")
             displayName: Run tox
 
-- stage: Linux
-  dependsOn: [] # Allows for both Windows and Linux to run parallel
-  jobs:
-  - ${{ each python_version in python_versions }}:
-    - ${{ each django_version in django_versions }}:
-      - job:
-        displayName: Linux Python ${{ python_version }} - Django ${{ django_version }}
+# - stage: Linux
+#   dependsOn: [] # Allows for both Windows and Linux to run parallel
+#   jobs:
+#   - ${{ each python_version in parameters.python_versions }}:
+#     - ${{ each django_version in parameters.django_versions }}:
+#       - job:
+#         displayName: Linux Python ${{ python_version }} - Django ${{ django_version }}
 
 # jobs:
 #   - job: Windows
