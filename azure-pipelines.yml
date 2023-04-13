@@ -21,10 +21,10 @@ parameters:
 stages:
 - stage: Windows
   jobs:
-  - ${{ each python.version in python.versions }}:
-    - ${{ each django.version in django.versions }}:
+  - ${{ each python_version in python.versions }}:
+    - ${{ each django_version in django.versions }}:
       - job:
-        displayName: Windows Python ${{ python.version }} - Django ${{ django.version }}
+        displayName: Windows Python ${{ python_version }} - Django ${{ django_version }}
         pool:
           name: Django-1ES-pool
           demands:
@@ -38,8 +38,8 @@ stages:
 
           - task: UsePythonVersion@0
             inputs:
-              versionSpec: "$(python.version)"
-            displayName: Use Python $(python.version)
+              versionSpec: "$(python_version)"
+            displayName: Use Python $(python_version)
 
           - powershell: |
               $IP=Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $(Get-NetConnectionProfile -IPv4Connectivity Internet | Select-Object -ExpandProperty InterfaceIndex) | Select-Object -ExpandProperty IPAddress
@@ -72,16 +72,16 @@ stages:
               python -m pip install --upgrade pip wheel setuptools
               python -m pip install tox
               git clone https://github.com/django/django.git
-              python -m tox -e "py$($(python.version))-django$($(django.version))".replace(".", "")
+              python -m tox -e "py$($(python_version))-django$($(django_version))".replace(".", "")
             displayName: Run tox
 
 - stage: Linux
   dependsOn: [] # Allows for both Windows and Linux to run parallel
   jobs:
-  - ${{ each python.version in python.versions }}:
-    - ${{ each django.version in django.versions }}:
+  - ${{ each python_version in python.versions }}:
+    - ${{ each django_version in django.versions }}:
       - job:
-        displayName: Linux Python ${{ python.version }} - Django ${{ django.version }}
+        displayName: Linux Python ${{ python_version }} - Django ${{ django_version }}
 
 # jobs:
 #   - job: Windows
