@@ -14,6 +14,76 @@ schedules:
 variables:
 - group: DjangoTestApp
 
+parameters:
+  python.versions: [3.6, 3.7, 3.8, 3.9, 3.10]
+  django.versions: [3.2, 4.0, 4.1]
+
+stages:
+- stage: Windows
+  jobs:
+  - ${{ each python.version in python.versions }}:
+    - ${{ each django.version in django.versions }}:
+      - job:
+        displayName: Windows Python ${{ python.version }} - Django ${{ django.version }}
+        pool:
+          name: Django-1ES-pool
+          demands:
+          - imageOverride -equals JDBC-MMS2019-SQL2019
+        timeoutInMinutes: 120
+
+        steps:
+          - task: CredScan@2
+            inputs:
+              toolMajorVersion: 'V2'
+
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "$(python.version)"
+            displayName: Use Python $(python.version)
+
+          - powershell: |
+              $IP=Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $(Get-NetConnectionProfile -IPv4Connectivity Internet | Select-Object -ExpandProperty InterfaceIndex) | Select-Object -ExpandProperty IPAddress
+
+              (Get-Content $pwd/testapp/settings.py).replace('localhost', $IP) | Set-Content $pwd/testapp/settings.py
+
+              Invoke-WebRequest https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.5.2.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
+              msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
+              Get-OdbcDriver
+            displayName: Install ODBC
+
+          - powershell: |
+              Import-Module "sqlps"
+              Invoke-Sqlcmd @"
+                  EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
+                  ALTER LOGIN [sa] ENABLE;
+                  ALTER LOGIN [sa] WITH PASSWORD = '$(TestAppPassword)', CHECK_POLICY=OFF;
+              "@
+            displayName: Set up SQL Server
+
+          - powershell: |
+              Restart-Service -Name MSSQLSERVER -Force
+            displayName: Restart SQL Server
+
+          - powershell: |
+              (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassWord)' | Set-Content testapp\settings.py
+            displayName: Change PASSWORD in settings.py
+
+          - powershell: |
+              python -m pip install --upgrade pip wheel setuptools
+              python -m pip install tox
+              git clone https://github.com/django/django.git
+              python -m tox -e "py$($(python.version))-django$($(django.version))".replace(".", "")
+            displayName: Run tox
+
+
+- stage: Linux
+  dependsOn: [] # Allows for both Windows and Linux to run parallel
+  jobs:
+  - ${{ each python.version in python.versions }}:
+    - ${{ each django.version in django.versions }}:
+      - job:
+        displayName: Linux Python ${{ python.version }} - Django ${{ django.version }}
+
 jobs:
   - job: Windows
     pool:
