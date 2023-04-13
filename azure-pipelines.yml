@@ -75,7 +75,6 @@ stages:
               python -m tox -e "py$($(python.version))-django$($(django.version))".replace(".", "")
             displayName: Run tox
 
-
 - stage: Linux
   dependsOn: [] # Allows for both Windows and Linux to run parallel
   jobs:
@@ -84,172 +83,172 @@ stages:
       - job:
         displayName: Linux Python ${{ python.version }} - Django ${{ django.version }}
 
-jobs:
-  - job: Windows
-    pool:
-      name: Django-1ES-pool
-      demands:
-      - imageOverride -equals JDBC-MMS2019-SQL2019
-    timeoutInMinutes: 120
+# jobs:
+#   - job: Windows
+#     pool:
+#       name: Django-1ES-pool
+#       demands:
+#       - imageOverride -equals JDBC-MMS2019-SQL2019
+#     timeoutInMinutes: 120
 
-    strategy:
-      matrix:
-        Python3.10 - Django 4.1:
-          python.version: '3.10'
-          tox.env: 'py310-django41'
-        Python 3.9 - Django 4.1:
-          python.version: '3.9'
-          tox.env: 'py39-django41'
-        Python 3.8 - Django 4.1:
-          python.version: '3.8'
-          tox.env: 'py38-django41'
+#     strategy:
+#       matrix:
+#         Python3.10 - Django 4.1:
+#           python.version: '3.10'
+#           tox.env: 'py310-django41'
+#         Python 3.9 - Django 4.1:
+#           python.version: '3.9'
+#           tox.env: 'py39-django41'
+#         Python 3.8 - Django 4.1:
+#           python.version: '3.8'
+#           tox.env: 'py38-django41'
 
-        Python3.10 - Django 4.0:
-          python.version: '3.10'
-          tox.env: 'py310-django40'
-        Python 3.9 - Django 4.0:
-          python.version: '3.9'
-          tox.env: 'py39-django40'
-        Python 3.8 - Django 4.0:
-          python.version: '3.8'
-          tox.env: 'py38-django40'
+#         Python3.10 - Django 4.0:
+#           python.version: '3.10'
+#           tox.env: 'py310-django40'
+#         Python 3.9 - Django 4.0:
+#           python.version: '3.9'
+#           tox.env: 'py39-django40'
+#         Python 3.8 - Django 4.0:
+#           python.version: '3.8'
+#           tox.env: 'py38-django40'
 
-        Python 3.9 - Django 3.2:
-          python.version: '3.9'
-          tox.env: 'py39-django32'
-        Python 3.8 - Django 3.2:
-          python.version: '3.8'
-          tox.env: 'py38-django32'
-        Python 3.7 - Django 3.2:
-          python.version: '3.7'
-          tox.env: 'py37-django32'
-        Python 3.6 - Django 3.2:
-          python.version: '3.6'
-          tox.env: 'py36-django32'
+#         Python 3.9 - Django 3.2:
+#           python.version: '3.9'
+#           tox.env: 'py39-django32'
+#         Python 3.8 - Django 3.2:
+#           python.version: '3.8'
+#           tox.env: 'py38-django32'
+#         Python 3.7 - Django 3.2:
+#           python.version: '3.7'
+#           tox.env: 'py37-django32'
+#         Python 3.6 - Django 3.2:
+#           python.version: '3.6'
+#           tox.env: 'py36-django32'
 
-    steps:
-      - task: CredScan@2
-        inputs:
-          toolMajorVersion: 'V2'
+#     steps:
+#       - task: CredScan@2
+#         inputs:
+#           toolMajorVersion: 'V2'
 
-      - task: UsePythonVersion@0
-        inputs:
-          versionSpec: "$(python.version)"
-        displayName: Use Python $(python.version)
+#       - task: UsePythonVersion@0
+#         inputs:
+#           versionSpec: "$(python.version)"
+#         displayName: Use Python $(python.version)
 
-      - powershell: |
-          $IP=Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $(Get-NetConnectionProfile -IPv4Connectivity Internet | Select-Object -ExpandProperty InterfaceIndex) | Select-Object -ExpandProperty IPAddress
+#       - powershell: |
+#           $IP=Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $(Get-NetConnectionProfile -IPv4Connectivity Internet | Select-Object -ExpandProperty InterfaceIndex) | Select-Object -ExpandProperty IPAddress
 
-          (Get-Content $pwd/testapp/settings.py).replace('localhost', $IP) | Set-Content $pwd/testapp/settings.py
+#           (Get-Content $pwd/testapp/settings.py).replace('localhost', $IP) | Set-Content $pwd/testapp/settings.py
 
-          Invoke-WebRequest https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.5.2.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
-          msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
-          Get-OdbcDriver
-        displayName: Install ODBC
+#           Invoke-WebRequest https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.5.2.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
+#           msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
+#           Get-OdbcDriver
+#         displayName: Install ODBC
 
-      - powershell: |
-          Import-Module "sqlps"
-          Invoke-Sqlcmd @"
-              EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
-              ALTER LOGIN [sa] ENABLE;
-              ALTER LOGIN [sa] WITH PASSWORD = '$(TestAppPassword)', CHECK_POLICY=OFF;
-          "@
-        displayName: Set up SQL Server
+#       - powershell: |
+#           Import-Module "sqlps"
+#           Invoke-Sqlcmd @"
+#               EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
+#               ALTER LOGIN [sa] ENABLE;
+#               ALTER LOGIN [sa] WITH PASSWORD = '$(TestAppPassword)', CHECK_POLICY=OFF;
+#           "@
+#         displayName: Set up SQL Server
 
-      - powershell: |
-          Restart-Service -Name MSSQLSERVER -Force
-        displayName: Restart SQL Server
+#       - powershell: |
+#           Restart-Service -Name MSSQLSERVER -Force
+#         displayName: Restart SQL Server
 
-      - powershell: |
-          (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassWord)' | Set-Content testapp\settings.py
-        displayName: Change PASSWORD in settings.py
+#       - powershell: |
+#           (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassWord)' | Set-Content testapp\settings.py
+#         displayName: Change PASSWORD in settings.py
 
-      - powershell: |
-          python -m pip install --upgrade pip wheel setuptools
-          python -m pip install tox
-          git clone https://github.com/django/django.git
+#       - powershell: |
+#           python -m pip install --upgrade pip wheel setuptools
+#           python -m pip install tox
+#           git clone https://github.com/django/django.git
 
-          python -m tox -e $(tox.env)
-        displayName: Run tox
+#           python -m tox -e $(tox.env)
+#         displayName: Run tox
 
-  - job: Linux
-    pool:
-      name: Django-1ES-pool
-      demands:
-      - imageOverride -equals MMSUbuntu20.04
-    timeoutInMinutes: 120
+#   - job: Linux
+#     pool:
+#       name: Django-1ES-pool
+#       demands:
+#       - imageOverride -equals MMSUbuntu20.04
+#     timeoutInMinutes: 120
 
-    strategy:
-      matrix:
-        Python3.10 - Django 4.1:
-          python.version: '3.10'
-          tox.env: 'py310-django41'
-        Python 3.9 - Django 4.1:
-          python.version: '3.9'
-          tox.env: 'py39-django41'
-        Python 3.8 - Django 4.1:
-          python.version: '3.8'
-          tox.env: 'py38-django41'
+#     strategy:
+#       matrix:
+#         Python3.10 - Django 4.1:
+#           python.version: '3.10'
+#           tox.env: 'py310-django41'
+#         Python 3.9 - Django 4.1:
+#           python.version: '3.9'
+#           tox.env: 'py39-django41'
+#         Python 3.8 - Django 4.1:
+#           python.version: '3.8'
+#           tox.env: 'py38-django41'
 
-        Python3.10 - Django 4.0:
-          python.version: '3.10'
-          tox.env: 'py310-django40'
-        Python 3.9 - Django 4.0:
-          python.version: '3.9'
-          tox.env: 'py39-django40'
-        Python 3.8 - Django 4.0:
-          python.version: '3.8'
-          tox.env: 'py38-django40'
+#         Python3.10 - Django 4.0:
+#           python.version: '3.10'
+#           tox.env: 'py310-django40'
+#         Python 3.9 - Django 4.0:
+#           python.version: '3.9'
+#           tox.env: 'py39-django40'
+#         Python 3.8 - Django 4.0:
+#           python.version: '3.8'
+#           tox.env: 'py38-django40'
 
-        Python 3.9 - Django 3.2:
-          python.version: '3.9'
-          tox.env: 'py39-django32'
-        Python 3.8 - Django 3.2:
-          python.version: '3.8'
-          tox.env: 'py38-django32'
-        Python 3.7 - Django 3.2:
-          python.version: '3.7'
-          tox.env: 'py37-django32'
-        Python 3.6 - Django 3.2:
-          python.version: '3.6'
-          tox.env: 'py36-django32'
+#         Python 3.9 - Django 3.2:
+#           python.version: '3.9'
+#           tox.env: 'py39-django32'
+#         Python 3.8 - Django 3.2:
+#           python.version: '3.8'
+#           tox.env: 'py38-django32'
+#         Python 3.7 - Django 3.2:
+#           python.version: '3.7'
+#           tox.env: 'py37-django32'
+#         Python 3.6 - Django 3.2:
+#           python.version: '3.6'
+#           tox.env: 'py36-django32'
 
-    steps:
-      - task: UsePythonVersion@0
-        inputs:
-          versionSpec: "$(python.version)"
-        displayName: Use Python $(python.version)
+#     steps:
+#       - task: UsePythonVersion@0
+#         inputs:
+#           versionSpec: "$(python.version)"
+#         displayName: Use Python $(python.version)
 
-      - script: |
-          docker pull mcr.microsoft.com/mssql/server:2022-latest
-          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
-          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-          curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
-          sudo apt-get update
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev libmemcached-dev
-        displayName: Install SQL Server
+#       - script: |
+#           docker pull mcr.microsoft.com/mssql/server:2022-latest
+#           docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+#           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+#           curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+#           sudo apt-get update
+#           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev libmemcached-dev
+#         displayName: Install SQL Server
 
-      - script: |
-          python -m pip install --upgrade pip wheel setuptools
-          pip install tox
-          git clone https://github.com/django/django.git
-        displayName: Install requirements
+#       - script: |
+#           python -m pip install --upgrade pip wheel setuptools
+#           pip install tox
+#           git clone https://github.com/django/django.git
+#         displayName: Install requirements
 
-      - script: |
-          sed -i 's/MyPassword42/$(TestAppPassword)/g' testapp/settings.py
-        displayName: Change PASSWORD in settings.py
+#       - script: |
+#           sed -i 's/MyPassword42/$(TestAppPassword)/g' testapp/settings.py
+#         displayName: Change PASSWORD in settings.py
 
-      - script: tox -e $(tox.env)
-        displayName: Run tox
+#       - script: tox -e $(tox.env)
+#         displayName: Run tox
 
-      - task: PublishCodeCoverageResults@1
-        inputs:
-          codeCoverageTool: 'Cobertura'
-          summaryFileLocation: 'django/coverage.xml'
+#       - task: PublishCodeCoverageResults@1
+#         inputs:
+#           codeCoverageTool: 'Cobertura'
+#           summaryFileLocation: 'django/coverage.xml'
 
-      - task: PublishTestResults@2
-        displayName: Publish test results via jUnit
-        inputs:
-          testResultsFormat: 'JUnit'
-          testResultsFiles: 'django/result.xml'
-          testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
+#       - task: PublishTestResults@2
+#         displayName: Publish test results via jUnit
+#         inputs:
+#           testResultsFormat: 'JUnit'
+#           testResultsFiles: 'django/result.xml'
+#           testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
