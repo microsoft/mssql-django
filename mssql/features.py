@@ -35,7 +35,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_boolean_expr_in_select_clause = False
     supports_covering_indexes = True
     supports_deferrable_unique_constraints = False
-    supports_expression_indexes = False
+    supports_expression_indexes = True
     supports_ignore_conflicts = False
     supports_index_on_text_field = False
     supports_json_field_contains = False
