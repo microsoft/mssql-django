@@ -15,18 +15,18 @@ variables:
 - group: DjangoTestApp
 
 parameters:
-  - name: python_versions
-    type: object
-    default: ['3.6', '3.7', '3.8', '3.9', '3.10']
-  - name: django_versions
-    type: object
-    default: ['3.2', '4.0', '4.1']
+- name: python_versions
+  type: object
+  default: ['3.6', '3.7', '3.8', '3.9', '3.10']
+- name: django_versions
+  type: object
+  default: ['3.2', '4.0', '4.1']
 
 stages:
 - stage: Windows
   jobs:
-  - ${{ each python_version in python_versions }}:
-    - ${{ each django_version in django_versions }}:
+  - ${{ each python_version in parameters.python_versions }}:
+    - ${{ each django_version in parameters.django_versions }}:
       - job:
         displayName: Windows Python ${{ python_version }} - Django ${{ django_version }}
         pool:
