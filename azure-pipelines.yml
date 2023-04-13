@@ -15,14 +15,14 @@ variables:
 - group: DjangoTestApp
 
 parameters:
-  python.versions: [3.6, 3.7, 3.8, 3.9, 3.10]
-  django.versions: [3.2, 4.0, 4.1]
+  python_versions: ['3.6', '3.7', '3.8', '3.9', '3.10']
+  django_versions: ['3.2', '4.0', '4.1']
 
 stages:
 - stage: Windows
   jobs:
-  - ${{ each python_version in python.versions }}:
-    - ${{ each django_version in django.versions }}:
+  - ${{ each python_version in python_versions }}:
+    - ${{ each django_version in django_versions }}:
       - job:
         displayName: Windows Python ${{ python_version }} - Django ${{ django_version }}
         pool:
@@ -78,8 +78,8 @@ stages:
 - stage: Linux
   dependsOn: [] # Allows for both Windows and Linux to run parallel
   jobs:
-  - ${{ each python_version in python.versions }}:
-    - ${{ each django_version in django.versions }}:
+  - ${{ each python_version in python_versions }}:
+    - ${{ each django_version in django_versions }}:
       - job:
         displayName: Linux Python ${{ python_version }} - Django ${{ django_version }}
 
