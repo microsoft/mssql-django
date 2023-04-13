@@ -76,7 +76,7 @@ stages:
               python -m pip install --upgrade pip wheel setuptools
               python -m pip install tox
               git clone https://github.com/django/django.git
-              python -m tox -e "py$($(python_version))-django$($(django_version))".replace(".", "")
+              python -m tox -e "py${{ python_version }}-django${{ django_version }}".replace(".", "")
             displayName: Run tox
 
 - stage: Linux
