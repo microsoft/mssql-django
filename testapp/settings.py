@@ -119,7 +119,6 @@ EXCLUDED_TESTS = [
     'ordering.tests.OrderingTests.test_orders_nulls_first_on_filtered_subquery',
     'get_or_create.tests.UpdateOrCreateTransactionTests.test_creation_in_transaction',
     'indexes.tests.PartialIndexTests.test_multiple_conditions',
-    'introspection.tests.IntrospectionTests.test_get_constraints',
     'migrations.test_executor.ExecutorTests.test_alter_id_type_with_fk',
     'migrations.test_operations.OperationTests.test_add_constraint_percent_escaping',
     'migrations.test_operations.OperationTests.test_alter_field_pk',
@@ -144,7 +143,6 @@ EXCLUDED_TESTS = [
     'ordering.tests.OrderingTests.test_deprecated_values_annotate',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_limits',
     'backends.tests.BackendTestCase.test_unicode_password',
-    'introspection.tests.IntrospectionTests.test_get_table_description_types',
     'migrations.test_commands.MigrateTests.test_migrate_syncdb_app_label',
     'migrations.test_commands.MigrateTests.test_migrate_syncdb_deferred_sql_executed_with_schemaeditor',
     'migrations.test_operations.OperationTests.test_alter_field_pk_fk',
@@ -216,7 +214,6 @@ EXCLUDED_TESTS = [
     'lookup.tests.LookupTests.test_in_ignore_none',
     'lookup.tests.LookupTests.test_in_ignore_none_with_unhashable_items',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_exists_union',
-    'introspection.tests.IntrospectionTests.test_get_constraints_unique_indexes_orders',
     'schema.tests.SchemaTests.test_ci_cs_db_collation',
     'select_for_update.tests.SelectForUpdateTests.test_unsuported_no_key_raises_error',
 
