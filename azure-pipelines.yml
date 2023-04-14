@@ -118,8 +118,8 @@ stages:
             displayName: Change PASSWORD in settings.py
 
           - script: |
-              $tox_env =
-              tox -e $(tox_env)
+              tox_env="py${{ python_version }}-django${{ django_version }}"
+              tox -e ${tox_env//"."/""}
             displayName: Run tox
 
           - task: PublishCodeCoverageResults@1
@@ -132,7 +132,7 @@ stages:
             inputs:
               testResultsFormat: 'JUnit'
               testResultsFiles: 'django/result.xml'
-              testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
+              testRunTitle: replace('junit-$(Agent.OS)-$(Agent.OSArchitecture)-py${{ python_version }}-django${{ django_version }}', '.', '')
 
   # - job: Linux
   #   pool:
