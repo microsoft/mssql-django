@@ -292,7 +292,7 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
         SQL Server require that at least one of the result expressions in a CASE specification must be an expression other than the NULL constant.
         Patched with a default value 0. The user can also pass a custom default value for CASE statement.
     """
-    if batch_size is not None and batch_size < 0:
+    if batch_size is not None and batch_size <= 0:
         raise ValueError('Batch size must be a positive integer.')
     if not fields:
         raise ValueError('Field names must be given to bulk_update().')
