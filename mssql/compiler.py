@@ -209,8 +209,11 @@ class SQLCompiler(compiler.SQLCompiler):
         """
         refcounts_before = self.query.alias_refcount.copy()
         try:
-            combinator = self.query.combinator
-            extra_select, order_by, group_by = self.pre_sql_setup(with_col_aliases=with_col_aliases or bool(combinator))
+            if django.VERSION >= (4, 2):
+                combinator = self.query.combinator
+                extra_select, order_by, group_by = self.pre_sql_setup(with_col_aliases=with_col_aliases or bool(combinator))
+            else:
+                extra_select, order_by, group_by = self.pre_sql_setup()
             for_update_part = None
             # Is a LIMIT/OFFSET clause needed?
             with_limit_offset = with_limits and (self.query.high_mark is not None or self.query.low_mark)
