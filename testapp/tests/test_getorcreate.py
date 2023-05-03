@@ -12,7 +12,7 @@ from ..models import Book, Publisher
 DJANGO42 = VERSION >= (4, 2)
 
 # Copied from Django test suite but modified to test our code
-@skipUnless(DJANGO42, "Django 3 specific tests")
+@skipUnless(DJANGO42, "Django 4.2 specific tests")
 class UpdateOrCreateTests(TestCase):
 
     def test_update_only_defaults_and_pre_save_fields_when_local_fields(self):
