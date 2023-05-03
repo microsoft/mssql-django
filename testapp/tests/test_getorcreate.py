@@ -1,11 +1,18 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the BSD license.
+from unittest import skipUnless
+
+from django import VERSION
 from django.test import TestCase
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from django.utils.functional import lazy
 
 from ..models import Book, Publisher
 
+DJANGO42 = VERSION >= (4, 2)
+
 # Copied from Django test suite but modified to test our code
+@skipUnless(DJANGO42, "Django 3 specific tests")
 class UpdateOrCreateTests(TestCase):
 
     def test_update_only_defaults_and_pre_save_fields_when_local_fields(self):
