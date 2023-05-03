@@ -9,7 +9,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
-# We are using this Mixin to test casting of BigAuto and Auto fields 
+# We are using this Mixin to test casting of BigAuto and Auto fields
 class BigAutoFieldMixin(models.Model):
     id = models.BigAutoField(primary_key=True)
 
@@ -230,3 +230,19 @@ class Number(models.Model):
 
     def __str__(self):
         return "%i, %.3f, %.17f" % (self.integer, self.float, self.decimal_value)
+
+
+class Publisher(models.Model):
+    name = models.CharField(max_length=100)
+
+
+class Book(models.Model):
+    name = models.CharField(max_length=100)
+    authors = models.ManyToManyField(Author, related_name="books")
+    publisher = models.ForeignKey(
+        Publisher,
+        models.CASCADE,
+        related_name="books",
+        db_column="publisher_id_column",
+    )
+    updated = models.DateTimeField(auto_now=True)
