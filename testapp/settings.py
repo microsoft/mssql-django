@@ -289,6 +289,9 @@ EXCLUDED_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
     'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
     'model_fields.test_jsonfield.TestQuerying.test_has_key_number',
+
+    # Django 4.2
+    'get_or_create.tests.UpdateOrCreateTests.test_update_only_defaults_and_pre_save_fields_when_local_fields'
 ]
 
 REGEX_TESTS = [
