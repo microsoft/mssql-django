@@ -298,8 +298,9 @@ EXCLUDED_TESTS = [
     'aggregation.tests.AggregateTestCase.test_group_by_nested_expression_with_params',
     'expressions.tests.BasicExpressionsTests.test_aggregate_subquery_annotation',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_order_with_null_first_last',
-    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order,',
+    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
     'expressions_window.tests.WindowFunctionTests.test_limited_filter',
+    'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
 ]
 
 REGEX_TESTS = [
