@@ -8,7 +8,7 @@ from collections import namedtuple
 
 from django import VERSION
 from django.db.backends.base.introspection import BaseDatabaseIntrospection
-from django.db.backends.base.introspection import FieldInfo
+from django.db.backends.base.introspection import FieldInfo as BaseFieldInfo
 from django.db.backends.base.introspection import TableInfo as BaseTableInfo
 from django.db.models.indexes import Index
 from django.conf import settings
@@ -17,6 +17,7 @@ SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 SQL_TIMESTAMP_WITH_TIMEZONE = -155
 
+FieldInfo = namedtuple("FieldInfo", BaseFieldInfo._fields + ("comment",))
 TableInfo = namedtuple("TableInfo", BaseTableInfo._fields + ("comment",))
 
 def get_schema_name():
@@ -144,7 +145,16 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     column.append(collation_name[0] if collation_name else '')
                 else:
                     column.append('')
-
+            if VERSION >= (4, 2):
+                sql = """select CAST(ep.value AS VARCHAR) AS COMMENT
+                        FROM sys.columns c
+                        INNER JOIN sys.tables t ON c.object_id = t.object_id
+                        INNER JOIN sys.extended_properties ep ON c.object_id=ep.major_id AND ep.minor_id = c.column_id
+                        WHERE t.name = '%s' AND c.name = '%s' AND ep.name = 'MS_Description'
+                        """ % (table_name, column[0])
+                cursor.execute(sql)
+                comment = cursor.fetchone()
+                column.append(comment)
             if identity_check and self._is_auto_field(cursor, table_name, column[0]):
                 if column[1] == Database.SQL_BIGINT:
                     column[1] = SQL_BIGAUTOFIELD
@@ -152,7 +162,10 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     column[1] = SQL_AUTOFIELD
             if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
                 column[1] = Database.SQL_WCHAR
-            items.append(FieldInfo(*column))
+            if VERSION >= (4, 2):
+                items.append(FieldInfo(*column))
+            else:
+                items.append(BaseFieldInfo(*column))
         return items
 
     def get_sequences(self, cursor, table_name, table_fields=()):
