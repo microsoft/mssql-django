@@ -4,10 +4,12 @@
 from django.db import DatabaseError
 import pyodbc as Database
 
+from collections import namedtuple
+
 from django import VERSION
-from django.db.backends.base.introspection import (
-    BaseDatabaseIntrospection, FieldInfo, TableInfo,
-)
+from django.db.backends.base.introspection import BaseDatabaseIntrospection
+from django.db.backends.base.introspection import FieldInfo
+from django.db.backends.base.introspection import TableInfo as BaseTableInfo
 from django.db.models.indexes import Index
 from django.conf import settings
 
@@ -15,6 +17,7 @@ SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 SQL_TIMESTAMP_WITH_TIMEZONE = -155
 
+TableInfo = namedtuple("TableInfo", BaseTableInfo._fields + ("comment",))
 
 def get_schema_name():
     return getattr(settings, 'SCHEMA_TO_INSPECT', 'SCHEMA_NAME()')
@@ -71,13 +74,28 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns a list of table and view names in the current database.
         """
-        sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s' % (
+        sql = """SELECT
+                    TABLE_NAME,
+                    TABLE_TYPE,
+                    CAST(ep.value AS VARCHAR) AS COMMENT
+                FROM INFORMATION_SCHEMA.TABLES i
+                INNER JOIN sys.tables t ON t.name = i.TABLE_NAME
+                LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
+                WHERE
+                    ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
+                    AND
+                    i.TABLE_SCHEMA = %s""" % (
             get_schema_name())
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
-        return [TableInfo(row[0], types.get(row[1]))
-                for row in cursor.fetchall()
-                if row[0] not in self.ignored_tables]
+        if VERSION >= (4, 2):
+            return [TableInfo(row[0], types.get(row[1]), row[2])
+                    for row in cursor.fetchall()
+                    if row[0] not in self.ignored_tables]
+        else:
+            return [BaseTableInfo(row[0], types.get(row[1]))
+                    for row in cursor.fetchall()
+                    if row[0] not in self.ignored_tables]
 
     def _is_auto_field(self, cursor, table_name, column_name):
         """
@@ -111,7 +129,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
 
         if not columns:
             raise DatabaseError(f"Table {table_name} does not exist.")
-            
+
         items = []
         for column in columns:
             if VERSION >= (3, 2):
