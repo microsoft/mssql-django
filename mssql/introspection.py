@@ -154,7 +154,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                         """ % (table_name, column[0])
                 cursor.execute(sql)
                 comment = cursor.fetchone()
-                column.append(comment)
+                column.append(comment[0] if comment else '')
             if identity_check and self._is_auto_field(cursor, table_name, column[0]):
                 if column[1] == Database.SQL_BIGINT:
                     column[1] = SQL_BIGAUTOFIELD
