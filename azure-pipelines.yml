@@ -24,6 +24,9 @@ jobs:
 
     strategy:
       matrix:
+        Python3.11 - Django 4.2:
+          python.version: '3.11'
+          tox.env: 'py311-django42'
         Python3.10 - Django 4.2:
           python.version: '3.10'
           tox.env: 'py310-django42'
@@ -34,6 +37,9 @@ jobs:
           python.version: '3.8'
           tox.env: 'py38-django42'
 
+        Python3.11 - Django 4.1:
+          python.version: '3.11'
+          tox.env: 'py311-django41'
         Python3.10 - Django 4.1:
           python.version: '3.10'
           tox.env: 'py310-django41'
@@ -44,6 +50,9 @@ jobs:
           python.version: '3.8'
           tox.env: 'py38-django41'
 
+        Python3.11 - Django 4.0:
+          python.version: '3.11'
+          tox.env: 'py311-django40'
         Python3.10 - Django 4.0:
           python.version: '3.10'
           tox.env: 'py310-django40'
@@ -54,6 +63,9 @@ jobs:
           python.version: '3.8'
           tox.env: 'py38-django40'
 
+        Python3.11 - Django 3.2:
+          python.version: '3.11'
+          tox.env: 'py311-django32'
         Python 3.9 - Django 3.2:
           python.version: '3.9'
           tox.env: 'py39-django32'
@@ -63,9 +75,7 @@ jobs:
         Python 3.7 - Django 3.2:
           python.version: '3.7'
           tox.env: 'py37-django32'
-        Python 3.6 - Django 3.2:
-          python.version: '3.6'
-          tox.env: 'py36-django32'
+
 
     steps:
       - task: CredScan@2
@@ -121,9 +131,12 @@ jobs:
 
     strategy:
       matrix:
+        Python3.11 - Django 4.2:
+          python.version: '3.11'
+          tox.env: 'py310-django42'
         Python3.10 - Django 4.2:
           python.version: '3.10'
-          tox.env: 'py310-django42'
+          tox.env: 'py310-django42'          
         Python 3.9 - Django 4.2:
           python.version: '3.9'
           tox.env: 'py39-django42'
@@ -131,6 +144,9 @@ jobs:
           python.version: '3.8'
           tox.env: 'py38-django42'
 
+        Python3.11 - Django 4.1:
+          python.version: '3.11'
+          tox.env: 'py311-django41'
         Python3.10 - Django 4.1:
           python.version: '3.10'
           tox.env: 'py310-django41'
@@ -141,6 +157,9 @@ jobs:
           python.version: '3.8'
           tox.env: 'py38-django41'
 
+        Python3.11 - Django 4.0:
+          python.version: '3.11'
+          tox.env: 'py311-django40'
         Python3.10 - Django 4.0:
           python.version: '3.10'
           tox.env: 'py310-django40'
@@ -151,6 +170,9 @@ jobs:
           python.version: '3.8'
           tox.env: 'py38-django40'
 
+        Python3.11 - Django 3.2:
+          python.version: '3.11'
+          tox.env: 'py311-django32'
         Python 3.9 - Django 3.2:
           python.version: '3.9'
           tox.env: 'py39-django32'
@@ -160,9 +182,6 @@ jobs:
         Python 3.7 - Django 3.2:
           python.version: '3.7'
           tox.env: 'py37-django32'
-        Python 3.6 - Django 3.2:
-          python.version: '3.6'
-          tox.env: 'py36-django32'
 
     steps:
       - task: UsePythonVersion@0
