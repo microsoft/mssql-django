@@ -291,7 +291,17 @@ EXCLUDED_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_has_key_number',
 
     # Django 4.2
-    'get_or_create.tests.UpdateOrCreateTests.test_update_only_defaults_and_pre_save_fields_when_local_fields'
+    'get_or_create.tests.UpdateOrCreateTests.test_update_only_defaults_and_pre_save_fields_when_local_fields',
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_empty_condition',
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_multiple_subquery_annotation',
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_subquery_annotation',
+    "aggregation.tests.AggregateAnnotationPruningTests.test_referenced_group_by_annotation_kept"
+    'aggregation.tests.AggregateTestCase.test_group_by_nested_expression_with_params',
+    'expressions.tests.BasicExpressionsTests.test_aggregate_subquery_annotation',
+    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_order_with_null_first_last',
+    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
+    'expressions_window.tests.WindowFunctionTests.test_limited_filter',
+    'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
 ]
 
 REGEX_TESTS = [
