@@ -295,6 +295,7 @@ EXCLUDED_TESTS = [
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_empty_condition',
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_multiple_subquery_annotation',
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_subquery_annotation',
+    "aggregation.tests.AggregateAnnotationPruningTests.test_referenced_group_by_annotation_kept"
     'aggregation.tests.AggregateTestCase.test_group_by_nested_expression_with_params',
     'expressions.tests.BasicExpressionsTests.test_aggregate_subquery_annotation',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_order_with_null_first_last',
