@@ -15,6 +15,8 @@ from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
 if django.VERSION >= (3, 1):
     from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
+if django.VERSION >= (4, 2):
+    from django.core.exceptions import FullResultSet
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -228,13 +230,26 @@ class SQLCompiler(compiler.SQLCompiler):
                 if not getattr(features, 'supports_select_{}'.format(combinator)):
                     raise NotSupportedError('{} is not supported on this database backend.'.format(combinator))
                 result, params = self.get_combinator_sql(combinator, self.query.combinator_all)
+            elif django.VERSION >= (4, 2) and self.qualify:
+                result, params = self.get_qualify_sql()
+                order_by = None
             else:
                 distinct_fields, distinct_params = self.get_distinct()
                 # This must come after 'select', 'ordering', and 'distinct' -- see
                 # docstring of get_from_clause() for details.
                 from_, f_params = self.get_from_clause()
-                where, w_params = self.compile(self.where) if self.where is not None else ("", [])
-                having, h_params = self.compile(self.having) if self.having is not None else ("", [])
+                if django.VERSION >= (4, 2):
+                    try:
+                        where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+                    except FullResultSet:
+                        where, w_params = "", []
+                    try:
+                        having, h_params = self.compile(self.having) if self.having is not None else ("", [])
+                    except FullResultSet:
+                        having, h_params = "", []
+                else:
+                    where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+                    having, h_params = self.compile(self.having) if self.having is not None else ("", [])
                 params = []
                 result = ['SELECT']
 

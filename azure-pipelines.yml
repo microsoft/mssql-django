@@ -24,6 +24,19 @@ jobs:
 
     strategy:
       matrix:
+        Python3.11 - Django 4.2:
+          python.version: '3.11'
+          tox.env: 'py311-django42'
+        Python3.10 - Django 4.2:
+          python.version: '3.10'
+          tox.env: 'py310-django42'
+        Python 3.9 - Django 4.2:
+          python.version: '3.9'
+          tox.env: 'py39-django42'
+        Python 3.8 - Django 4.2:
+          python.version: '3.8'
+          tox.env: 'py38-django42'
+
         Python3.11 - Django 4.1:
           python.version: '3.11'
           tox.env: 'py311-django41'
@@ -118,6 +131,19 @@ jobs:
 
     strategy:
       matrix:
+        Python3.11 - Django 4.2:
+          python.version: '3.11'
+          tox.env: 'py311-django42'
+        Python3.10 - Django 4.2:
+          python.version: '3.10'
+          tox.env: 'py310-django42'
+        Python 3.9 - Django 4.2:
+          python.version: '3.9'
+          tox.env: 'py39-django42'
+        Python 3.8 - Django 4.2:
+          python.version: '3.8'
+          tox.env: 'py38-django42'
+
         Python3.11 - Django 4.1:
           python.version: '3.11'
           tox.env: 'py311-django41'

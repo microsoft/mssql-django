@@ -18,6 +18,7 @@ CLASSIFIERS = [
     'Framework :: Django :: 3.2',
     'Framework :: Django :: 4.0',
     'Framework :: Django :: 4.1',
+    'Framework :: Django :: 4.2',
 ]
 
 this_directory = path.abspath(path.dirname(__file__))
@@ -26,7 +27,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='mssql-django',
-    version='1.2',
+    version='1.3',
     description='Django backend for Microsoft SQL Server',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -39,7 +40,7 @@ setup(
     license='BSD',
     packages=find_packages(),
     install_requires=[
-        'django>=3.2,<4.2',
+        'django>=3.2,<4.3',
         'pyodbc>=3.0',
         'pytz',
     ],
