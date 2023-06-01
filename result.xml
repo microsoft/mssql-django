@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+	<testsuite name="aggregation.tests.AggregateAnnotationPruningTests-20230530154752" tests="1" file="aggregation/tests.py" time="38.862" timestamp="2023-05-30T15:48:31" failures="0" errors="1" skipped="0">
+		<testcase classname="aggregation.tests.AggregateAnnotationPruningTests" name="test_referenced_group_by_annotation_kept" time="38.862" timestamp="2023-05-30T15:48:31" file="django/tests/aggregation/tests.py" line="2180">
+			<error type="ValueError" message="unsupported format character '%' (0x25) at index 30"><![CDATA[Traceback (most recent call last):
+  File "/home/mshan0/mssql-django/django/tests/aggregation/tests.py", line 2184, in test_referenced_group_by_annotation_kept
+    self.assertEqual(queryset.count(), 1)
+  File "/home/mshan0/mssql-django/django/django/db/models/query.py", line 608, in count
+    return self.query.get_count(using=self.db)
+  File "/home/mshan0/mssql-django/django/django/db/models/sql/query.py", line 539, in get_count
+    return obj.get_aggregation(using, {"__count": Count("*")})["__count"]
+  File "/home/mshan0/mssql-django/django/django/db/models/sql/query.py", line 525, in get_aggregation
+    result = compiler.execute_sql(SINGLE)
+  File "/home/mshan0/mssql-django/django/django/db/models/sql/compiler.py", line 1547, in execute_sql
+    sql, params = self.as_sql()
+  File "/home/mshan0/mssql-django/django/django/db/models/sql/compiler.py", line 2076, in as_sql
+    inner_query_sql, inner_query_params = self.query.inner_query.get_compiler(
+  File "/home/mshan0/mssql-django/mssql/compiler.py", line 212, in as_sql
+    extra_select, order_by, group_by = self.pre_sql_setup()
+  File "/home/mshan0/mssql-django/django/django/db/models/sql/compiler.py", line 84, in pre_sql_setup
+    self.setup_query(with_col_aliases=with_col_aliases)
+  File "/home/mshan0/mssql-django/django/django/db/models/sql/compiler.py", line 73, in setup_query
+    self.select, self.klass_info, self.annotation_col_map = self.get_select(
+  File "/home/mshan0/mssql-django/django/django/db/models/sql/compiler.py", line 296, in get_select
+    sql, params = self.compile(col)
+  File "/home/mshan0/mssql-django/mssql/compiler.py", line 437, in compile
+    return super().compile(node, *args, **kwargs)
+  File "/home/mshan0/mssql-django/django/django/db/models/sql/compiler.py", line 542, in compile
+    sql, params = vendor_impl(self, self.connection)
+  File "/home/mshan0/mssql-django/mssql/functions.py", line 91, in sqlserver_mod
+    return self.as_sql(
+  File "/home/mshan0/mssql-django/django/django/db/models/expressions.py", line 984, in as_sql
+    return template % data, params
+ValueError: unsupported format character '%' (0x25) at index 30
+]]></error>
+		</testcase>
+	</testsuite>
+</testsuites>
