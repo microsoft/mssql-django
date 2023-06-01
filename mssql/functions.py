@@ -10,7 +10,9 @@ from django.db.models import BooleanField, CheckConstraint, Value
 from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
+from django.db.models.functions.datetime import Now
 from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round, Degrees, Radians, Power
+from django.db.models.functions.text import Replace
 from django.db.models.lookups import In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
@@ -43,6 +45,19 @@ def sqlserver_log(self, compiler, connection, **extra_context):
 
 def sqlserver_ln(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, function='LOG', **extra_context)
+
+
+def sqlserver_replace(self, compiler, connection, **extra_context):
+    current_db = "CONVERT(varchar, (SELECT DB_NAME()))"
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT CONVERT(varchar, DATABASEPROPERTYEX(%s, 'collation'))" % current_db)
+        default_collation = cursor.fetchone()[0]
+    current_collation = default_collation.replace('_CI', '_CS')
+    return self.as_sql(
+            compiler, connection, function='REPLACE',
+            template = 'REPLACE(%s COLLATE %s)' % ('%(expressions)s', current_collation),
+            **extra_context
+        )
 
 def sqlserver_degrees(self, compiler, connection, **extra_context):
     return self.as_sql(
@@ -109,6 +124,10 @@ def sqlserver_exists(self, compiler, connection, template=None, **extra_context)
     sql = 'CASE WHEN {} THEN 1 ELSE 0 END'.format(sql)
     return sql, params
 
+def sqlserver_now(self, compiler, connection, **extra_context):
+        return self.as_sql(
+            compiler, connection, template="SYSDATETIME()", **extra_context
+        )
 
 def sqlserver_lookup(self, compiler, connection):
     # MSSQL doesn't allow EXISTS() to be compared to another expression
@@ -273,7 +292,7 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
         SQL Server require that at least one of the result expressions in a CASE specification must be an expression other than the NULL constant.
         Patched with a default value 0. The user can also pass a custom default value for CASE statement.
     """
-    if batch_size is not None and batch_size < 0:
+    if batch_size is not None and batch_size <= 0:
         raise ValueError('Batch size must be a positive integer.')
     if not fields:
         raise ValueError('Field names must be given to bulk_update().')
@@ -441,6 +460,8 @@ Mod.as_microsoft = sqlserver_mod
 NthValue.as_microsoft = sqlserver_nth_value
 Round.as_microsoft = sqlserver_round
 Window.as_microsoft = sqlserver_window
+Replace.as_microsoft = sqlserver_replace
+Now.as_microsoft = sqlserver_now
 MD5.as_microsoft = sqlserver_md5
 SHA1.as_microsoft = sqlserver_sha1
 SHA224.as_microsoft = sqlserver_sha224

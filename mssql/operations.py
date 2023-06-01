@@ -404,7 +404,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         """Return LIMIT/OFFSET SQL clause."""
         limit, offset = self._get_limit_offset_params(low_mark, high_mark)
         return '%s%s' % (
-            (' OFFSET %d ROWS' % offset) if offset else '',
+            (' OFFSET %d ROWS' % offset) if offset else ' OFFSET 0 ROWS',
             (' FETCH FIRST %d ROWS ONLY' % limit) if limit else '',
         )
 
@@ -418,7 +418,13 @@ class DatabaseOperations(BaseDatabaseOperations):
         exists for database backends to provide a better implementation
         according to their own quoting schemes.
         """
-        return super().last_executed_query(cursor, cursor.last_sql, cursor.last_params)
+        if params:
+            if isinstance(params, list):
+                params = tuple(params)
+            return sql % params
+        # Just return sql when there are no parameters.
+        else:
+            return sql
 
     def savepoint_create_sql(self, sid):
         """

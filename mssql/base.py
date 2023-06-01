@@ -11,6 +11,7 @@ import struct
 import datetime
 
 from django.core.exceptions import ImproperlyConfigured
+from django.utils.functional import cached_property
 
 try:
     import pyodbc as Database
@@ -430,7 +431,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if (options.get('return_rows_bulk_insert', False)):
             self.features_class.can_return_rows_from_bulk_insert = True
 
-        val = self.get_system_datetime()
+        val = self.get_system_datetime
         if isinstance(val, str):
             raise ImproperlyConfigured(
                 "The database driver doesn't support modern datatime types.")
@@ -443,6 +444,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         else:
             return True
 
+    @cached_property
     def get_system_datetime(self):
         # http://blogs.msdn.com/b/sqlnativeclient/archive/2008/02/27/microsoft-sql-server-native-client-and-microsoft-sql-server-2008-native-client.aspx
         with self.temporary_connection() as cursor:

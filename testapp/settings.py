@@ -99,8 +99,6 @@ USE_TZ = False
 
 TEST_RUNNER = "testapp.runners.ExcludedTestSuiteRunner"
 EXCLUDED_TESTS = [
-    'aggregation.tests.AggregateTestCase.test_expression_on_aggregation',
-    'aggregation_regress.tests.AggregationTests.test_annotated_conditional_aggregate',
     'aggregation_regress.tests.AggregationTests.test_annotation_with_value',
     'aggregation.tests.AggregateTestCase.test_distinct_on_aggregate',
     'annotations.tests.NonAggregateAnnotationTestCase.test_annotate_exists',
@@ -119,7 +117,6 @@ EXCLUDED_TESTS = [
     'ordering.tests.OrderingTests.test_orders_nulls_first_on_filtered_subquery',
     'get_or_create.tests.UpdateOrCreateTransactionTests.test_creation_in_transaction',
     'indexes.tests.PartialIndexTests.test_multiple_conditions',
-    'introspection.tests.IntrospectionTests.test_get_constraints',
     'migrations.test_executor.ExecutorTests.test_alter_id_type_with_fk',
     'migrations.test_operations.OperationTests.test_add_constraint_percent_escaping',
     'migrations.test_operations.OperationTests.test_alter_field_pk',
@@ -137,8 +134,6 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_unique_together_with_fk_with_existing_index',
     'aggregation.tests.AggregateTestCase.test_count_star',
     'aggregation_regress.tests.AggregationTests.test_values_list_annotation_args_ordering',
-    'db_functions.text.test_pad.PadTests.test_pad',
-    'db_functions.text.test_replace.ReplaceTests.test_case_sensitive',
     'expressions.tests.FTimeDeltaTests.test_invalid_operator',
     'fixtures_regress.tests.TestFixtures.test_loaddata_raises_error_when_fixture_has_invalid_foreign_key',
     'invalid_models_tests.test_ordinary_fields.TextFieldTests.test_max_length_warning',
@@ -146,7 +141,6 @@ EXCLUDED_TESTS = [
     'ordering.tests.OrderingTests.test_deprecated_values_annotate',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_limits',
     'backends.tests.BackendTestCase.test_unicode_password',
-    'introspection.tests.IntrospectionTests.test_get_table_description_types',
     'migrations.test_commands.MigrateTests.test_migrate_syncdb_app_label',
     'migrations.test_commands.MigrateTests.test_migrate_syncdb_deferred_sql_executed_with_schemaeditor',
     'migrations.test_operations.OperationTests.test_alter_field_pk_fk',
@@ -154,7 +148,6 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_unique_and_reverse_m2m',
     'schema.tests.SchemaTests.test_unique_no_unnecessary_fk_drops',
     'select_for_update.tests.SelectForUpdateTests.test_for_update_after_from',
-    'backends.tests.LastExecutedQueryTest.test_last_executed_query',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_exact_lookup',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_greaterthan_lookup',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_year_lessthan_lookup',
@@ -176,9 +169,7 @@ EXCLUDED_TESTS = [
     'expressions.tests.FTimeDeltaTests.test_time_subquery_subtraction',
     'migrations.test_operations.OperationTests.test_alter_field_reloads_state_on_fk_with_to_field_target_type_change',
     'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk',
-    
     'annotations.tests.NonAggregateAnnotationTestCase.test_combined_expression_annotation_with_aggregation',
-    'db_functions.comparison.test_cast.CastTests.test_cast_to_integer',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_func',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_iso_weekday_func',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_func',
@@ -218,7 +209,6 @@ EXCLUDED_TESTS = [
     'lookup.tests.LookupTests.test_in_ignore_none',
     'lookup.tests.LookupTests.test_in_ignore_none_with_unhashable_items',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_exists_union',
-    'introspection.tests.IntrospectionTests.test_get_constraints_unique_indexes_orders',
     'schema.tests.SchemaTests.test_ci_cs_db_collation',
     'select_for_update.tests.SelectForUpdateTests.test_unsuported_no_key_raises_error',
 
@@ -296,6 +286,19 @@ EXCLUDED_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_lookups_with_key_transform',
     'model_fields.test_jsonfield.TestQuerying.test_ordering_grouping_by_count',
     'model_fields.test_jsonfield.TestQuerying.test_has_key_number',
+
+    # Django 4.2
+    'get_or_create.tests.UpdateOrCreateTests.test_update_only_defaults_and_pre_save_fields_when_local_fields',
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_empty_condition',
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_multiple_subquery_annotation',
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_subquery_annotation',
+    "aggregation.tests.AggregateAnnotationPruningTests.test_referenced_group_by_annotation_kept",
+    'aggregation.tests.AggregateTestCase.test_group_by_nested_expression_with_params',
+    'expressions.tests.BasicExpressionsTests.test_aggregate_subquery_annotation',
+    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_order_with_null_first_last',
+    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
+    'expressions_window.tests.WindowFunctionTests.test_limited_filter',
+    'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
 ]
 
 REGEX_TESTS = [

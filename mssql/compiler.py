@@ -15,6 +15,8 @@ from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
 if django.VERSION >= (3, 1):
     from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
+if django.VERSION >= (4, 2):
+    from django.core.exceptions import FullResultSet
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -76,8 +78,9 @@ def _as_sql_lpad(self, compiler, connection):
     params.extend(length_arg)
     params.extend(expression_arg)
     params.extend(expression_arg)
-    template = ('LEFT(REPLICATE(%(fill_text)s, %(length)s), CASE WHEN %(length)s > LEN(%(expression)s) '
-                'THEN %(length)s - LEN(%(expression)s) ELSE 0 END) + %(expression)s')
+    params.extend(length_arg)
+    template = ('LEFT(LEFT(REPLICATE(%(fill_text)s, %(length)s), CASE WHEN %(length)s > LEN(%(expression)s) '
+                'THEN %(length)s - LEN(%(expression)s) ELSE 0 END) + %(expression)s, %(length)s)')
     return template % {'expression': expression, 'length': length, 'fill_text': fill_text}, params
 
 
@@ -227,13 +230,26 @@ class SQLCompiler(compiler.SQLCompiler):
                 if not getattr(features, 'supports_select_{}'.format(combinator)):
                     raise NotSupportedError('{} is not supported on this database backend.'.format(combinator))
                 result, params = self.get_combinator_sql(combinator, self.query.combinator_all)
+            elif django.VERSION >= (4, 2) and self.qualify:
+                result, params = self.get_qualify_sql()
+                order_by = None
             else:
                 distinct_fields, distinct_params = self.get_distinct()
                 # This must come after 'select', 'ordering', and 'distinct' -- see
                 # docstring of get_from_clause() for details.
                 from_, f_params = self.get_from_clause()
-                where, w_params = self.compile(self.where) if self.where is not None else ("", [])
-                having, h_params = self.compile(self.having) if self.having is not None else ("", [])
+                if django.VERSION >= (4, 2):
+                    try:
+                        where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+                    except FullResultSet:
+                        where, w_params = "", []
+                    try:
+                        having, h_params = self.compile(self.having) if self.having is not None else ("", [])
+                    except FullResultSet:
+                        having, h_params = "", []
+                else:
+                    where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+                    having, h_params = self.compile(self.having) if self.having is not None else ("", [])
                 params = []
                 result = ['SELECT']
 
@@ -364,7 +380,7 @@ class SQLCompiler(compiler.SQLCompiler):
                 # Django 2.x.  See https://github.com/microsoft/mssql-django/issues/12
                 # Add OFFSET for all Django versions.
                 # https://github.com/microsoft/mssql-django/issues/109
-                if not (do_offset or do_limit):
+                if not (do_offset or do_limit) and supports_offset_clause:
                     result.append("OFFSET 0 ROWS")
 
             # SQL Server requires the backend-specific emulation (2008 or earlier)
