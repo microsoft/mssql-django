@@ -581,12 +581,15 @@ class DatabaseOperations(BaseDatabaseOperations):
                 # When support for time zones is enabled, Django stores datetime information
                 # in UTC in the database and uses time-zone-aware objects internally
                 # source: https://docs.djangoproject.com/en/dev/topics/i18n/timezones/#overview
-                value = value.astimezone(datetime.timezone.utc)
+                value = timezone.make_naive(value, self.connection.timezone)
             else:
                 # When USE_TZ is False, settings.TIME_ZONE is the time zone in
                 # which Django will store all datetimes
                 # source: https://docs.djangoproject.com/en/dev/ref/settings/#std:setting-TIME_ZONE
-                value = timezone.make_naive(value, self.connection.timezone)
+                raise ValueError(
+                    "MSSQL backend does not support timezone-aware datetimes when "
+                    "USE_TZ is False."
+                )
         return value
 
     if DJANGO41:
