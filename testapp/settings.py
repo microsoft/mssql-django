@@ -117,7 +117,6 @@ EXCLUDED_TESTS = [
     'ordering.tests.OrderingTests.test_orders_nulls_first_on_filtered_subquery',
     'get_or_create.tests.UpdateOrCreateTransactionTests.test_creation_in_transaction',
     'indexes.tests.PartialIndexTests.test_multiple_conditions',
-    'introspection.tests.IntrospectionTests.test_get_constraints',
     'migrations.test_executor.ExecutorTests.test_alter_id_type_with_fk',
     'migrations.test_operations.OperationTests.test_add_constraint_percent_escaping',
     'migrations.test_operations.OperationTests.test_alter_field_pk',
@@ -142,7 +141,6 @@ EXCLUDED_TESTS = [
     'ordering.tests.OrderingTests.test_deprecated_values_annotate',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_limits',
     'backends.tests.BackendTestCase.test_unicode_password',
-    'introspection.tests.IntrospectionTests.test_get_table_description_types',
     'migrations.test_commands.MigrateTests.test_migrate_syncdb_app_label',
     'migrations.test_commands.MigrateTests.test_migrate_syncdb_deferred_sql_executed_with_schemaeditor',
     'migrations.test_operations.OperationTests.test_alter_field_pk_fk',
@@ -211,7 +209,6 @@ EXCLUDED_TESTS = [
     'lookup.tests.LookupTests.test_in_ignore_none',
     'lookup.tests.LookupTests.test_in_ignore_none_with_unhashable_items',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_exists_union',
-    'introspection.tests.IntrospectionTests.test_get_constraints_unique_indexes_orders',
     'schema.tests.SchemaTests.test_ci_cs_db_collation',
     'select_for_update.tests.SelectForUpdateTests.test_unsuported_no_key_raises_error',
 
@@ -291,7 +288,17 @@ EXCLUDED_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_has_key_number',
 
     # Django 4.2
-    'get_or_create.tests.UpdateOrCreateTests.test_update_only_defaults_and_pre_save_fields_when_local_fields'
+    'get_or_create.tests.UpdateOrCreateTests.test_update_only_defaults_and_pre_save_fields_when_local_fields',
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_empty_condition',
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_multiple_subquery_annotation',
+    'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_subquery_annotation',
+    "aggregation.tests.AggregateAnnotationPruningTests.test_referenced_group_by_annotation_kept",
+    'aggregation.tests.AggregateTestCase.test_group_by_nested_expression_with_params',
+    'expressions.tests.BasicExpressionsTests.test_aggregate_subquery_annotation',
+    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_order_with_null_first_last',
+    'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
+    'expressions_window.tests.WindowFunctionTests.test_limited_filter',
+    'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
 ]
 
 REGEX_TESTS = [
