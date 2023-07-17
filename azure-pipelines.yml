@@ -126,7 +126,7 @@ jobs:
     pool:
       name: Django-1ES-pool
       demands:
-      - imageOverride -equals MMSUbuntu20.04TLS
+      - imageOverride -equals MMSUbuntu18.04
     timeoutInMinutes: 120
 
     strategy:
