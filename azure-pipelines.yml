@@ -126,7 +126,7 @@ jobs:
     pool:
       name: Django-1ES-pool
       demands:
-      - imageOverride -equals MMSUbuntu20.04
+      - imageOverride -equals MMSUbuntu20.04TLS
     timeoutInMinutes: 120
 
     strategy:
@@ -190,14 +190,12 @@ jobs:
         displayName: Use Python $(python.version)
 
       - script: |
+          docker version
           docker pull mcr.microsoft.com/mssql/server:2022-latest
           docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update
-          sudo apt-get install libhashkit2=1.0.18-4.2ubuntu2
-          sudo apt-get install libhashkit-dev=1.0.18-4.2ubuntu2
-          sudo apt-get install libmemcached11=1.0.18-4.2ubuntu2
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev libmemcached-dev
         displayName: Install SQL Server
 
