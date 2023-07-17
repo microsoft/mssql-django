@@ -197,7 +197,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install libhashkit2=1.0.18-4.2ubuntu2
           sudo apt-get install libhashkit-dev=1.0.18-4.2ubuntu2
-          sudo apt-get install libmecached11=1.0.18-4.2ubuntu2
+          sudo apt-get install libmemcached11=1.0.18-4.2ubuntu2
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 g++ unixodbc-dev libmemcached-dev
         displayName: Install SQL Server
 
