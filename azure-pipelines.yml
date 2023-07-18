@@ -126,7 +126,7 @@ jobs:
     pool:
       name: Django-1ES-pool
       demands:
-      - imageOverride -equals MMSUbuntu18.04
+      - imageOverride -equals Ubuntu22.04-AzurePipelines
     timeoutInMinutes: 120
 
     strategy:
