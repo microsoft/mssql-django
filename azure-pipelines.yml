@@ -19,7 +19,7 @@ jobs:
     pool:
       name: Django-1ES-pool
       demands:
-      - imageOverride -equals JDBC-MMS2019-SQL2019
+      - imageOverride -equals JDBC-MMS2019-SQL2019-2
     timeoutInMinutes: 120
 
     strategy:
