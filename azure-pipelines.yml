@@ -78,7 +78,7 @@ jobs:
 
 
     steps:
-      - task: CredScan@2
+      - task: CredScan@3
         inputs:
           toolMajorVersion: 'V2'
 
