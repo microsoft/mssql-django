@@ -159,7 +159,6 @@ EXCLUDED_TESTS = [
     'queries.test_db_returning.ReturningValuesTests.test_insert_returning',
     'queries.test_db_returning.ReturningValuesTests.test_insert_returning_non_integer',
     'backends.tests.BackendTestCase.test_queries',
-    'introspection.tests.IntrospectionTests.test_smallautofield',
     'schema.tests.SchemaTests.test_inline_fk',
     'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_exists',
     'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_values_collision',
