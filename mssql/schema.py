@@ -93,17 +93,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_rename_table = "EXEC sp_rename %(old_table)s, %(new_table)s"
     sql_create_unique_null = "CREATE UNIQUE INDEX %(name)s ON %(table)s(%(columns)s) " \
                              "WHERE %(columns)s IS NOT NULL"
-    sql_alter_table_comment = """IF NOT EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.TABLES i
-                                                INNER JOIN sys.tables t ON t.name = i.TABLE_NAME
-                                                LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
-                                                WHERE (ep.name = 'MS_Description' AND ep.minor_id = 0))
-                                        EXECUTE sp_addextendedproperty @name = N'MS_Description', @value = %(comment)s, 
+    sql_alter_table_comment = """EXECUTE sp_addextendedproperty @name = N'MS_Description', @value = %(comment)s, 
                                                 @level0type = N'SCHEMA', @level0name = N'dbo',
-                                                @level1type = N'TABLE', @level1name = %(table)s
-                                ELSE
-                                        EXECUTE sp_updateextendedproperty @name = N'MS_Description', @value = %(comment)s,
-                                                  @level0type = N'SCHEMA', @level0name = N'dbo',
-                                                  @level1type = N'TABLE', @level1name = %(table)s;"""
+                                                @level1type = N'TABLE', @level1name = %(table)s"""
     
     sql_alter_column_comment = """EXECUTE sp_addextendedproperty @name = N'MS_Description', @value = %(comment)s, 
                                                 @level0type = N'SCHEMA', @level0name = N'dbo',
