@@ -105,19 +105,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                                                   @level0type = N'SCHEMA', @level0name = N'dbo',
                                                   @level1type = N'TABLE', @level1name = %(table)s;"""
     
-    sql_alter_column_comment = """IF NOT EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.COLUMNS i
-                                                INNER JOIN sys.columns t ON t.name = i.COLUMN_NAME
-                                                LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
-                                                WHERE (ep.name = N'MS_Description' AND ep.minor_id = 2))
-                                        EXECUTE sp_addextendedproperty @name = N'MS_Description', @value = %(comment)s, 
+    sql_alter_column_comment = """EXECUTE sp_addextendedproperty @name = N'MS_Description', @value = %(comment)s, 
                                                 @level0type = N'SCHEMA', @level0name = N'dbo',
                                                 @level1type = N'TABLE', @level1name = %(table)s,
-                                                @level2type = N'COLUMN', @level2name = %(column)s
-                                ELSE
-                                        EXECUTE sp_updateextendedproperty @name = N'MS_Description', @value = %(comment)s,
-                                                  @level0type = N'SCHEMA', @level0name = N'dbo',
-                                                  @level1type = N'TABLE', @level1name = %(table)s,
-                                                  @level2type = N'COLUMN', @level2name = %(column)s; """
+                                                @level2type = N'COLUMN', @level2name = %(column)s"""
 
     _deferred_unique_indexes = defaultdict(list)
 
@@ -341,11 +332,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
-        if old_field.remote_field and old_field.db_constraint and self._field_should_be_altered(
+        if old_field.remote_field and old_field.db_constraint and (django_version >= (4, 2) and self._field_should_be_altered(
                 old_field,
                 new_field,
                 ignore={"db_comment"},
-            ):
+            )):
             # Drop index, SQL Server requires explicit deletion
             if not hasattr(new_field, 'db_constraint') or not new_field.db_constraint:
                 index_names = self._constraint_names(model, [old_field.column], index=True)
@@ -475,8 +466,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         actions = []
         null_actions = []
         post_actions = []
-        # Type change?
-        if old_type != new_type or (
+        # Type or comment change?
+        if old_type != new_type or (django_version >= (4, 2) and
                 self.connection.features.supports_comments
                 and old_field.db_comment != new_field.db_comment
             ):
@@ -1161,7 +1152,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Prevent using [] as params, in the case a literal '%' is used in the definition
         self.execute(sql, params or None)
 
-        if self.connection.features.supports_comments:
+        if django_version >= (4, 2) and self.connection.features.supports_comments:
             # Add table comment.
             if model._meta.db_table_comment:
                 self.alter_db_table_comment(model, None, model._meta.db_table_comment)
