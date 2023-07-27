@@ -13,6 +13,7 @@ from django.conf import settings
 
 SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
+SQL_SMALLAUTOFIELD = -777333
 SQL_TIMESTAMP_WITH_TIMEZONE = -155
 
 
@@ -25,6 +26,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
     data_types_reverse = {
         SQL_AUTOFIELD: 'AutoField',
         SQL_BIGAUTOFIELD: 'BigAutoField',
+        SQL_SMALLAUTOFIELD: 'SmallAutoField',
         Database.SQL_BIGINT: 'BigIntegerField',
         # Database.SQL_BINARY:            ,
         Database.SQL_BIT: 'BooleanField',
@@ -130,6 +132,8 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
             if identity_check and self._is_auto_field(cursor, table_name, column[0]):
                 if column[1] == Database.SQL_BIGINT:
                     column[1] = SQL_BIGAUTOFIELD
+                elif column[1] == Database.SQL_SMALLINT:
+                    column[1] = SQL_SMALLAUTOFIELD
                 else:
                     column[1] = SQL_AUTOFIELD
             if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
