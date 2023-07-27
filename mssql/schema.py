@@ -108,16 +108,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_alter_column_comment = """IF NOT EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.COLUMNS i
                                                 INNER JOIN sys.columns t ON t.name = i.COLUMN_NAME
                                                 LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
-                                                WHERE (ep.name = N'MS_Description' AND ep.minor_id = column_id))
+                                                WHERE (ep.name = N'MS_Description' AND ep.minor_id = 2))
                                         EXECUTE sp_addextendedproperty @name = N'MS_Description', @value = %(comment)s, 
                                                 @level0type = N'SCHEMA', @level0name = N'dbo',
                                                 @level1type = N'TABLE', @level1name = %(table)s,
-                                                @level2type = 'COLUMN', @level2name = %(column)s
+                                                @level2type = N'COLUMN', @level2name = %(column)s
                                 ELSE
                                         EXECUTE sp_updateextendedproperty @name = N'MS_Description', @value = %(comment)s,
                                                   @level0type = N'SCHEMA', @level0name = N'dbo',
                                                   @level1type = N'TABLE', @level1name = %(table)s,
-                                                  @level2type = 'COLUMN', @level2name = %(column)s; """
+                                                  @level2type = N'COLUMN', @level2name = %(column)s; """
 
     _deferred_unique_indexes = defaultdict(list)
 
