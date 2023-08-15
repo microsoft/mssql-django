@@ -313,7 +313,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if (old_is_auto and not new_is_auto) or (not old_is_auto and new_is_auto):
             raise NotImplementedError("the backend doesn't support altering from %s to %s." %
                 (old_field.get_internal_type(), new_field.get_internal_type()))
-        
+
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
         if old_field.remote_field and old_field.db_constraint:
@@ -785,6 +785,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             index_columns.append([old_field.column])
         for fields in model._meta.index_together:
             columns = [model._meta.get_field(field).column for field in fields]
+            if old_field.column in columns:
+                index_columns.append(columns)
+
+        for index in model._meta.indexes:
+            columns = [model._meta.get_field(field).column for field in index.fields]
             if old_field.column in columns:
                 index_columns.append(columns)
 
