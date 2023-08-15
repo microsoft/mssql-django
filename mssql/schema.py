@@ -313,7 +313,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if (old_is_auto and not new_is_auto) or (not old_is_auto and new_is_auto):
             raise NotImplementedError("the backend doesn't support altering from %s to %s." %
                 (old_field.get_internal_type(), new_field.get_internal_type()))
-
+        
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
         if old_field.remote_field and old_field.db_constraint:
