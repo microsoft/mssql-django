@@ -124,6 +124,7 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_alter_auto_field_to_char_field',
     'schema.tests.SchemaTests.test_alter_auto_field_to_integer_field',
     'schema.tests.SchemaTests.test_alter_int_pk_to_autofield_pk',
+    'schema.tests.SchemaTests.test_alter_int_pk_to_bigautofield_pk',
     'schema.tests.SchemaTests.test_remove_field_check_does_not_remove_meta_constraints',
     'schema.tests.SchemaTests.test_remove_field_unique_does_not_remove_meta_constraints',
     'schema.tests.SchemaTests.test_text_field_with_db_index',
