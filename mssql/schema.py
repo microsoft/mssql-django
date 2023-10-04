@@ -932,13 +932,25 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.connection.close()
 
     if django_version >= (4, 0):
-        def _create_unique_sql(self, model, fields,
-                               name=None, condition=None, deferrable=None,
-                               include=None, opclasses=None, expressions=None):
-            if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False) or
-                (condition and not self.connection.features.supports_partial_indexes) or
-                (include and not self.connection.features.supports_covering_indexes) or
-                    (expressions and not self.connection.features.supports_expression_indexes)):
+        def _create_unique_sql(
+                self,
+                model,
+                fields,
+                name=None,
+                condition=None,
+                deferrable=None,
+                include=None,
+                opclasses=None,
+                expressions=None,
+                nulls_distinct=None
+            ):
+            if not self._unique_supported(
+                condition=condition,
+                deferrable=deferrable,
+                include=include,
+                expressions=expressions,
+                nulls_distinct=nulls_distinct,
+            ):
                 return None
 
             def create_unique_name(*args, **kwargs):
@@ -971,6 +983,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     condition=' WHERE ' + condition,
                     **statement_args,
                     include=include,
+                    nulls_distinct=''
                 ) if self.connection.features.supports_partial_indexes else None
             else:
                 return Statement(
@@ -980,6 +993,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     columns=columns,
                     **statement_args,
                     include=include,
+                    nulls_distinct=''
                 )
     else:
         def _create_unique_sql(self, model, columns,
@@ -1139,17 +1153,22 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.create_model(field.remote_field.through)
 
     def _delete_unique_sql(
-        self, model, name, condition=None, deferrable=None, include=None,
-        opclasses=None, expressions=None
+        self,
+        model,
+        name,
+        condition=None,
+        deferrable=None,
+        include=None,
+        opclasses=None,
+        expressions=None,
+        nulls_distinct=None,
     ):
-        if (
-            (
-                deferrable and
-                not self.connection.features.supports_deferrable_unique_constraints
-            ) or
-            (condition and not self.connection.features.supports_partial_indexes) or
-            (include and not self.connection.features.supports_covering_indexes) or
-            (expressions and not self.connection.features.supports_expression_indexes)
+        if not self._unique_supported(
+            condition=condition,
+            deferrable=deferrable,
+            include=include,
+            expressions=expressions,
+            nulls_distinct=nulls_distinct,
         ):
             return None
         if condition or include or opclasses:
