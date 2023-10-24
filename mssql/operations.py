@@ -178,7 +178,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             
             # Python formats year with leading zeroes. This preserves that format for 
             # compatibility with SQL Server's date since DATEPART drops the leading zeroes.
-            CONVERT_YEAR = 'CONVERT(varchar(4), %s)' % sql
+            CONVERT_YEAR = 'CONVERT(varchar(4), CONVERT(date, %s))' % sql
             CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % sql
             CONVERT_MONTH = 'CONVERT(varchar, DATEPART(month, %s))' % sql
             CONVERT_WEEK = "DATEADD(DAY, (DATEPART(weekday, %s) + 5) %%%% 7 * -1, %s)" % (sql, sql)
