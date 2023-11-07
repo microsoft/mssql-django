@@ -56,6 +56,9 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_partially_nullable_unique_constraints = True
     supports_partial_indexes = True
     supports_functions_in_partial_indexes = True
+    supports_default_keyword_in_insert = True
+    supports_expression_defaults = True
+    supports_default_keyword_in_bulk_insert = True
 
     @cached_property
     def has_zoneinfo_database(self):
