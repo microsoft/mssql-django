@@ -503,20 +503,22 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self._delete_unique_constraints(model, old_field, new_field, strict)
             # Drop indexes, SQL Server requires explicit deletion
             self._delete_indexes(model, old_field, new_field)
-        if new_field.db_default is not NOT_PROVIDED:
-            if (
-                old_field.db_default is NOT_PROVIDED
-                or new_field.db_default != old_field.db_default
-            ):
+        # db_default change?
+        if django_version >= (5,0):
+            if new_field.db_default is not NOT_PROVIDED:
+                if (
+                    old_field.db_default is NOT_PROVIDED
+                    or new_field.db_default != old_field.db_default
+                ):
+                    actions.append(
+                        self._alter_column_database_default_sql(model, old_field, new_field)
+                    )
+            elif old_field.db_default is not NOT_PROVIDED:
                 actions.append(
-                    self._alter_column_database_default_sql(model, old_field, new_field)
+                    self._alter_column_database_default_sql(
+                        model, old_field, new_field, drop=True
+                    )
                 )
-        elif old_field.db_default is not NOT_PROVIDED:
-            actions.append(
-                self._alter_column_database_default_sql(
-                    model, old_field, new_field, drop=True
-                )
-            )
         # When changing a column NULL constraint to NOT NULL with a given
         # default value, we need to perform 4 steps:
         #  1. Add a default for new incoming writes
@@ -531,9 +533,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             not new_field.null and
             old_default != new_default and
             new_default is not None and
-            not self.skip_default(new_field) and
-            new_field.db_default is NOT_PROVIDED
+            not self.skip_default(new_field)
         )
+        if django_version >= (5,0):
+            needs_database_default = needs_database_default and new_field.db_default is NOT_PROVIDED
         if needs_database_default:
             actions.append(self._alter_column_default_sql(model, old_field, new_field))
         # Nullability change?
@@ -561,7 +564,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         post_actions.append((create_index_sql_statement, ()))
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
-            (new_field.has_default() or new_field.db_default is not NOT_PROVIDED) and
+            (new_field.has_default() or (django_version >= (5,0) and new_field.db_default is not NOT_PROVIDED)) and
             (old_field.null and not new_field.null)
         )
         if actions or null_actions:
@@ -583,11 +586,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     params,
                 )
             if four_way_default_alteration:
-                if new_field.db_default is NOT_PROVIDED:
+                if django_version >= (5,0) and new_field.db_default is not NOT_PROVIDED:
+                    default_sql, params = self.db_default_sql(new_field)
+                else:
                     default_sql = "%s"
                     params = [new_default]
-                else:
-                    default_sql, params = self.db_default_sql(new_field)
                 # Update existing rows with default value
                 self.execute(
                     self.sql_update_with_default % {
