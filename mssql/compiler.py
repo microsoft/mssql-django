@@ -589,18 +589,10 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                 params += param_rows
                 result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
             else:
-                has_into = 'INTO' in result[0]
                 result.insert(0, 'SET NOCOUNT ON')
-                # Use 'OUTPUT' if query contains 'INTO'
-                if has_into:
-                    r_sql, self.returning_params = self.connection.ops.return_insert_columns(self.get_returned_fields())
-                    if r_sql:
-                        result.append(r_sql)
-                # Append values
                 result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
                 params = [param_rows[0]]
-                if not has_into:
-                    result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+                result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
             sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
         else:
             if can_bulk:
