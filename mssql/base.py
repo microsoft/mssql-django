@@ -581,7 +581,7 @@ class CursorWrapper(object):
             sql = smart_str(sql, self.driver_charset)
 
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
-        if params is not None and params:
+        if params is not None:
             sql = sql % tuple('?' * len(params))
 
         return sql
