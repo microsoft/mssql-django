@@ -307,7 +307,6 @@ EXCLUDED_TESTS = [
     'constraints.tests.CheckConstraintTests.test_validate_custom_error',
     'constraints.tests.CheckConstraintTests.test_validate_nullable_jsonfield',
     'constraints.tests.CheckConstraintTests.test_validate_pk_field',
-    'migrations.test_operations.OperationTests.test_add_field_database_default',
 ]
 
 REGEX_TESTS = [
