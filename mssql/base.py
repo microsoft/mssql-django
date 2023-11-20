@@ -429,7 +429,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # Let user choose if driver can return rows from bulk insert since
         # inserting into tables with triggers causes errors. See issue #130
         if (options.get('return_rows_bulk_insert', False)):
-            self.features_class.can_return_rows_from_bulk_insert = False
+            self.features_class.can_return_rows_from_bulk_insert = True
 
         val = self.get_system_datetime
         if isinstance(val, str):
@@ -581,7 +581,7 @@ class CursorWrapper(object):
             sql = smart_str(sql, self.driver_charset)
 
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
-        if params is not None:
+        if params is not None and params != []:
             sql = sql % tuple('?' * len(params))
 
         return sql
