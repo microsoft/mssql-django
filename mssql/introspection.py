@@ -138,6 +138,17 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     column[1] = SQL_AUTOFIELD
             if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
                 column[1] = Database.SQL_WCHAR
+            # Remove surrounding parentheses for default values
+            if column[7]:
+                default_value = column[7]
+                start = 0
+                end = -1
+                for _ in range(2):
+                    if default_value[start] == '(' and default_value[end] == ')':
+                        start += 1
+                        end -= 1
+                column[7] = default_value[start:end + 1]
+
             items.append(FieldInfo(*column))
         return items
 
