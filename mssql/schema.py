@@ -981,7 +981,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         self.execute(sql, params)
         # Drop the default if we need to
         # (Django usually does not use in-database defaults)
-        if not self.skip_default(field) and self.effective_default(field) is not None:
+        if (
+            ((django_version >= (5,0) and field.db_default is NOT_PROVIDED) or django_version < (5,0))
+            and not self.skip_default(field)
+            and self.effective_default(field) is not None
+        ):
             changes_sql, params = self._alter_column_default_sql(model, None, field, drop=True)
             sql = self.sql_alter_column % {
                 "table": self.quote_name(model._meta.db_table),
