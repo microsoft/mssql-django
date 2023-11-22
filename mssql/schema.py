@@ -957,6 +957,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # It might not actually have a column behind it
         if definition is None:
             return
+        # Nullable columns with default values require 'WITH VALUES' to set existing rows
+        if 'DEFAULT' in definition and field.null:
+            definition = definition.replace('NULL', 'WITH VALUES')
 
         if (self.connection.features.supports_nullable_unique_constraints and
                 not field.many_to_many and field.null and field.unique):
