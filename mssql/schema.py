@@ -19,7 +19,7 @@ from django.db.backends.ddl_references import (
     Table,
 )
 from django import VERSION as django_version
-from django.db.models import Index, UniqueConstraint
+from django.db.models import NOT_PROVIDED, Index, UniqueConstraint
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
@@ -69,6 +69,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_alter_column_type = "ALTER COLUMN %(column)s %(type)s"
     sql_create_column = "ALTER TABLE %(table)s ADD %(column)s %(definition)s"
     sql_delete_column = "ALTER TABLE %(table)s DROP COLUMN %(column)s"
+    sql_delete_default = "ALTER TABLE %(table)s DROP CONSTRAINT %(name)s"
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
     sql_delete_table = """
         DECLARE @sql_foreign_constraint_name nvarchar(128)
@@ -135,6 +136,48 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 'column': column,
                 'type': new_db_params['type'],
                 'default': default,
+            },
+            params,
+        )
+    
+    def _alter_column_database_default_sql(
+        self, model, old_field, new_field, drop=False
+    ):
+        """
+        Hook to specialize column database default alteration.
+
+        Return a (sql, params) fragment to add or drop (depending on the drop
+        argument) a default to new_field's column.
+        """
+        column = self.quote_name(new_field.column)
+        
+        if drop:
+            # SQL Server requires the name of the default constraint
+            result = self.execute(
+                self._sql_select_default_constraint_name % {
+                    "table": self.quote_value(model._meta.db_table),
+                    "column": self.quote_value(new_field.column),
+                },
+                has_result=True
+            )
+            if result:
+                for row in result:
+                    column = self.quote_name(next(iter(row)))
+
+            sql = self.sql_alter_column_no_default
+            default_sql = ""
+            params = []
+        else:
+            sql = self.sql_alter_column_default
+            default_sql, params = self.db_default_sql(new_field)
+
+        new_db_params = new_field.db_parameters(connection=self.connection)
+        return (
+            sql
+            % {
+                "column": column,
+                "type": new_db_params["type"],
+                "default": default_sql,
             },
             params,
         )
@@ -460,6 +503,22 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self._delete_unique_constraints(model, old_field, new_field, strict)
             # Drop indexes, SQL Server requires explicit deletion
             self._delete_indexes(model, old_field, new_field)
+        # db_default change?
+        if django_version >= (5,0):
+            if new_field.db_default is not NOT_PROVIDED:
+                if (
+                    old_field.db_default is NOT_PROVIDED
+                    or new_field.db_default != old_field.db_default
+                ):
+                    actions.append(
+                        self._alter_column_database_default_sql(model, old_field, new_field)
+                    )
+            elif old_field.db_default is not NOT_PROVIDED:
+                actions.append(
+                    self._alter_column_database_default_sql(
+                        model, old_field, new_field, drop=True
+                    )
+                )
         # When changing a column NULL constraint to NOT NULL with a given
         # default value, we need to perform 4 steps:
         #  1. Add a default for new incoming writes
@@ -476,6 +535,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             new_default is not None and
             not self.skip_default(new_field)
         )
+        if django_version >= (5,0):
+            needs_database_default = needs_database_default and new_field.db_default is NOT_PROVIDED
         if needs_database_default:
             actions.append(self._alter_column_default_sql(model, old_field, new_field))
         # Nullability change?
@@ -503,7 +564,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         post_actions.append((create_index_sql_statement, ()))
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
-            new_field.has_default() and
+            (new_field.has_default() or (django_version >= (5,0) and new_field.db_default is not NOT_PROVIDED)) and
             (old_field.null and not new_field.null)
         )
         if actions or null_actions:
@@ -525,14 +586,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     params,
                 )
             if four_way_default_alteration:
+                if django_version >= (5,0) and new_field.db_default is not NOT_PROVIDED:
+                    default_sql, params = self.db_default_sql(new_field)
+                else:
+                    default_sql = "%s"
+                    params = [new_default]
                 # Update existing rows with default value
                 self.execute(
                     self.sql_update_with_default % {
                         "table": self.quote_name(model._meta.db_table),
                         "column": self.quote_name(new_field.column),
-                        "default": "%s",
+                        "default": default_sql,
                     },
-                    [new_default],
+                    params,
                 )
                 # Since we didn't run a NOT NULL change before we need to do it
                 # now
@@ -891,6 +957,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # It might not actually have a column behind it
         if definition is None:
             return
+        # Nullable columns with default values require 'WITH VALUES' to set existing rows
+        if 'DEFAULT' in definition and field.null:
+            definition = definition.replace('NULL', 'WITH VALUES')
 
         if (self.connection.features.supports_nullable_unique_constraints and
                 not field.many_to_many and field.null and field.unique):
@@ -915,7 +984,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         self.execute(sql, params)
         # Drop the default if we need to
         # (Django usually does not use in-database defaults)
-        if not self.skip_default(field) and self.effective_default(field) is not None:
+        if (
+            ((django_version >= (5,0) and field.db_default is NOT_PROVIDED) or django_version < (5,0))
+            and not self.skip_default(field)
+            and self.effective_default(field) is not None
+        ):
             changes_sql, params = self._alter_column_default_sql(model, None, field, drop=True)
             sql = self.sql_alter_column % {
                 "table": self.quote_name(model._meta.db_table),
@@ -1285,6 +1358,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if (field.column in infodict['columns'] and infodict['unique'] and
                     not infodict['primary_key'] and not infodict['index']):
                 self.execute(self.sql_delete_unique % {
+                    "table": self.quote_name(model._meta.db_table),
+                    "name": self.quote_name(name),
+                })
+        # Drop default constraint, SQL Server requires explicit deletion
+        for name, infodict in constraints.items():
+            if field.column in infodict['columns'] and infodict['default']:
+                self.execute(self.sql_delete_default % {
                     "table": self.quote_name(model._meta.db_table),
                     "name": self.quote_name(name),
                 })

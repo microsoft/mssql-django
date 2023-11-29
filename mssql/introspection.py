@@ -286,6 +286,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     # Potentially misleading: primary key and unique constraints still have indexes attached to them.
                     # Should probably be updated with the additional info from the sys.indexes table we fetch later on.
                     "index": False,
+                    "default": False,
                 }
             # Record the details
             constraints[constraint]['columns'].append(column)
@@ -313,6 +314,32 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     "foreign_key": None,
                     "check": True,
                     "index": False,
+                    "default": False,
+                }
+            # Record the details
+            constraints[constraint]['columns'].append(column)
+        # Now get DEFAULT constraint columns
+        cursor.execute(f"""
+            SELECT d.name AS constraint_name, pc.name AS column_name
+            FROM sys.default_constraints AS d
+            INNER JOIN sys.columns pc ON
+                d.parent_object_id = pc.object_id AND
+                d.parent_column_id = pc.column_id
+            WHERE
+                type_desc = 'DEFAULT_CONSTRAINT'
+        """)
+        for constraint, column in cursor.fetchall():
+            # If we're the first column, make the record
+            if constraint not in constraints:
+                constraints[constraint] = {
+                    "columns": [],
+                    "primary_key": False,
+                    "unique": False,
+                    "unique_constraint": False,
+                    "foreign_key": None,
+                    "check": False,
+                    "index": False,
+                    "default": True,
                 }
             # Record the details
             constraints[constraint]['columns'].append(column)
@@ -356,6 +383,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     "unique_constraint": unique_constraint,
                     "foreign_key": None,
                     "check": False,
+                    "default": False,
                     "index": True,
                     "orders": [],
                     "type": Index.suffix if type_ in (1, 2) else desc.lower(),

@@ -13,7 +13,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     can_introspect_small_integer_field = True
     can_return_columns_from_insert = True
     can_return_id_from_insert = True
-    can_return_rows_from_bulk_insert = False
+    can_return_rows_from_bulk_insert = True
     can_rollback_ddl = True
     can_use_chunked_reads = False
     for_update_after_from = True
@@ -56,6 +56,9 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_partially_nullable_unique_constraints = True
     supports_partial_indexes = True
     supports_functions_in_partial_indexes = True
+    supports_default_keyword_in_insert = True
+    supports_expression_defaults = True
+    supports_default_keyword_in_bulk_insert = True
 
     @cached_property
     def has_zoneinfo_database(self):
