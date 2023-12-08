@@ -93,15 +93,40 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_rename_table = "EXEC sp_rename %(old_table)s, %(new_table)s"
     sql_create_unique_null = "CREATE UNIQUE INDEX %(name)s ON %(table)s(%(columns)s) " \
                              "WHERE %(columns)s IS NOT NULL"
-    sql_alter_table_comment = """EXECUTE sp_addextendedproperty @name = N'MS_Description', @value = %(comment)s, 
-                                                @level0type = N'SCHEMA', @level0name = N'dbo',
-                                                @level1type = N'TABLE', @level1name = %(table)s"""
-    
-    sql_alter_column_comment = """EXECUTE sp_addextendedproperty @name = N'MS_Description', @value = %(comment)s, 
-                                                @level0type = N'SCHEMA', @level0name = N'dbo',
-                                                @level1type = N'TABLE', @level1name = %(table)s,
-                                                @level2type = N'COLUMN', @level2name = %(column)s"""
-
+    sql_alter_table_comment= """
+        IF NOT EXISTS (SELECT NULL FROM sys.extended_properties ep
+            WHERE ep.major_id = OBJECT_ID('%(table)s')
+            AND ep.name = 'MS_Description'
+            AND ep.minor_id = 0)
+                        EXECUTE sp_addextendedproperty 
+                        @name = 'MS_Description', @value = %(comment)s, 
+                        @level0type = 'SCHEMA', @level0name = 'dbo',
+                        @level1type = 'TABLE', @level1name = %(table)s
+            ELSE
+                        EXECUTE sp_updateextendedproperty 
+                        @name = 'MS_Description', @value = %(comment)s,
+                        @level0type = 'SCHEMA', @level0name = 'dbo',
+                        @level1type = 'TABLE', @level1name = %(table)s
+    """
+    sql_alter_column_comment= """
+        IF NOT EXISTS (SELECT NULL FROM sys.extended_properties ep
+            WHERE ep.major_id = OBJECT_ID('%(table)s')
+            AND ep.name = 'MS_Description'
+            AND ep.minor_id = (SELECT column_id FROM sys.columns 
+                            WHERE name = '%(column)s'
+                            AND object_id = OBJECT_ID('%(table)s')))
+                EXECUTE sp_addextendedproperty 
+                @name = 'MS_Description', @value = %(comment)s, 
+                @level0type = 'SCHEMA', @level0name = 'dbo',
+                @level1type = 'TABLE', @level1name = %(table)s,
+                @level2type = 'COLUMN', @level2name = %(column)s
+            ELSE
+                EXECUTE sp_updateextendedproperty 
+                @name = 'MS_Description', @value = %(comment)s,
+                @level0type = 'SCHEMA', @level0name = 'dbo',
+                @level1type = 'TABLE', @level1name = %(table)s,
+                @level2type = 'COLUMN', @level2name = %(column)s
+    """
     _deferred_unique_indexes = defaultdict(list)
 
     def _alter_column_default_sql(self, model, old_field, new_field, drop=False):
@@ -172,6 +197,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     if django_version >= (4, 2):
         def _alter_column_type_sql(self, model, old_field, new_field, new_type, old_collation, new_collation):
             new_type = self._set_field_new_type_null_status(old_field, new_type)
+            # Check if existing
+            # Drop exisiting
             return super()._alter_column_type_sql(model, old_field, new_field, new_type, old_collation, new_collation)
     else:
         def _alter_column_type_sql(self, model, old_field, new_field, new_type):
@@ -926,17 +953,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             }
             self.execute(sql, params)
         # Add field comment, if required.
-        # if (
-        #     field.db_comment
-        #     and self.connection.features.supports_comments
-        #     and not self.connection.features.supports_comments_inline
-        # ):
-        #     field_type = db_params["type"]
-        #     self.execute(
-        #         *self._alter_column_comment_sql(
-        #             model, field, field_type, field.db_comment
-        #         )
-        #     )
+        if (
+            field.db_comment
+            and self.connection.features.supports_comments
+            and not self.connection.features.supports_comments_inline
+        ):
+            field_type = db_params["type"]
+            self.execute(
+                *self._alter_column_comment_sql(
+                    model, field, field_type, field.db_comment
+                )
+            )
         # Add an index, if required
         self.deferred_sql.extend(self._field_indexes_sql(model, field))
         # Add any FK constraints later
@@ -1149,18 +1176,18 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if model._meta.db_table_comment:
                 self.alter_db_table_comment(model, None, model._meta.db_table_comment)
             # Add column comments.
-            # if not self.connection.features.supports_comments_inline:
-            #     for field in model._meta.local_fields:
-            #         if field.db_comment:
-            #             field_db_params = field.db_parameters(
-            #                 connection=self.connection
-            #             )
-            #             field_type = field_db_params["type"]
-            #             self.execute(
-            #                 *self._alter_column_comment_sql(
-            #                     model, field, field_type, field.db_comment
-            #                 )
-            #             )
+            if not self.connection.features.supports_comments_inline:
+                for field in model._meta.local_fields:
+                    if field.db_comment:
+                        field_db_params = field.db_parameters(
+                            connection=self.connection
+                        )
+                        field_type = field_db_params["type"]
+                        self.execute(
+                            *self._alter_column_comment_sql(
+                                model, field, field_type, field.db_comment
+                            )
+                        )
         # Add any field index and index_together's (deferred as SQLite3 _remake_table needs it)
         self.deferred_sql.extend(self._model_indexes_sql(model))
         self.deferred_sql = list(set(self.deferred_sql))
@@ -1335,6 +1362,3 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             new_index_name = index_name.replace('[', '').replace(']', '').replace('.', '_')
             return new_index_name
         return index_name
-
-    def _alter_column_comment_sql(self, model, new_field, new_type, new_db_comment):
-        return "", []

@@ -83,7 +83,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                 INNER JOIN sys.tables t ON t.name = i.TABLE_NAME
                 LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
                 WHERE
-                    ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
+                    ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id >= 0) OR ep.value IS NULL)
                     AND
                     i.TABLE_SCHEMA = %s""" % (
             get_schema_name())
