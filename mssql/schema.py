@@ -197,8 +197,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     if django_version >= (4, 2):
         def _alter_column_type_sql(self, model, old_field, new_field, new_type, old_collation, new_collation):
             new_type = self._set_field_new_type_null_status(old_field, new_type)
-            # Check if existing
-            # Drop exisiting
             return super()._alter_column_type_sql(model, old_field, new_field, new_type, old_collation, new_collation)
     else:
         def _alter_column_type_sql(self, model, old_field, new_field, new_type):
@@ -965,17 +963,18 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             }
             self.execute(sql, params)
         # Add field comment, if required.
-        if (
-            field.db_comment
-            and self.connection.features.supports_comments
-            and not self.connection.features.supports_comments_inline
-        ):
-            field_type = db_params["type"]
-            self.execute(
-                *self._alter_column_comment_sql(
-                    model, field, field_type, field.db_comment
+        if django_version >= (4, 2):
+            if (
+                field.db_comment
+                and self.connection.features.supports_comments
+                and not self.connection.features.supports_comments_inline
+            ):
+                field_type = db_params["type"]
+                self.execute(
+                    *self._alter_column_comment_sql(
+                        model, field, field_type, field.db_comment
+                    )
                 )
-            )
         # Add an index, if required
         self.deferred_sql.extend(self._field_indexes_sql(model, field))
         # Add any FK constraints later
