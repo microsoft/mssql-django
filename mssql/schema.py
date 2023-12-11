@@ -171,7 +171,18 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             },
             params,
         )
-
+    
+    def _alter_column_comment_sql(self, model, new_field, new_type, new_db_comment):
+        return (
+            self.sql_alter_column_comment
+            % {
+                "table": self.quote_name(model._meta.db_table),
+                "column": new_field.column,
+                "comment": self._comment_sql(new_db_comment),
+            },
+            [],
+        )
+    
     def _alter_column_null_sql(self, model, old_field, new_field):
         """
         Hook to specialize column null alteration.
