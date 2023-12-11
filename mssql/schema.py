@@ -349,11 +349,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
-        if old_field.remote_field and old_field.db_constraint and (django_version >= (4, 2) and self._field_should_be_altered(
-                old_field,
-                new_field,
-                ignore={"db_comment"},
-            )):
+        if (
+            old_field.remote_field 
+            and old_field.db_constraint 
+            and (django_version < (4,2) 
+                or 
+                (django_version >= (4, 2) 
+                and self._field_should_be_altered(
+                    old_field,
+                    new_field,
+                    ignore={"db_comment"})
+                )
+            )
+        ):
             # Drop index, SQL Server requires explicit deletion
             if not hasattr(new_field, 'db_constraint') or not new_field.db_constraint:
                 index_names = self._constraint_names(model, [old_field.column], index=True)
