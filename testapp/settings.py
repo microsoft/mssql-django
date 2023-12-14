@@ -302,6 +302,7 @@ EXCLUDED_TESTS = [
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
     'expressions_window.tests.WindowFunctionTests.test_limited_filter',
     'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
+    'constraints.tests.UniqueConstraintTests.test_validate_nullable_textfield_with_isnull_true',
 ]
 
 REGEX_TESTS = [

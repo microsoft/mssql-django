@@ -4,10 +4,12 @@
 from django.db import DatabaseError
 import pyodbc as Database
 
+from collections import namedtuple
+
 from django import VERSION
-from django.db.backends.base.introspection import (
-    BaseDatabaseIntrospection, FieldInfo, TableInfo,
-)
+from django.db.backends.base.introspection import BaseDatabaseIntrospection
+from django.db.backends.base.introspection import FieldInfo as BaseFieldInfo
+from django.db.backends.base.introspection import TableInfo as BaseTableInfo
 from django.db.models.indexes import Index
 from django.conf import settings
 
@@ -17,6 +19,8 @@ SQL_SMALLAUTOFIELD = -777333
 SQL_TIMESTAMP_WITH_TIMEZONE = -155
 from django.db import connection
 
+FieldInfo = namedtuple("FieldInfo", BaseFieldInfo._fields + ("comment",))
+TableInfo = namedtuple("TableInfo", BaseTableInfo._fields + ("comment",))
 
 def get_schema_name():
     # get default schema choosen by user in settings.py else SCHEMA_NAME()
@@ -94,13 +98,26 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns a list of table and view names in the current database.
         """
-        sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s' % (get_schema_name())
+        sql = """SELECT
+                    TABLE_NAME,
+                    TABLE_TYPE,
+                    CAST(ep.value AS VARCHAR) AS COMMENT
+                FROM INFORMATION_SCHEMA.TABLES i
+                LEFT JOIN sys.tables t ON t.name = i.TABLE_NAME
+                LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
+                AND ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
+                AND i.TABLE_SCHEMA = %s""" % (
+            get_schema_name())
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
-        list = [TableInfo(row[0], types.get(row[1]))
-                for row in cursor.fetchall()
-                if row[0] not in self.ignored_tables]
-        return list
+        if VERSION >= (4, 2):
+            return [TableInfo(row[0], types.get(row[1]), row[2])
+                    for row in cursor.fetchall()
+                    if row[0] not in self.ignored_tables]
+        else:
+            return [BaseTableInfo(row[0], types.get(row[1]))
+                    for row in cursor.fetchall()
+                    if row[0] not in self.ignored_tables]
 
     def _is_auto_field(self, cursor, table_name, column_name):
         """
@@ -134,7 +151,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
 
         if not columns:
             raise DatabaseError(f"Table {table_name} does not exist.")
-            
+
         items = []
         for column in columns:
             if VERSION >= (3, 2):
@@ -149,7 +166,16 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     column.append(collation_name[0] if collation_name else '')
                 else:
                     column.append('')
-
+            if VERSION >= (4, 2):
+                sql = """select CAST(ep.value AS VARCHAR) AS COMMENT
+                        FROM sys.columns c
+                        INNER JOIN sys.tables t ON c.object_id = t.object_id
+                        INNER JOIN sys.extended_properties ep ON c.object_id=ep.major_id AND ep.minor_id = c.column_id
+                        WHERE t.name = '%s' AND c.name = '%s' AND ep.name = 'MS_Description'
+                        """ % (table_name, column[0])
+                cursor.execute(sql)
+                comment = cursor.fetchone()
+                column.append(comment[0] if comment else '')
             if identity_check and self._is_auto_field(cursor, table_name, column[0]):
                 if column[1] == Database.SQL_BIGINT:
                     column[1] = SQL_BIGAUTOFIELD
@@ -159,7 +185,10 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     column[1] = SQL_AUTOFIELD
             if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
                 column[1] = Database.SQL_WCHAR
-            items.append(FieldInfo(*column))
+            if VERSION >= (4, 2):
+                items.append(FieldInfo(*column))
+            else:
+                items.append(BaseFieldInfo(*column))
         return items
 
     def get_sequences(self, cursor, table_name, table_fields=()):
