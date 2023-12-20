@@ -12,8 +12,8 @@ schedules:
   always: true
 
 variables:
-  Codeql.Enabled: true
 - group: DjangoTestApp
+  Codeql.Enabled: true
 
 jobs:
   - job: Windows
