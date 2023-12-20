@@ -12,9 +12,8 @@ schedules:
   always: true
 
 variables:
+  Codeql.Enabled: true
 - group: DjangoTestApp
-- CodeQl.Analysis: true
-- CodeQl.Exclusions: django
 
 jobs:
   - job: Windows
