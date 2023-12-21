@@ -13,10 +13,11 @@ schedules:
 
 variables:
 - group: DjangoTestApp
-  Codeql.Enabled: true
 
 jobs:
   - job: Windows
+    variables:
+      Codeql.Enabled: true
     pool:
       name: Django-1ES-pool
       demands:
