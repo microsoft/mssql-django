@@ -319,15 +319,15 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
             # Record the details
             constraints[constraint]['columns'].append(column)
         # Now get DEFAULT constraint columns
-        cursor.execute(f"""
-            SELECT d.name AS constraint_name, pc.name AS column_name
-            FROM sys.default_constraints AS d
-            INNER JOIN sys.columns pc ON
-                d.parent_object_id = pc.object_id AND
-                d.parent_column_id = pc.column_id
+        cursor.execute("""
+            SELECT
+                [name],
+                COL_NAME([parent_object_id], [parent_column_id])
+            FROM
+                [sys].[default_constraints]
             WHERE
-                type_desc = 'DEFAULT_CONSTRAINT'
-        """)
+                OBJECT_NAME([parent_object_id]) = %s
+        """, [table_name])
         for constraint, column in cursor.fetchall():
             # If we're the first column, make the record
             if constraint not in constraints:
