@@ -16,7 +16,7 @@ from django.db.utils import NotSupportedError
 if django.VERSION >= (3, 1):
     from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
 if django.VERSION >= (4, 2):
-    from django.core.exceptions import FullResultSet
+    from django.core.exceptions import EmptyResultSet, FullResultSet
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -241,6 +241,11 @@ class SQLCompiler(compiler.SQLCompiler):
                 if django.VERSION >= (4, 2):
                     try:
                         where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+                    except EmptyResultSet:
+                        if self.elide_empty:
+                            raise
+                        # Use a predicate that's always False.
+                        where, w_params = "0 = 1", []
                     except FullResultSet:
                         where, w_params = "", []
                     try:
