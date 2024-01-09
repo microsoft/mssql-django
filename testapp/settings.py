@@ -15,6 +15,7 @@ DATABASES = {
         "PASSWORD": "MyPassword42",
         "HOST": "localhost",
         "PORT": "1433",
+        "SCHEMA" :"dbo",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
     },
     'other': {

@@ -1,6 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
+import django.db.models.options as options
 
+options.DEFAULT_NAMES = options.DEFAULT_NAMES + ('db_table_schema',)
 import datetime
 import uuid
 
@@ -19,11 +21,12 @@ class BigAutoFieldMixin(models.Model):
 class Author(models.Model):
     name = models.CharField(max_length=100)
 
-
 class Editor(BigAutoFieldMixin, models.Model):
     name = models.CharField(max_length=100)
-
-
+    class Meta:
+        db_table = 'editor'
+        db_table_schema = 'test_schema'
+        
 class Post(BigAutoFieldMixin, models.Model):
     title = models.CharField('title', max_length=255)
     author = models.ForeignKey(Author, models.CASCADE)
@@ -69,7 +72,6 @@ class TestUniqueNullableModel(models.Model):
     # A variant of Issue https://github.com/microsoft/mssql-django/issues/14 case (b)
     # but for a unique index (not db_index)
     y_renamed = models.IntegerField(null=True, unique=True)
-
 
 class TestNullableUniqueTogetherModel(models.Model):
     class Meta:

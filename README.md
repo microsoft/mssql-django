@@ -66,7 +66,11 @@ in DATABASES control the behavior of the backend:
 -  PASSWORD
 
    String. Database user password.
+   
+-  SCHEMA
 
+   String. Default schema to use. Not required.
+   
 -  TOKEN
 
    String. Access token fetched as a user or service principal which
