@@ -302,6 +302,11 @@ EXCLUDED_TESTS = [
     'expressions_window.tests.WindowFunctionTests.test_limited_filter',
     'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
     'constraints.tests.UniqueConstraintTests.test_validate_nullable_textfield_with_isnull_true',
+
+    # Django 5.0
+    'constraints.tests.CheckConstraintTests.test_validate_custom_error',
+    'constraints.tests.CheckConstraintTests.test_validate_nullable_jsonfield',
+    'constraints.tests.CheckConstraintTests.test_validate_pk_field',
 ]
 
 REGEX_TESTS = [

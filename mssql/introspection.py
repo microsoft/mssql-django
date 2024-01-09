@@ -164,6 +164,17 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     column[1] = SQL_AUTOFIELD
             if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
                 column[1] = Database.SQL_WCHAR
+            # Remove surrounding parentheses for default values
+            if column[7]:
+                default_value = column[7]
+                start = 0
+                end = -1
+                for _ in range(2):
+                    if default_value[start] == '(' and default_value[end] == ')':
+                        start += 1
+                        end -= 1
+                column[7] = default_value[start:end + 1]
+
             if VERSION >= (4, 2):
                 items.append(FieldInfo(*column))
             else:
@@ -304,6 +315,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     # Potentially misleading: primary key and unique constraints still have indexes attached to them.
                     # Should probably be updated with the additional info from the sys.indexes table we fetch later on.
                     "index": False,
+                    "default": False,
                 }
             # Record the details
             constraints[constraint]['columns'].append(column)
@@ -331,6 +343,32 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     "foreign_key": None,
                     "check": True,
                     "index": False,
+                    "default": False,
+                }
+            # Record the details
+            constraints[constraint]['columns'].append(column)
+        # Now get DEFAULT constraint columns
+        cursor.execute("""
+            SELECT
+                [name],
+                COL_NAME([parent_object_id], [parent_column_id])
+            FROM
+                [sys].[default_constraints]
+            WHERE
+                OBJECT_NAME([parent_object_id]) = %s
+        """, [table_name])
+        for constraint, column in cursor.fetchall():
+            # If we're the first column, make the record
+            if constraint not in constraints:
+                constraints[constraint] = {
+                    "columns": [],
+                    "primary_key": False,
+                    "unique": False,
+                    "unique_constraint": False,
+                    "foreign_key": None,
+                    "check": False,
+                    "index": False,
+                    "default": True,
                 }
             # Record the details
             constraints[constraint]['columns'].append(column)
@@ -374,6 +412,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     "unique_constraint": unique_constraint,
                     "foreign_key": None,
                     "check": False,
+                    "default": False,
                     "index": True,
                     "orders": [],
                     "type": Index.suffix if type_ in (1, 2) else desc.lower(),

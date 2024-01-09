@@ -24,6 +24,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.12 - Django 5.0:
+          python.version: '3.12'
+          tox.env: 'py312-django50'
+        Python3.11 - Django 5.0:
+          python.version: '3.11'
+          tox.env: 'py311-django50'
+        Python3.10 - Django 5.0:
+          python.version: '3.10'
+          tox.env: 'py310-django50'
+
         Python3.11 - Django 4.2:
           python.version: '3.11'
           tox.env: 'py311-django42'
@@ -92,7 +102,7 @@ jobs:
 
           (Get-Content $pwd/testapp/settings.py).replace('localhost', $IP) | Set-Content $pwd/testapp/settings.py
 
-          Invoke-WebRequest https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.5.2.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
+          Invoke-WebRequest https://download.microsoft.com/download/6/f/f/6ffefc73-39ab-4cc0-bb7c-4093d64c2669/en-US/17.10.5.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
           msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
           Get-OdbcDriver
         displayName: Install ODBC
@@ -131,6 +141,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.12 - Django 5.0:
+          python.version: '3.12'
+          tox.env: 'py312-django50'
+        Python3.11 - Django 5.0:
+          python.version: '3.11'
+          tox.env: 'py311-django50'
+        Python3.10 - Django 5.0:
+          python.version: '3.10'
+          tox.env: 'py310-django50'
+
         Python3.11 - Django 4.2:
           python.version: '3.11'
           tox.env: 'py311-django42'
