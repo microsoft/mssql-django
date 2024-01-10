@@ -32,6 +32,15 @@ DJANGO41 = VERSION >= (4, 1)
 class TryCast(Cast):
     function = 'TRY_CAST'
 
+def sqlserver_cast(self, compiler, connection, **extra_context):
+    if self.source_expressions[0].output_field.get_internal_type() == 'BooleanField':
+        return self.as_sql(
+            compiler, connection,
+            template = 'CASE WHEN %(expressions)s THEN 1 ELSE 0 END',
+            **extra_context
+        )
+    return self.as_sql(compiler, connection, **extra_context)
+    
 
 def sqlserver_atan2(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, function='ATN2', **extra_context)
@@ -451,6 +460,7 @@ if VERSION >= (3, 1):
     key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
     HasKeyLookup.as_microsoft = json_HasKeyLookup
+Cast.as_microsoft = sqlserver_cast
 Degrees.as_microsoft = sqlserver_degrees
 Radians.as_microsoft = sqlserver_radians
 Power.as_microsoft = sqlserver_power
