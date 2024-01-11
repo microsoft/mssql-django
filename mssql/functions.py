@@ -33,12 +33,13 @@ class TryCast(Cast):
     function = 'TRY_CAST'
 
 def sqlserver_cast(self, compiler, connection, **extra_context):
-    if self.source_expressions[0].output_field.get_internal_type() == 'BooleanField':
-        return self.as_sql(
-            compiler, connection,
-            template = 'CASE WHEN %(expressions)s THEN 1 ELSE 0 END',
-            **extra_context
-        )
+    if hasattr(self.source_expressions[0], 'lookup_name'):
+        if self.source_expressions[0].lookup_name in ['gt', 'gte', 'lt', 'lte']:
+            return self.as_sql(
+                compiler, connection,
+                template = 'CASE WHEN %(expressions)s THEN 1 ELSE 0 END',
+                **extra_context
+            )
     return self.as_sql(compiler, connection, **extra_context)
     
 
