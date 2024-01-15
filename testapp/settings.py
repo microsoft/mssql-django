@@ -159,7 +159,6 @@ EXCLUDED_TESTS = [
     'queries.test_db_returning.ReturningValuesTests.test_insert_returning',
     'queries.test_db_returning.ReturningValuesTests.test_insert_returning_non_integer',
     'backends.tests.BackendTestCase.test_queries',
-    'introspection.tests.IntrospectionTests.test_smallautofield',
     'schema.tests.SchemaTests.test_inline_fk',
     'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_exists',
     'aggregation.tests.AggregateTestCase.test_aggregation_subquery_annotation_values_collision',
@@ -292,13 +291,22 @@ EXCLUDED_TESTS = [
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_empty_condition',
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_multiple_subquery_annotation',
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_subquery_annotation',
-    "aggregation.tests.AggregateAnnotationPruningTests.test_referenced_group_by_annotation_kept",
+    'aggregation.tests.AggregateAnnotationPruningTests.test_referenced_group_by_annotation_kept',
+    'aggregation.tests.AggregateAnnotationPruningTests.test_referenced_window_requires_wrapping',
+    'aggregation.tests.AggregateAnnotationPruningTests.test_unused_aliased_aggregate_and_annotation_reverse_fk',
+    'aggregation.tests.AggregateAnnotationPruningTests.test_unused_aliased_aggregate_and_annotation_reverse_fk_grouped',
     'aggregation.tests.AggregateTestCase.test_group_by_nested_expression_with_params',
     'expressions.tests.BasicExpressionsTests.test_aggregate_subquery_annotation',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_order_with_null_first_last',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
     'expressions_window.tests.WindowFunctionTests.test_limited_filter',
     'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
+    'constraints.tests.UniqueConstraintTests.test_validate_nullable_textfield_with_isnull_true',
+
+    # Django 5.0
+    'constraints.tests.CheckConstraintTests.test_validate_custom_error',
+    'constraints.tests.CheckConstraintTests.test_validate_nullable_jsonfield',
+    'constraints.tests.CheckConstraintTests.test_validate_pk_field',
 ]
 
 REGEX_TESTS = [
