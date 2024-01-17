@@ -1025,7 +1025,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if definition is None:
             return
         # Remove column type from definition if field is generated
-        if field.generated:
+        if (django_version >= (5,0) and field.generated):
             definition = definition[definition.find('AS'):]
         # Nullable columns with default values require 'WITH VALUES' to set existing rows
         if 'DEFAULT' in definition and field.null:
