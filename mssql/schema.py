@@ -384,6 +384,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     def _add_deferred_unique_index_for_field(self, field, statement):
         self._deferred_unique_indexes[str(field)].append(statement)
 
+    def _column_generated_sql(self, field):
+        """Return the SQL to use in a GENERATED ALWAYS clause."""
+        expression_sql, params = field.generated_sql(self.connection)
+        persistency_sql = "PERSISTED" if field.db_persist else ""
+        if params:
+            expression_sql = expression_sql % tuple(self.quote_value(p) for p in params)
+        return f"AS {expression_sql} {persistency_sql}"
+
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
         """Actually perform a "physical" (non-ManyToMany) field update."""
@@ -1016,6 +1024,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # It might not actually have a column behind it
         if definition is None:
             return
+        # Remove column type from definition if field is generated
+        if field.generated:
+            definition = definition[definition.find('AS'):]
         # Nullable columns with default values require 'WITH VALUES' to set existing rows
         if 'DEFAULT' in definition and field.null:
             definition = definition.replace('NULL', 'WITH VALUES')
