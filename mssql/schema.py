@@ -1229,6 +1229,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             definition, extra_params = self.column_sql(model, field)
             if definition is None:
                 continue
+            # Remove column type from definition if field is generated
+            if (django_version >= (5,0) and field.generated):
+                definition = definition[definition.find('AS'):]
 
             if (self.connection.features.supports_nullable_unique_constraints and
                     not field.many_to_many and field.null and field.unique):
