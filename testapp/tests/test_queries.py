@@ -19,6 +19,7 @@ class TestTableWithTrigger(TransactionTestCase):
         try:
             # Change can_return_rows_from_bulk_insert to be the same as when
             # has_trigger = True
+            old_return_rows_flag = connection.features_class.can_return_rows_from_bulk_insert
             connection.features_class.can_return_rows_from_bulk_insert = False
             Author.objects.create(name='Foo')
         except django.db.utils.ProgrammingError as e:
@@ -26,4 +27,4 @@ class TestTableWithTrigger(TransactionTestCase):
         finally:
             with connection.schema_editor() as cursor:
                 cursor.execute("DROP TRIGGER TestTrigger")
-            # connection.features_class.can_return_rows_from_bulk_insert = True
+            connection.features_class.can_return_rows_from_bulk_insert = old_return_rows_flag
