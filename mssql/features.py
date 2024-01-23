@@ -60,6 +60,9 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_default_keyword_in_insert = True
     supports_expression_defaults = True
     supports_default_keyword_in_bulk_insert = True
+    supports_stored_generated_columns = True
+    supports_virtual_generated_columns = True
+
 
     @cached_property
     def has_zoneinfo_database(self):
