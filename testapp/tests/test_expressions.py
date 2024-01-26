@@ -8,7 +8,7 @@ from django.db.models import IntegerField, F
 from django.db.models.expressions import Case, Exists, OuterRef, Subquery, Value, When
 from django.test import TestCase, skipUnlessDBFeature
 
-
+from django.db.models.aggregates import Count
 from ..models import Author, Comment, Post, Editor
 
 DJANGO3 = VERSION[0] >= 3
@@ -45,6 +45,18 @@ class TestExists(TestCase):
                 output_field=IntegerField(),
             )
         ).get()
+        self.assertEqual(author.has_post, 1)
+
+    def test_unnecessary_exists_group_by(self):
+        author = Author.objects.annotate(
+            has_post=Case(
+                When(Exists(Post.objects.filter(author=OuterRef('pk')).values('pk')), then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            )).annotate(
+            amount=Count("post")
+        ).get()
+        self.assertEqual(author.amount, 1)
         self.assertEqual(author.has_post, 1)
 
     @skipUnless(DJANGO3, "Django 3 specific tests")
