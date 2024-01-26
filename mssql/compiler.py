@@ -155,7 +155,7 @@ def _as_sql_window(self, compiler, connection, template=None):
     else:
         # MSSQL window functions require an OVER clause with ORDER BY
         window_sql.append('ORDER BY (SELECT NULL)')
-    
+
     if self.frame:
         frame_sql, frame_params = compiler.compile(self.frame)
         window_sql.append(frame_sql)
@@ -443,7 +443,27 @@ class SQLCompiler(compiler.SQLCompiler):
 
     def collapse_group_by(self, expressions, having):
         expressions = super().collapse_group_by(expressions, having)
-        return [e for e in expressions if not isinstance(e, Subquery)]
+        return self._filter_subquery_expressions(expressions)
+
+    def _filter_subquery_expressions(self, expressions):
+        ret = []
+        for expression in expressions:
+            if self._is_subquery(expression):
+                continue
+            if not self._has_nested_subquery(expression):
+                ret.append(expression)
+        return ret
+
+    def _has_nested_subquery(self, expression):
+        if self._is_subquery(expression):
+            return True
+        for sub_expr in expression.get_source_expressions():
+            if self._has_nested_subquery(sub_expr):
+                return True
+        return False
+
+    def _is_subquery(self, expression):
+        return isinstance(expression, Subquery)
 
     def _as_microsoft(self, node):
         as_microsoft = None
