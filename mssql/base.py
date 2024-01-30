@@ -661,14 +661,10 @@ class CursorWrapper(object):
                     subs.append(substitute_params('CAST(%s as float)', (each,)).decode('utf8'))
                 else:
                     subs.append(substitute_params("%s", (each,)).decode('utf8'))
-            try:
-                subs.append("")
-                splited_sql = sql.split("%s")
-                sql = "".join(x+y for x,y in zip(splited_sql, subs))
 
-            except Exception as e:
-                print(sql, subs)
-                raise e
+            subs.append("")
+            split_sql = sql.split("%s")
+            sql = "".join(x+y for x, y in zip(split_sql, subs))
 
         return sql
 
