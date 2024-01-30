@@ -5,7 +5,7 @@ from unittest import skipUnless
 
 from django import VERSION
 from django.db.models import IntegerField, F
-from django.db.models.expressions import Case, Exists, OuterRef, Subquery, Value, When
+from django.db.models.expressions import Case, Exists, OuterRef, Subquery, Value, When, ExpressionWrapper
 from django.test import TestCase, skipUnlessDBFeature
 
 from django.db.models.aggregates import Count
@@ -58,6 +58,20 @@ class TestExists(TestCase):
         ).get()
         self.assertEqual(author.amount, 1)
         self.assertEqual(author.has_post, 1)
+
+    def test_combined_expression_annotation_with_aggregation(self):
+        book = Author.objects.annotate(
+            combined=ExpressionWrapper(
+                Value(2) * Value(5), output_field=IntegerField()
+            ),
+            null_value=ExpressionWrapper(
+                Value(None), output_field=IntegerField()
+            ),
+            rating_count=Count("post"),
+        ).first()
+        self.assertEqual(book.combined, 10)
+        self.assertEqual(book.null_value, None)
+
 
     @skipUnless(DJANGO3, "Django 3 specific tests")
     def test_order_by_exists(self):

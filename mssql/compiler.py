@@ -443,12 +443,30 @@ class SQLCompiler(compiler.SQLCompiler):
 
     def collapse_group_by(self, expressions, having):
         expressions = super().collapse_group_by(expressions, having)
-        return self._filter_subquery_expressions(expressions)
+        # SQL server does not allow subqueries or constant expressions in the group by
+        # For constants: Each GROUP BY expression must contain at least one column that is not an outer reference.
+        # For subqueries: Cannot use an aggregate or a subquery in an expression used for the group by list of a GROUP BY clause.
+        return self._filter_subquery_and_constant_expressions(expressions)
 
-    def _filter_subquery_expressions(self, expressions):
+    def _is_constant_expression(self, expression):
+        if isinstance(expression, Value):
+            return True
+        sub_exprs = expression.get_source_expressions()
+        if not sub_exprs:
+            return False
+        for each in sub_exprs:
+            if not self._is_constant_expression(each):
+                return False
+        return True
+
+
+
+    def _filter_subquery_and_constant_expressions(self, expressions):
         ret = []
         for expression in expressions:
             if self._is_subquery(expression):
+                continue
+            if self._is_constant_expression(expression):
                 continue
             if not self._has_nested_subquery(expression):
                 ret.append(expression)
