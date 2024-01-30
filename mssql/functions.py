@@ -343,10 +343,8 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=None):
                     attr = Value(attr, output_field=field)
                 when_statements.append(When(pk=obj.pk, then=attr))
             if connection.vendor == 'microsoft' and value_none_counter == len(when_statements):
-                if default is None:
-                    case_statement = Case(*when_statements, output_field=field, default=F(field.attname))
-                else:
-                    case_statement = Case(*when_statements, output_field=field, default=Value(default))
+                # We don't need a case statement if we are setting everything to None
+                case_statement = Value(default)
             else:
                 case_statement = Case(*when_statements, output_field=field)
             if requires_casting:
