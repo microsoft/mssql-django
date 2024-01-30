@@ -15,7 +15,7 @@ DATABASES = {
         "PASSWORD": "MyPassword42",
         "HOST": "localhost",
         "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
+        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
     },
     'other': {
         "ENGINE": "mssql",
@@ -24,7 +24,7 @@ DATABASES = {
         "PASSWORD": "MyPassword42",
         "HOST": "localhost",
         "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
+        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
     },
 }
 
