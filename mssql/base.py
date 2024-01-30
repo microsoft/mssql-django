@@ -10,8 +10,10 @@ import time
 import struct
 import datetime
 
+from pymssql._mssql import substitute_params
+from django.utils import timezone
+import pyodbc
 from django.core.exceptions import ImproperlyConfigured
-from django.utils.functional import cached_property
 
 try:
     import pyodbc as Database
@@ -555,6 +557,30 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self._execute_foreach('ALTER TABLE %s WITH NOCHECK CHECK CONSTRAINT ALL')
 
 
+def _fix_query(query):
+    # For Django's inspectdb tests -- a model has a non-ASCII column name.
+    if not isinstance(query, str):
+        query = query.encode('utf-8')
+    # For Django's backends and expressions_regress tests.
+    query = query.replace('%%', '%')
+    return query
+
+
+def _fix_value(value):
+    if isinstance(value, datetime.datetime):
+        if timezone.is_aware(value):
+            return value.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _fix_params(params):
+    if params is not None:
+        # pymssql needs a tuple, not another kind of iterable.
+        params = tuple(_fix_value(value) for value in params)
+    return params
+
+
+
 class CursorWrapper(object):
     """
     A wrapper around the pyodbc's cursor that takes in account a) some pyodbc
@@ -612,16 +638,54 @@ class CursorWrapper(object):
 
         return tuple(fp)
 
+    def replace_params(self, sql, params):
+        if self.driver_charset and isinstance(sql, str):
+            # FreeTDS (and other ODBC drivers?) doesn't support Unicode
+            # yet, so we need to encode the SQL clause itself in utf-8
+            sql = smart_str(sql, self.driver_charset)
+
+        if params:
+            subs = []
+            for each in params:
+                if isinstance(each, datetime.datetime):
+                    # pymssql truncates dates and they lose precision
+                    sub = substitute_params("%s", (each.strftime('%Y-%m-%d %H:%M:%S.%f').encode('utf8'),)).decode(
+                        'utf8')
+                    # Years before 1000 need to be encoded as 0900 instaed of 900
+                    if each.year < 1000:
+                        pad = "'0"
+                        sub = sub.replace("'", pad, 1)
+                    subs.append(sub)
+                elif isinstance(each, float):
+                    # If we don't do this, sometimes comparing json expressions to a flot fail
+                    subs.append(substitute_params('CAST(%s as float)', (each,)).decode('utf8'))
+                else:
+                    subs.append(substitute_params("%s", (each,)).decode('utf8'))
+            try:
+                subs.append("")
+                splited_sql = sql.split("%s")
+                sql = "".join(x+y for x,y in zip(splited_sql, subs))
+
+            except Exception as e:
+                print(sql, subs)
+                raise e
+
+        return sql
+
     def execute(self, sql, params=None):
         self.last_sql = sql
-        sql = self.format_sql(sql, params)
-        params = self.format_params(params)
         self.last_params = params
         try:
-            return self.cursor.execute(sql, params)
-        except Database.Error as e:
+            sql = self.replace_params(_fix_query(self.last_sql), _fix_params(self.last_params))
+            return self.cursor.execute(sql, tuple())
+        except pyodbc.Error as e:
             self.connection._on_error(e)
             raise
+        except Exception as e:
+
+            self.connection._on_error(e)
+            raise
+
 
     def executemany(self, sql, params_list=()):
         if not params_list:

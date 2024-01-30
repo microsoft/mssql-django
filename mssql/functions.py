@@ -2,12 +2,13 @@
 # Licensed under the BSD license.
 
 import json
+import uuid
 
 from django import VERSION
 from django.core import validators
 from django.db import NotSupportedError, connections, transaction
 from django.db.models import BooleanField, CheckConstraint, Value
-from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
+from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window, RawSQL
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.datetime import Now
@@ -29,6 +30,18 @@ DJANGO3 = VERSION[0] >= 3
 DJANGO41 = VERSION >= (4, 1)
 
 
+def minmax(data):
+    """Get the min and max of an iterable in O(n) time and constant space."""
+    min_value = data[0]
+    max_value = data[0]
+    for d in data:
+        if d < min_value:
+            min_value = d
+        elif d > max_value:
+            max_value = d
+    return min_value, max_value
+
+
 class TryCast(Cast):
     function = 'TRY_CAST'
 
@@ -41,7 +54,7 @@ def sqlserver_cast(self, compiler, connection, **extra_context):
                 **extra_context
             )
     return self.as_sql(compiler, connection, **extra_context)
-    
+
 
 def sqlserver_atan2(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, function='ATN2', **extra_context)
@@ -79,7 +92,7 @@ def sqlserver_degrees(self, compiler, connection, **extra_context):
 def sqlserver_radians(self, compiler, connection, **extra_context):
     return self.as_sql(
             compiler, connection, function='RADIANS',
-            template= 'RADIANS(CONVERT(float, %(expressions)s))', 
+            template= 'RADIANS(CONVERT(float, %(expressions)s))',
             **extra_context
         )
 
@@ -122,7 +135,7 @@ def sqlserver_random(self, compiler, connection, **extra_context):
 def sqlserver_window(self, compiler, connection, template=None):
     # MSSQL window functions require an OVER clause with ORDER BY
     if VERSION < (4, 1) and self.order_by is None:
-        self.order_by = Value('SELECT NULL')
+        self.order_by = RawSQL('SELECT NULL', ())
     return self.as_sql(compiler, connection, template)
 
 
@@ -184,24 +197,37 @@ def split_parameter_list_as_sql(self, compiler, connection):
         return in_split_parameter_list_as_sql(self, compiler, connection)
 
 
+
 def mssql_split_parameter_list_as_sql(self, compiler, connection):
-    # Insert In clause parameters 1000 at a time into a temp table.
-    lhs, _ = self.process_lhs(compiler, connection)
-    _, rhs_params = self.batch_process_rhs(compiler, connection)
-
+    if hasattr(self, "_cached_split_result"):
+        return self._cached_split_result
+    rhs, rhs_params = self.batch_process_rhs(compiler, connection)
+    # Hay un caso muy comun en el que estamos interando un rango de enteros desde X a X + N,
+    # En ese caso es mucho mas eficiente usar >= X y <= X + N
+    if rhs_params and isinstance(rhs_params[0], int):
+        min_, max_ = minmax(rhs_params)
+        lhs, lhs_params = self.process_lhs(compiler, connection)
+        if len(rhs_params) == max_ - min_ + 1:
+            sql = "( %s >= %%s AND %s <= %%s)" % (lhs, lhs)
+            self._cached_split_result =(sql, (min_, max_))
+            return sql, (min_, max_)
+        else:
+            ret = in_split_parameter_list_as_sql(self, compiler, connection)
+            params = ret[1]
+            sql = ret[0]
+            sql = "(" + sql +  " AND  ( %s >= %s AND %s <= %s) )" % (lhs, min_, lhs, max_)
+    else:
+        ret = in_split_parameter_list_as_sql(self, compiler, connection)
+        params = ret[1]
+        sql = ret[0]
     with connection.cursor() as cursor:
-        cursor.execute("IF OBJECT_ID('tempdb.dbo.#Temp_params', 'U') IS NOT NULL DROP TABLE #Temp_params; ")
-        parameter_data_type = self.lhs.field.db_type(connection)
-        Temp_table_collation = 'COLLATE DATABASE_DEFAULT' if 'char' in parameter_data_type else ''
-        cursor.execute(f"CREATE TABLE #Temp_params (params {parameter_data_type} {Temp_table_collation})")
-        for offset in range(0, len(rhs_params), 1000):
-            sqls_params = rhs_params[offset: offset + 1000]
-            sqls_params = ", ".join("('{}')".format(item) for item in sqls_params)
-            cursor.execute("INSERT INTO #Temp_params VALUES %s" % sqls_params)
+        from mssql.base import _fix_query
+        from mssql.base import _fix_params
+        ret = cursor.replace_params(_fix_query(sql), _fix_params(params)), ()
+        self._cached_split_result = ret
+        return ret
 
-    in_clause = lhs + ' IN ' + '(SELECT params from #Temp_params)'
 
-    return in_clause, ()
 
 
 def unquote_json_rhs(rhs_params):

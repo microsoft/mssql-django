@@ -5,6 +5,7 @@ import datetime
 import uuid
 import warnings
 import sys
+from decimal import Decimal
 
 from django.conf import settings
 from django.db.backends.base.operations import BaseDatabaseOperations
@@ -175,8 +176,8 @@ class DatabaseOperations(BaseDatabaseOperations):
     if DJANGO41:
         def date_trunc_sql(self, lookup_type, sql, params, tzname=None):
             sql, params = self._convert_sql_to_tz(sql, params, tzname)
-            
-            # Python formats year with leading zeroes. This preserves that format for 
+
+            # Python formats year with leading zeroes. This preserves that format for
             # compatibility with SQL Server's date since DATEPART drops the leading zeroes.
             CONVERT_YEAR = 'CONVERT(varchar(4), CONVERT(date, %s))' % sql
             CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % sql
@@ -197,8 +198,8 @@ class DatabaseOperations(BaseDatabaseOperations):
     else:
         def date_trunc_sql(self, lookup_type, field_name, tzname=None):
             field_name = self._convert_field_to_tz(field_name, tzname)
-            
-            # Python formats year with leading zeroes. This preserves that format for 
+
+            # Python formats year with leading zeroes. This preserves that format for
             # compatibility with SQL Server's date since DATEPART drops the leading zeroes.
             CONVERT_YEAR = 'CONVERT(varchar(4), %s)' % field_name
             CONVERT_QUARTER = 'CONVERT(varchar, 1+((DATEPART(quarter, %s)-1)*3))' % field_name
@@ -319,9 +320,19 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         return 'CONTAINS(%s, %%s)' % field_name
 
+    def convert_durationfield_value(self, value, expression, connection):
+        if isinstance(value, datetime.timedelta):
+            return value
+        if isinstance(value, Decimal):
+            value = float(value)
+        if value is not None:
+            return datetime.timedelta(0, 0, value)
+
     def get_db_converters(self, expression):
         converters = super().get_db_converters(expression)
         internal_type = expression.output_field.get_internal_type()
+        if internal_type == 'DurationField':
+            converters.append(self.convert_durationfield_value)
         if internal_type == 'DateTimeField':
             converters.append(self.convert_datetimefield_value)
         elif internal_type == 'FloatField':

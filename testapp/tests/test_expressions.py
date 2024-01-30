@@ -4,7 +4,7 @@
 from unittest import skipUnless
 
 from django import VERSION
-from django.db.models import IntegerField, F
+from django.db.models import IntegerField, F, Q
 from django.db.models.expressions import Case, Exists, OuterRef, Subquery, Value, When
 from django.test import TestCase, skipUnlessDBFeature
 
@@ -55,6 +55,14 @@ class TestExists(TestCase):
 
         authors_by_posts = Author.objects.order_by(Exists(Post.objects.filter(author=OuterRef('pk'))).asc())
         self.assertSequenceEqual(authors_by_posts, [author_without_posts, self.author])
+
+    def test_big_ranges_in(self):
+        range_a = list(range(self.author.id+1,self.author.id+1+2200))
+        range_b = list(range(self.author.id, self.author.id+2200))
+        res = list(Author.objects.filter(id__in=range_a).filter(id__in=range_b))
+        self.assertEqual(res, [])
+        res = list(Author.objects.filter(Q(id__in=range_a) | Q(id__in=range_b)))
+        self.assertEqual(res, [self.author])
 
 
 @skipUnless(DJANGO3, "Django 3 specific tests")
