@@ -7,7 +7,7 @@ from django import VERSION
 from django.core import validators
 from django.db import NotSupportedError, connections, transaction
 from django.db.models import BooleanField, CheckConstraint, Value
-from django.db.models.expressions import F, Case, Exists, Expression, OrderBy, When, Window
+from django.db.models.expressions import Case, Exists, OrderBy, When, Window
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.datetime import Now
