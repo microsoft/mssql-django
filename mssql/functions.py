@@ -202,8 +202,9 @@ def mssql_split_parameter_list_as_sql(self, compiler, connection):
     if hasattr(self, "_cached_split_result"):
         return self._cached_split_result
     rhs, rhs_params = self.batch_process_rhs(compiler, connection)
-    # Hay un caso muy comun en el que estamos interando un rango de enteros desde X a X + N,
-    # En ese caso es mucho mas eficiente usar >= X y <= X + N
+    # There is a common case where we iterate a range of ints from X to X + N
+    # In that case is usually better to use >= X and <= X + N
+    # Also, if the IN is not a continuous range, it may help the planner to add >= X and <= X + N
     if rhs_params and isinstance(rhs_params[0], int):
         min_, max_ = minmax(rhs_params)
         lhs, lhs_params = self.process_lhs(compiler, connection)
