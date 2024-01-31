@@ -46,6 +46,8 @@ setup(
         'django>=3.2,<5.1',
         'pyodbc>=3.0',
         'pytz',
+        'pymssql>=2.2.11'
+
     ],
     package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
