@@ -7,7 +7,7 @@ from django import VERSION
 from django.core import validators
 from django.db import NotSupportedError, connections, transaction
 from django.db.models import BooleanField, CheckConstraint, Value
-from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
+from django.db.models.expressions import Case, Exists, OrderBy, When, Window
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.datetime import Now
@@ -294,7 +294,7 @@ def _get_check_sql(self, model, schema_editor):
     return sql % tuple(schema_editor.quote_value(p) for p in params)
 
 
-def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
+def bulk_update_with_default(self, objs, fields, batch_size=None, default=None):
     """
         Update the given fields in each of the given objects in the database.
 
@@ -343,7 +343,8 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
                     attr = Value(attr, output_field=field)
                 when_statements.append(When(pk=obj.pk, then=attr))
             if connection.vendor == 'microsoft' and value_none_counter == len(when_statements):
-                case_statement = Case(*when_statements, output_field=field, default=Value(default))
+                # We don't need a case statement if we are setting everything to None
+                case_statement = Value(None)
             else:
                 case_statement = Case(*when_statements, output_field=field)
             if requires_casting:

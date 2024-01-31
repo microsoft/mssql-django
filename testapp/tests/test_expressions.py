@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 
+import datetime
 from unittest import skipUnless
 
 from django import VERSION
@@ -9,7 +10,8 @@ from django.db.models.expressions import Case, Exists, OuterRef, Subquery, Value
 from django.test import TestCase, skipUnlessDBFeature
 
 from django.db.models.aggregates import Count
-from ..models import Author, Comment, Post, Editor
+from ..models import Author, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes
+
 
 DJANGO3 = VERSION[0] >= 3
 
@@ -103,3 +105,21 @@ class TestOrderBy(TestCase):
         self.assertEqual(len(results), 2)
         self.assertIsNone(results[0].alt_editor)
         self.assertIsNotNone(results[1].alt_editor)
+
+class TestBulkUpdate(TestCase):
+     def test_bulk_update_different_column_types(self):
+        data = (
+            (1, 'a', datetime.datetime(year=2024, month=1, day=1)),
+            (2, 'b', datetime.datetime(year=2023, month=12, day=31))
+        )
+        objs = ModelWithNullableFieldsOfDifferentTypes.objects.bulk_create(ModelWithNullableFieldsOfDifferentTypes(int_value=row_data[0],
+                                                                                                                   name=row_data[1],
+                                                                                                                   date=row_data[2]) for row_data in data)
+        for obj in objs:
+            obj.int_value = None
+            obj.name = None
+            obj.date = None
+        ModelWithNullableFieldsOfDifferentTypes.objects.bulk_update(objs, ["int_value", "name", "date"])
+        self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(int_value__isnull=True), objs)
+        self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(name__isnull=True), objs)
+        self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(date__isnull=True), objs)
