@@ -54,6 +54,12 @@ class UUIDModel(models.Model):
     def __str__(self):
         return self.pk
 
+class ModelWithNullableFieldsOfDifferentTypes(models.Model):
+    # Issue https://github.com/microsoft/mssql-django/issues/340
+    # Ensures the integrity of bulk updates with different types 
+    int_value = models.IntegerField(null=True)
+    name = models.CharField(max_length=100, null=True)
+    date = models.DateTimeField(null=True)
 
 class TestUniqueNullableModel(models.Model):
     # Issue https://github.com/ESSolutions/django-mssql-backend/issues/38:
