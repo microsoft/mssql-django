@@ -268,14 +268,6 @@ EXCLUDED_TESTS = [
     'schema.tests.SchemaTests.test_autofield_to_o2o',
     'schema.tests.SchemaTests.test_add_auto_field',
     'prefetch_related.tests.PrefetchRelatedTests.test_m2m_prefetching_iterator_with_chunks',
-    'queries.test_q.QCheckTests.test_basic',
-    'queries.test_q.QCheckTests.test_boolean_expression',
-    'queries.test_q.QCheckTests.test_expression',
-    'constraints.tests.CheckConstraintTests.test_validate',
-    'constraints.tests.CheckConstraintTests.test_validate_boolean_expressions',
-    'constraints.tests.UniqueConstraintTests.test_model_validation_with_condition',
-    'constraints.tests.UniqueConstraintTests.test_validate_condition',
-    'constraints.tests.UniqueConstraintTests.test_validate_expression_condition',
     'migrations.test_operations.OperationTests.test_create_model_with_boolean_expression_in_check_constraint',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_in_subquery_related_outerref',
     # These tests pass on SQL Server 2022 or newer
@@ -300,12 +292,6 @@ EXCLUDED_TESTS = [
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
     'expressions_window.tests.WindowFunctionTests.test_limited_filter',
     'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
-    'constraints.tests.UniqueConstraintTests.test_validate_nullable_textfield_with_isnull_true',
-
-    # Django 5.0
-    'constraints.tests.CheckConstraintTests.test_validate_custom_error',
-    'constraints.tests.CheckConstraintTests.test_validate_nullable_jsonfield',
-    'constraints.tests.CheckConstraintTests.test_validate_pk_field',
 ]
 
 REGEX_TESTS = [
