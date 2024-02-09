@@ -7,7 +7,7 @@ from django import VERSION
 from django.core import validators
 from django.db import NotSupportedError, connections, transaction
 from django.db.models import BooleanField, CheckConstraint, Value
-from django.db.models.expressions import Case, Exists, Expression, OrderBy, When, Window
+from django.db.models.expressions import Case, Exists, OrderBy, When, Window
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.datetime import Now
@@ -32,6 +32,16 @@ DJANGO41 = VERSION >= (4, 1)
 class TryCast(Cast):
     function = 'TRY_CAST'
 
+def sqlserver_cast(self, compiler, connection, **extra_context):
+    if hasattr(self.source_expressions[0], 'lookup_name'):
+        if self.source_expressions[0].lookup_name in ['gt', 'gte', 'lt', 'lte']:
+            return self.as_sql(
+                compiler, connection,
+                template = 'CASE WHEN %(expressions)s THEN 1 ELSE 0 END',
+                **extra_context
+            )
+    return self.as_sql(compiler, connection, **extra_context)
+    
 
 def sqlserver_atan2(self, compiler, connection, **extra_context):
     return self.as_sql(compiler, connection, function='ATN2', **extra_context)
@@ -284,7 +294,7 @@ def _get_check_sql(self, model, schema_editor):
     return sql % tuple(schema_editor.quote_value(p) for p in params)
 
 
-def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
+def bulk_update_with_default(self, objs, fields, batch_size=None, default=None):
     """
         Update the given fields in each of the given objects in the database.
 
@@ -333,7 +343,8 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=0):
                     attr = Value(attr, output_field=field)
                 when_statements.append(When(pk=obj.pk, then=attr))
             if connection.vendor == 'microsoft' and value_none_counter == len(when_statements):
-                case_statement = Case(*when_statements, output_field=field, default=Value(default))
+                # We don't need a case statement if we are setting everything to None
+                case_statement = Value(None)
             else:
                 case_statement = Case(*when_statements, output_field=field)
             if requires_casting:
@@ -451,6 +462,7 @@ if VERSION >= (3, 1):
     key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
     HasKeyLookup.as_microsoft = json_HasKeyLookup
+Cast.as_microsoft = sqlserver_cast
 Degrees.as_microsoft = sqlserver_degrees
 Radians.as_microsoft = sqlserver_radians
 Power.as_microsoft = sqlserver_power
