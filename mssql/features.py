@@ -22,7 +22,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     has_json_object_function = False
     has_json_operators = False
     has_native_json_field = False
-    has_native_uuid_field = False
+    has_native_uuid_field = True
     has_real_datatype = True
     has_select_for_update = True
     has_select_for_update_nowait = True
@@ -63,6 +63,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_default_keyword_in_bulk_insert = True
     supports_stored_generated_columns = True
     supports_virtual_generated_columns = True
+
 
     @cached_property
     def has_zoneinfo_database(self):
