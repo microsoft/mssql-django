@@ -88,6 +88,10 @@ def handle_datetimeoffset(dto_value):
     tup = struct.unpack("<6hI2h", dto_value)  # e.g., (2017, 3, 16, 10, 35, 18, 500000000)
     return datetime.datetime(tup[0], tup[1], tup[2], tup[3], tup[4], tup[5], tup[6] // 1000)
 
+def _get_file_column(data):
+    if data["max_length"] > 4000:
+        return "nvarchar(max)"
+    return "nvarchar(%(max_length)s)" % data
 
 class DatabaseWrapper(BaseDatabaseWrapper):
     vendor = 'microsoft'
@@ -107,7 +111,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'DateTimeField': 'datetime2',
         'DecimalField': 'numeric(%(max_digits)s, %(decimal_places)s)',
         'DurationField': 'bigint',
-        'FileField': 'nvarchar(%(max_length)s)',
+        'FileField': _get_file_column,
         'FilePathField': 'nvarchar(%(max_length)s)',
         'FloatField': 'double precision',
         'IntegerField': 'int',
