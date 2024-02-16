@@ -130,7 +130,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def convert_uuidfield_value(self, value, expression, connection):
         if value is not None:
-            value = uuid.UUID(value)
+            value = uuid.UUID(str(value))
         return value
 
     def convert_booleanfield_value(self, value, expression, connection):
