@@ -587,7 +587,7 @@ class CursorWrapper(object):
             else:
                 return 'BIGINT'
         elif typ == float:
-            return 'FLOAT'
+            return 'DOUBLE PRECISION'
         elif typ == bool:
             return 'BIT'
         elif isinstance(value, Decimal):
