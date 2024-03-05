@@ -574,12 +574,12 @@ class CursorWrapper(object):
         self.last_params = ()
 
     def _as_sql_type(self, typ, value):
-        if value is None:
-            return 'INT'
-        elif isinstance(value, str):
+        if isinstance(value, str):
             length = len(value)
             if length == 0:
                 return 'NVARCHAR'
+            elif length > 4000:
+                return 'NVARCHAR(max)'
             return 'NVARCHAR(%s)' % len(value)
         elif typ == int:
             if value < 0x7FFFFFFF and value > -0x7FFFFFFF:
@@ -622,6 +622,11 @@ class CursorWrapper(object):
 
     def format_group_by_params(self, query, params):
         if params:
+            # Insert None params directly into the query
+            if None in params:
+                null_params = ['NULL' if param is None else '%s' for param in params]
+                query = query % tuple(null_params)
+                params = tuple(p for p in params if p is not None)
             params = [(param, type(param)) for param in params]
             params_dict = {param: '@var%d' % i for i, param in enumerate(set(params))}
             args = [params_dict[param] for param in params]
