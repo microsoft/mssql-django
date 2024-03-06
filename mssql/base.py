@@ -37,7 +37,7 @@ if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
 from .client import DatabaseClient  # noqa
 from .creation import DatabaseCreation  # noqa
 from .features import DatabaseFeatures  # noqa
-from .introspection import DatabaseIntrospection, SQL_TIMESTAMP_WITH_TIMEZONE  # noqa
+from .introspection import DatabaseIntrospection, SQL_TIMESTAMP_WITH_TIMEZONE, SQL_VARIANT  # noqa
 from .operations import DatabaseOperations  # noqa
 from .schema import DatabaseSchemaEditor  # noqa
 
@@ -384,7 +384,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         conn.add_output_converter(SQL_TIMESTAMP_WITH_TIMEZONE, handle_datetimeoffset)
         
         # add support for sql_variant fields
-        conn.add_output_converter(-150, handle_sql_variant_as_string)
+        conn.add_output_converter(SQL_VARIANT, handle_sql_variant_as_string)
         
         conn.timeout = query_timeout
         if setencoding:
