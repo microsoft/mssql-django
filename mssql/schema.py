@@ -1024,6 +1024,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # It might not actually have a column behind it
         if definition is None:
             return
+        if col_type_suffix := field.db_type_suffix(connection=self.connection):
+            definition += f" {col_type_suffix}"
         # Remove column type from definition if field is generated
         if (django_version >= (5,0) and field.generated):
             definition = definition[definition.find('AS'):]

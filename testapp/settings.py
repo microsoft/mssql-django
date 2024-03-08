@@ -266,7 +266,6 @@ EXCLUDED_TESTS = [
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_lookup_name_sql_injection',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection',
     'schema.tests.SchemaTests.test_autofield_to_o2o',
-    'schema.tests.SchemaTests.test_add_auto_field',
     'prefetch_related.tests.PrefetchRelatedTests.test_m2m_prefetching_iterator_with_chunks',
     'migrations.test_operations.OperationTests.test_create_model_with_boolean_expression_in_check_constraint',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_in_subquery_related_outerref',
