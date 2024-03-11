@@ -9,6 +9,8 @@ import re
 import time
 import struct
 import datetime
+from decimal import Decimal
+from uuid import UUID
 
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.functional import cached_property
@@ -571,6 +573,36 @@ class CursorWrapper(object):
         self.last_sql = ''
         self.last_params = ()
 
+    def _as_sql_type(self, typ, value):
+        if isinstance(value, str):
+            length = len(value)
+            if length == 0:
+                return 'NVARCHAR'
+            elif length > 4000:
+                return 'NVARCHAR(max)'
+            return 'NVARCHAR(%s)' % len(value)
+        elif typ == int:
+            if value < 0x7FFFFFFF and value > -0x7FFFFFFF:
+                return 'INT'
+            else:
+                return 'BIGINT'
+        elif typ == float:
+            return 'DOUBLE PRECISION'
+        elif typ == bool:
+            return 'BIT'
+        elif isinstance(value, Decimal):
+            return 'NUMERIC'
+        elif isinstance(value, datetime.datetime):
+            return 'DATETIME2'
+        elif isinstance(value, datetime.date):
+            return 'DATE'
+        elif isinstance(value, datetime.time):
+            return 'TIME'
+        elif isinstance(value, UUID):
+            return 'uniqueidentifier'
+        else:
+            raise NotImplementedError('Not supported type %s (%s)' % (type(value), repr(value)))
+
     def close(self):
         if self.active:
             self.active = False
@@ -587,6 +619,27 @@ class CursorWrapper(object):
             sql = sql % tuple('?' * len(params))
 
         return sql
+
+    def format_group_by_params(self, query, params):
+        if params:
+            # Insert None params directly into the query
+            if None in params:
+                null_params = ['NULL' if param is None else '%s' for param in params]
+                query = query % tuple(null_params)
+                params = tuple(p for p in params if p is not None)
+            params = [(param, type(param)) for param in params]
+            params_dict = {param: '@var%d' % i for i, param in enumerate(set(params))}
+            args = [params_dict[param] for param in params]
+
+            variables = []
+            params = []
+            for key, value in params_dict.items():
+                datatype = self._as_sql_type(key[1], key[0])
+                variables.append("%s %s = %%s " % (value, datatype))
+                params.append(key[0])
+            query = ('DECLARE %s \n' % ','.join(variables)) + (query % tuple(args))
+
+        return query, params
 
     def format_params(self, params):
         fp = []
@@ -616,6 +669,8 @@ class CursorWrapper(object):
 
     def execute(self, sql, params=None):
         self.last_sql = sql
+        if 'GROUP BY' in sql:
+            sql, params = self.format_group_by_params(sql, params)
         sql = self.format_sql(sql, params)
         params = self.format_params(params)
         self.last_params = params
