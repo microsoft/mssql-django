@@ -5,12 +5,13 @@ import datetime
 from unittest import skipUnless
 
 from django import VERSION
-from django.db.models import IntegerField, F
+from django.db.models import CharField, IntegerField, F
 from django.db.models.expressions import Case, Exists, OuterRef, Subquery, Value, When, ExpressionWrapper
 from django.test import TestCase, skipUnlessDBFeature
 
-from django.db.models.aggregates import Count
-from ..models import Author, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes
+from django.db.models.aggregates import Count, Sum
+
+from ..models import Author, Book, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes
 
 
 DJANGO3 = VERSION[0] >= 3
@@ -84,6 +85,14 @@ class TestExists(TestCase):
         authors_by_posts = Author.objects.order_by(Exists(Post.objects.filter(author=OuterRef('pk'))).asc())
         self.assertSequenceEqual(authors_by_posts, [author_without_posts, self.author])
 
+
+class TestGroupBy(TestCase):
+    def test_group_by_case(self):
+        annotated_queryset = Book.objects.annotate(age=Case(
+            When(id__gt=1000, then=Value("new")),
+            default=Value("old"),
+            output_field=CharField())).values('age').annotate(sum=Sum('id'))
+        self.assertEqual(list(annotated_queryset.all()), [])
 
 @skipUnless(DJANGO3, "Django 3 specific tests")
 @skipUnlessDBFeature("order_by_nulls_first")
