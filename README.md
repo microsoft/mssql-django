@@ -1,4 +1,4 @@
-# SQL Server backend for Django
+# Microsoft Django backend for SQL Server
 
 Welcome to the MSSQL-Django 3rd party backend project!
 
