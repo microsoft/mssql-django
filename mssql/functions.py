@@ -196,8 +196,8 @@ def mssql_split_parameter_list_as_sql(self, compiler, connection):
         cursor.execute(f"CREATE TABLE #Temp_params (params {parameter_data_type} {Temp_table_collation})")
         for offset in range(0, len(rhs_params), 1000):
             sqls_params = rhs_params[offset: offset + 1000]
-            sqls_params = ", ".join("('{}')".format(item) for item in sqls_params)
-            cursor.execute("INSERT INTO #Temp_params VALUES %s" % sqls_params)
+            sql = "INSERT INTO [#Temp_params] ([params]) VALUES " + ', '.join(['(%s)'] * len(sqls_params))
+            cursor.execute(sql, sqls_params)
 
     in_clause = lhs + ' IN ' + '(SELECT params from #Temp_params)'
 
