@@ -451,6 +451,15 @@ def sqlserver_sha512(self, compiler, connection, **extra_context):
     )
 
 
+def sqlserver_iterator(queryset, chunk_size=2000):
+    steps = int(queryset.count() / chunk_size + 1)
+    step = 0
+    while step < steps:
+        for obj in queryset[chunk_size * step : (step + 1) * chunk_size]:
+            yield obj
+        step += 1
+
+
 # `as_microsoft` called by django.db.models.sql.compiler based on connection.vendor
 ATan2.as_microsoft = sqlserver_atan2
 # Need copy of old In.split_parameter_list_as_sql for other backends to call
@@ -493,3 +502,4 @@ else:
 
 OrderBy.as_microsoft = sqlserver_orderby
 QuerySet.bulk_update = bulk_update_with_default
+QuerySet.iterator = sqlserver_iterator
