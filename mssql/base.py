@@ -126,7 +126,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'SmallIntegerField': 'smallint',
         'TextField': 'nvarchar(max)',
         'TimeField': 'time',
-        'UUIDField': 'uniqueidentifier',
+        'UUIDField': 'char(32)',
     }
     data_types_suffix = {
         'AutoField': 'IDENTITY (1, 1)',
@@ -432,9 +432,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if (options.get('return_rows_bulk_insert', False)):
             self.features_class.can_return_rows_from_bulk_insert = True
 
-        if (options.get('has_native_uuid_field', True)):
-            Database.native_uuid = True
-            
         val = self.get_system_datetime
         if isinstance(val, str):
             raise ImproperlyConfigured(
