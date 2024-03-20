@@ -11,7 +11,7 @@ After changes made to the project, it's a good idea to run the unit tests before
    Download and install SQL Server [here](https://www.microsoft.com/en-us/sql-server/sql-server-downloads), or you could use docker. Change `testapp/settings.py` to match your SQL Server login username and password.  
    
    ```
-   docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=MyPassword42' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest
+   docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=Placeholder' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest
    ```
 2. **Clone Django**   
    In `mssql-django` folder. 
