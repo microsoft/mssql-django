@@ -2,6 +2,7 @@ trigger:
   - master
   - dev
   - 1ES
+  - code-coverage-fix
 
 schedules:
 - cron: "0 9 * * *"
