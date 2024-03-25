@@ -17,6 +17,7 @@ SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 SQL_SMALLAUTOFIELD = -777333
 SQL_TIMESTAMP_WITH_TIMEZONE = -155
+SQL_VARIANT = -150
 
 FieldInfo = namedtuple("FieldInfo", BaseFieldInfo._fields + ("comment",))
 TableInfo = namedtuple("TableInfo", BaseTableInfo._fields + ("comment",))
