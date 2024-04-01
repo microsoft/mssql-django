@@ -38,7 +38,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_covering_indexes = True
     supports_deferrable_unique_constraints = False
     supports_expression_indexes = False
-    supports_ignore_conflicts = False
+    supports_ignore_conflicts = True
     supports_index_on_text_field = False
     supports_json_field_contains = False
     supports_order_by_nulls_modifier = False
