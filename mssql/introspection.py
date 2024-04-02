@@ -78,19 +78,22 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns a list of table and view names in the current database.
         """
-        sql = """SELECT
-                    TABLE_NAME,
-                    TABLE_TYPE,
-                    CAST(ep.value AS VARCHAR) AS COMMENT
-                FROM INFORMATION_SCHEMA.TABLES i
-                LEFT JOIN sys.tables t ON t.name = i.TABLE_NAME
-                LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
-                AND ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
-                AND i.TABLE_SCHEMA = %s""" % (
-            get_schema_name())
+        if VERSION >= (4, 2) and self.connection.features.supports_comments:
+            sql = """SELECT
+                        TABLE_NAME,
+                        TABLE_TYPE,
+                        CAST(ep.value AS VARCHAR) AS COMMENT
+                    FROM INFORMATION_SCHEMA.TABLES i
+                    LEFT JOIN sys.tables t ON t.name = i.TABLE_NAME
+                    LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
+                    AND ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
+                    AND i.TABLE_SCHEMA = %s""" % (
+                get_schema_name())
+        else:
+            sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s' % (get_schema_name())
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
-        if VERSION >= (4, 2):
+        if VERSION >= (4, 2) and self.connection.features.supports_comments:
             return [TableInfo(row[0], types.get(row[1]), row[2])
                     for row in cursor.fetchall()
                     if row[0] not in self.ignored_tables]
@@ -146,7 +149,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     column.append(collation_name[0] if collation_name else '')
                 else:
                     column.append('')
-            if VERSION >= (4, 2):
+            if VERSION >= (4, 2) and self.connection.features.supports_comments:
                 sql = """select CAST(ep.value AS VARCHAR) AS COMMENT
                         FROM sys.columns c
                         INNER JOIN sys.tables t ON c.object_id = t.object_id
@@ -175,8 +178,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                         start += 1
                         end -= 1
                 column[7] = default_value[start:end + 1]
-
-            if VERSION >= (4, 2):
+            if VERSION >= (4, 2) and self.connection.features.supports_comments:
                 items.append(FieldInfo(*column))
             else:
                 items.append(BaseFieldInfo(*column))
