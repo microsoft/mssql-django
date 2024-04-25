@@ -81,12 +81,13 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
             sql = """SELECT
                         TABLE_NAME,
                         TABLE_TYPE,
-                        CAST(ep.value AS VARCHAR) AS COMMENT
+                        (SELECT CAST(ep.value AS VARCHAR)
+                            FROM sys.extended_properties ep
+                            JOIN sys.tables t ON t.object_id = ep.major_id
+                                AND t.name = i.TABLE_NAME
+                            WHERE ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) AS COMMENT
                     FROM INFORMATION_SCHEMA.TABLES i
-                    LEFT JOIN sys.tables t ON t.name = i.TABLE_NAME
-                    LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
-                    AND ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
-                    AND i.TABLE_SCHEMA = %s""" % (
+                    WHERE i.TABLE_SCHEMA = %s""" % (
                 get_schema_name())
         else:
             sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s' % (get_schema_name())
