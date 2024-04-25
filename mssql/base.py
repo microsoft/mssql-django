@@ -624,7 +624,7 @@ class CursorWrapper(object):
         if params:
             # Insert None params directly into the query
             if None in params:
-                null_params = ['NULL' if param is None else '%s' for param in params]
+                null_params = ['NULL' if param is None else '{}' for param in params]
                 query = query.format(*null_params)
                 params = tuple(p for p in params if p is not None)
             params = [(param, type(param)) for param in params]
@@ -638,7 +638,6 @@ class CursorWrapper(object):
                 variables.append("%s %s = %%s " % (value, datatype))
                 params.append(key[0])
             query = ('DECLARE %s \n' % ','.join(variables)) + (query.format(*args))
-
         return query, params
 
     def format_params(self, params):
