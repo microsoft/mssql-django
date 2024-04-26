@@ -388,9 +388,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         """Return the SQL to use in a GENERATED ALWAYS clause."""
         expression_sql, params = field.generated_sql(self.connection)
         persistency_sql = "PERSISTED" if field.db_persist else ""
-        if params:
+        if self.connection.features.requires_literal_defaults:
             expression_sql = expression_sql % tuple(self.quote_value(p) for p in params)
-        return f"AS {expression_sql} {persistency_sql}"
+            params = ()
+        return f"GENERATED ALWAYS AS ({expression_sql}) {persistency_sql}", params
 
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
