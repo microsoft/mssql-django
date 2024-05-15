@@ -1,8 +1,8 @@
 import django.db.utils
-from django.db import connections
-from django.test import TransactionTestCase
+from django.db import connections, connection
+from django.test import TransactionTestCase, TestCase
 
-from ..models import Author
+from ..models import Author, BinaryData
 
 class TestTableWithTrigger(TransactionTestCase):
     def test_insert_into_table_with_trigger(self):
@@ -28,3 +28,8 @@ class TestTableWithTrigger(TransactionTestCase):
             with connection.schema_editor() as cursor:
                 cursor.execute("DROP TRIGGER TestTrigger")
             connection.features_class.can_return_rows_from_bulk_insert = old_return_rows_flag
+
+class TestBinaryfieldGroupby(TestCase):
+    def test_varbinary(self):
+        with connection.cursor() as cursor:
+            cursor.execute(f"SELECT binary FROM {BinaryData._meta.db_table} WHERE binary = %s GROUP BY binary", [bytes("ABC", 'utf-8')])
