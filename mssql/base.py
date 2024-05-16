@@ -597,6 +597,8 @@ class CursorWrapper(object):
             return 'TIME'
         elif isinstance(value, UUID):
             return 'uniqueidentifier'
+        elif isinstance(value, bytes):
+            return 'VARBINARY'
         else:
             raise NotImplementedError('Not supported type %s (%s)' % (type(value), repr(value)))
 
