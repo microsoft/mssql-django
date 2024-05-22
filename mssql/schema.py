@@ -21,6 +21,7 @@ from django.db.backends.ddl_references import (
 from django import VERSION as django_version
 from django.db.models import NOT_PROVIDED, Index, UniqueConstraint
 from django.db.models.fields import AutoField, BigAutoField
+from django.db.models.fields.related import ForeignKey
 from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_str
@@ -183,7 +184,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         argument) a default to new_field's column.
         """
         column = self.quote_name(new_field.column)
-        
+
         if drop:
             # SQL Server requires the name of the default constraint
             result = self.execute(
@@ -426,7 +427,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             )
         ):
             # Drop index, SQL Server requires explicit deletion
-            if not hasattr(new_field, 'db_constraint') or not new_field.db_constraint:
+            if (
+                not hasattr(new_field, "db_constraint")
+                or not new_field.db_constraint
+                and (
+                    django_version >= (4, 2)
+                    and new_field.db_comment
+                    and isinstance(new_field, ForeignKey)
+                    and "fk_on_delete_keep_index" not in new_field.db_comment
+                )
+            ):
                 index_names = self._constraint_names(model, [old_field.column], index=True)
                 for index_name in index_names:
                     self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
@@ -911,6 +921,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.connection.close()
 
     def _delete_indexes(self, model, old_field, new_field):
+        if (
+            django_version >= (4, 2)
+            and new_field.db_comment
+            and isinstance(new_field, ForeignKey)
+            and "fk_on_delete_keep_index" in new_field.db_comment
+        ):
+            return
         index_columns = []
         index_names = []
         if old_field.db_index and new_field.db_index:
