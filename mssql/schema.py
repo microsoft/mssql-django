@@ -82,11 +82,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             FROM sys.foreign_keys
             WHERE referenced_object_id = object_id('%(table)s')
             SELECT
-            @sql_drop_constraint = 'ALTER TABLE [' + OBJECT_NAME(parent_object_id) + '] ' +
+            @sql_drop_constraint = 'ALTER TABLE [' + sch.name + '].[' + OBJECT_NAME(parent_object_id) + '] ' +
             'DROP CONSTRAINT [' + @sql_foreign_constraint_name + '] '
-            FROM sys.foreign_keys
-            WHERE referenced_object_id = object_id('%(table)s') and name = @sql_foreign_constraint_name
-            exec sp_executesql @sql_drop_constraint
+            FROM sys.foreign_keys fk
+            INNER JOIN sys.schemas sch ON fk.schema_id = sch.schema_id
+            WHERE fk.referenced_object_id = object_id('%(table)s') and fk.name = @sql_foreign_constraint_name
         END
         DROP TABLE %(table)s
 """
