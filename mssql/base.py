@@ -39,7 +39,7 @@ if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
 from .client import DatabaseClient  # noqa
 from .creation import DatabaseCreation  # noqa
 from .features import DatabaseFeatures  # noqa
-from .introspection import DatabaseIntrospection, SQL_TIMESTAMP_WITH_TIMEZONE  # noqa
+from .introspection import DatabaseIntrospection, SQL_TIMESTAMP_WITH_TIMEZONE, SQL_VARIANT  # noqa
 from .operations import DatabaseOperations  # noqa
 from .schema import DatabaseSchemaEditor  # noqa
 
@@ -83,6 +83,9 @@ def encode_value(v):
         return '{%s}' % (v.replace('}', '}}'),)
     return v
 
+def handle_sql_variant_as_string(value):
+    # SQL variant of type 150 is not supported, convert it to string and return
+    return value.decode('utf-16le')
 
 def handle_datetimeoffset(dto_value):
     # Decode bytes returned from SQL Server
@@ -381,6 +384,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # Handling values from DATETIMEOFFSET columns
         # source: https://github.com/mkleehammer/pyodbc/wiki/Using-an-Output-Converter-function
         conn.add_output_converter(SQL_TIMESTAMP_WITH_TIMEZONE, handle_datetimeoffset)
+        
+        # add support for sql_variant fields
+        conn.add_output_converter(SQL_VARIANT, handle_sql_variant_as_string)
+        
         conn.timeout = query_timeout
         if setencoding:
             for entry in setencoding:
