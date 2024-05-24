@@ -291,7 +291,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     def _model_indexes_sql(self, model):
         """
         Return a list of all index SQL statements (field indexes,
-        index_together, Meta.indexes) for the specified model.
+        index_together (Django 5.0 and below), Meta.indexes) for the specified model.
         """
         if not model._meta.managed or model._meta.proxy or model._meta.swapped:
             return []
@@ -299,9 +299,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for field in model._meta.local_fields:
             output.extend(self._field_indexes_sql(model, field))
 
-        for field_names in model._meta.index_together:
-            fields = [model._meta.get_field(field) for field in field_names]
-            output.append(self._create_index_sql(model, fields, suffix="_idx"))
+        if django_version <= (5, 0):
+            for field_names in model._meta.index_together:
+                fields = [model._meta.get_field(field) for field in field_names]
+                output.append(self._create_index_sql(model, fields, suffix="_idx"))
 
         if django_version >= (4, 0):
             for field_names in model._meta.unique_together:
@@ -393,8 +394,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             params = ()
         return f"GENERATED ALWAYS AS ({expression_sql}) {persistency_sql}", params
 
-    def _alter_field(self, model, old_field, new_field, old_type, new_type,
-                     old_db_params, new_db_params, strict=False):
+    def _alter_field(
+        self,
+        model,
+        old_field,
+        new_field,
+        old_type,
+        new_type,
+        old_db_params,
+        new_db_params,
+        strict=False,
+        ):
         """Actually perform a "physical" (non-ManyToMany) field update."""
 
         # the backend doesn't support altering a column to/from AutoField as
@@ -792,10 +802,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if old_field.db_index and new_field.db_index:
                 index_columns.append([old_field])
             else:
-                for fields in model._meta.index_together:
-                    columns = [model._meta.get_field(field) for field in fields]
-                    if old_field.column in [c.column for c in columns]:
-                        index_columns.append(columns)
+                if django_version <= (5, 0):
+                    for fields in model._meta.index_together:
+                        columns = [model._meta.get_field(field) for field in fields]
+                        if old_field.column in [c.column for c in columns]:
+                            index_columns.append(columns)
             if index_columns:
                 for columns in index_columns:
                     create_index_sql_statement = self._create_index_sql(model, columns)
@@ -917,10 +928,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             index_columns.append([old_field.column])
         elif old_field.null != new_field.null:
             index_columns.append([old_field.column])
-        for fields in model._meta.index_together:
-            columns = [model._meta.get_field(field).column for field in fields]
-            if old_field.column in columns:
-                index_columns.append(columns)
+        if django_version <= (5, 0):
+            for fields in model._meta.index_together:
+                columns = [model._meta.get_field(field).column for field in fields]
+                if old_field.column in columns:
+                    index_columns.append(columns)
 
         for index in model._meta.indexes:
             columns = [model._meta.get_field(field).column for field in index.fields]
