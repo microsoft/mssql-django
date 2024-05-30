@@ -6,7 +6,7 @@ from unittest import skipUnless
 from django import VERSION
 from django.core.exceptions import ValidationError
 from django.db import OperationalError
-from django.db.backends.sqlite3.operations import DatabaseOperations
+from django.db.backends.base.operations import BaseDatabaseOperations
 from django.test import TestCase, skipUnlessDBFeature
 
 from ..models import BinaryData, Pizza, Topping
@@ -14,6 +14,7 @@ from ..models import BinaryData, Pizza, Topping
 if VERSION >= (3, 2):
     from ..models import TestCheckConstraintWithUnicode
 
+DatabaseOperations = BaseDatabaseOperations
 
 @skipUnless(
     VERSION >= (3, 1),
