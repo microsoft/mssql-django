@@ -430,16 +430,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if (
                 not hasattr(new_field, "db_constraint")
                 or not new_field.db_constraint
-                and (
-                    django_version >= (4, 2)
-                    and new_field.db_comment
-                    and isinstance(new_field, ForeignKey)
-                    and "fk_on_delete_keep_index" not in new_field.db_comment
-                )
             ):
-                index_names = self._constraint_names(model, [old_field.column], index=True)
-                for index_name in index_names:
-                    self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
+                if(django_version < (4, 2) 
+                   or (
+                       not isinstance(new_field, ForeignKey)
+                       or type(new_field.db_comment) == type(None)
+                       or "fk_on_delete_keep_index" not in new_field.db_comment
+                       )
+                   ):
+                    index_names = self._constraint_names(model, [old_field.column], index=True)
+                    for index_name in index_names:
+                        self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
 
             fk_names = self._constraint_names(model, [old_field.column], foreign_key=True)
             if strict and len(fk_names) != 1:
@@ -923,8 +924,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     def _delete_indexes(self, model, old_field, new_field):
         if (
             django_version >= (4, 2)
-            and new_field.db_comment
             and isinstance(new_field, ForeignKey)
+            and type(new_field.db_comment) != type(None)
             and "fk_on_delete_keep_index" in new_field.db_comment
         ):
             return
