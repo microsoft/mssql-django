@@ -326,6 +326,8 @@ class TestKeepIndexWithDbcomment(TestCase):
                 )._meta.db_table
             )
         )
+        # Test alter foreignkey without db_comment field
+        # The index should be dropped (keep the old behavior)
         self.assertIsNone(car_index)
 
         project_state = new_state
@@ -342,6 +344,7 @@ class TestKeepIndexWithDbcomment(TestCase):
                 )._meta.db_table
             )
         )
+        # Test alter fk with empty db_comment
         self.assertIsNone(car_index)
 
         project_state = new_state
@@ -358,4 +361,6 @@ class TestKeepIndexWithDbcomment(TestCase):
                 )._meta.db_table
             )
         )
+        # Test alter fk with fk_on_delete_keep_index in db_comment
+        # Index should be preserved in this case
         self.assertIsNotNone(car_index)
