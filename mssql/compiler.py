@@ -19,6 +19,7 @@ if django.VERSION >= (4, 2):
     from django.core.exceptions import EmptyResultSet, FullResultSet
 
 from .introspection import get_table_name, get_schema_name
+from django.apps import apps
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -460,10 +461,10 @@ class SQLCompiler(compiler.SQLCompiler):
                 # Extra tables can end up in self.tables, but not in the
                 # alias_map if they aren't in a join. That's OK. We skip them.
                 continue
-            opts = self.query.get_meta()
             settings_dict = self.connection.settings_dict
-            schema = getattr(opts, "db_table_schema", settings_dict.get('SCHEMA', False))
             clause_sql, clause_params = self.compile(from_clause)
+            model = next((m for m in apps.get_models() if m._meta.db_table == from_clause.table_name), None)
+            schema = getattr(getattr(model,"_meta", None), "db_table_schema", settings_dict.get('SCHEMA', False))
             if schema:
                 if 'JOIN' in clause_sql:
                     table_clause_sql = clause_sql.split('JOIN ')[1].split(' ON')[0]
