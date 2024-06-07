@@ -1,8 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
-import django.db.models.options as options
 
-options.DEFAULT_NAMES = options.DEFAULT_NAMES + ('db_table_schema',)
 import datetime
 import uuid
 
