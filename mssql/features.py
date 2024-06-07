@@ -33,6 +33,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     requires_literal_defaults = True
     requires_sqlparse_for_splitting = False
     supports_boolean_expr_in_select_clause = False
+    supports_comparing_boolean_expr = False
     supports_comments = True
     supports_covering_indexes = True
     supports_deferrable_unique_constraints = False
@@ -57,6 +58,12 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_partially_nullable_unique_constraints = True
     supports_partial_indexes = True
     supports_functions_in_partial_indexes = True
+    supports_default_keyword_in_insert = True
+    supports_expression_defaults = True
+    supports_default_keyword_in_bulk_insert = True
+    supports_stored_generated_columns = True
+    supports_virtual_generated_columns = True
+
 
     @cached_property
     def has_zoneinfo_database(self):

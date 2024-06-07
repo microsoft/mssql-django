@@ -16,7 +16,7 @@ DATABASES = {
         "HOST": "localhost",
         "PORT": "1433",
         "SCHEMA" :"dbo",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
+        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
     },
     'other': {
         "ENGINE": "mssql",
@@ -25,7 +25,7 @@ DATABASES = {
         "PASSWORD": "MyPassword42",
         "HOST": "localhost",
         "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", },
+        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
     },
 }
 
@@ -169,7 +169,6 @@ EXCLUDED_TESTS = [
     'expressions.tests.FTimeDeltaTests.test_time_subquery_subtraction',
     'migrations.test_operations.OperationTests.test_alter_field_reloads_state_on_fk_with_to_field_target_type_change',
     'schema.tests.SchemaTests.test_alter_smallint_pk_to_smallautofield_pk',
-    'annotations.tests.NonAggregateAnnotationTestCase.test_combined_expression_annotation_with_aggregation',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_func',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_iso_weekday_func',
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_func',
@@ -268,16 +267,7 @@ EXCLUDED_TESTS = [
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_lookup_name_sql_injection',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection',
     'schema.tests.SchemaTests.test_autofield_to_o2o',
-    'schema.tests.SchemaTests.test_add_auto_field',
     'prefetch_related.tests.PrefetchRelatedTests.test_m2m_prefetching_iterator_with_chunks',
-    'queries.test_q.QCheckTests.test_basic',
-    'queries.test_q.QCheckTests.test_boolean_expression',
-    'queries.test_q.QCheckTests.test_expression',
-    'constraints.tests.CheckConstraintTests.test_validate',
-    'constraints.tests.CheckConstraintTests.test_validate_boolean_expressions',
-    'constraints.tests.UniqueConstraintTests.test_model_validation_with_condition',
-    'constraints.tests.UniqueConstraintTests.test_validate_condition',
-    'constraints.tests.UniqueConstraintTests.test_validate_expression_condition',
     'migrations.test_operations.OperationTests.test_create_model_with_boolean_expression_in_check_constraint',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_in_subquery_related_outerref',
     # These tests pass on SQL Server 2022 or newer
@@ -294,15 +284,12 @@ EXCLUDED_TESTS = [
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_subquery_annotation',
     'aggregation.tests.AggregateAnnotationPruningTests.test_referenced_group_by_annotation_kept',
     'aggregation.tests.AggregateAnnotationPruningTests.test_referenced_window_requires_wrapping',
-    'aggregation.tests.AggregateAnnotationPruningTests.test_unused_aliased_aggregate_and_annotation_reverse_fk',
-    'aggregation.tests.AggregateAnnotationPruningTests.test_unused_aliased_aggregate_and_annotation_reverse_fk_grouped',
     'aggregation.tests.AggregateTestCase.test_group_by_nested_expression_with_params',
     'expressions.tests.BasicExpressionsTests.test_aggregate_subquery_annotation',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_order_with_null_first_last',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
     'expressions_window.tests.WindowFunctionTests.test_limited_filter',
     'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
-    'constraints.tests.UniqueConstraintTests.test_validate_nullable_textfield_with_isnull_true',
 ]
 
 REGEX_TESTS = [

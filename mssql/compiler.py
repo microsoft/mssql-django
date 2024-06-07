@@ -16,7 +16,7 @@ from django.db.utils import NotSupportedError
 if django.VERSION >= (3, 1):
     from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
 if django.VERSION >= (4, 2):
-    from django.core.exceptions import FullResultSet
+    from django.core.exceptions import EmptyResultSet, FullResultSet
 
 from .introspection import get_table_name, get_schema_name
 
@@ -157,7 +157,7 @@ def _as_sql_window(self, compiler, connection, template=None):
     else:
         # MSSQL window functions require an OVER clause with ORDER BY
         window_sql.append('ORDER BY (SELECT NULL)')
-    
+
     if self.frame:
         frame_sql, frame_params = compiler.compile(self.frame)
         window_sql.append(frame_sql)
@@ -243,6 +243,11 @@ class SQLCompiler(compiler.SQLCompiler):
                 if django.VERSION >= (4, 2):
                     try:
                         where, w_params = self.compile(self.where) if self.where is not None else ("", [])
+                    except EmptyResultSet:
+                        if self.elide_empty:
+                            raise
+                        # Use a predicate that's always False.
+                        where, w_params = "0 = 1", []
                     except FullResultSet:
                         where, w_params = "", []
                     try:
@@ -482,7 +487,45 @@ class SQLCompiler(compiler.SQLCompiler):
 
     def collapse_group_by(self, expressions, having):
         expressions = super().collapse_group_by(expressions, having)
-        return [e for e in expressions if not isinstance(e, Subquery)]
+        # SQL server does not allow subqueries or constant expressions in the group by
+        # For constants: Each GROUP BY expression must contain at least one column that is not an outer reference.
+        # For subqueries: Cannot use an aggregate or a subquery in an expression used for the group by list of a GROUP BY clause.
+        return self._filter_subquery_and_constant_expressions(expressions)
+
+    def _is_constant_expression(self, expression):
+        if isinstance(expression, Value):
+            return True
+        sub_exprs = expression.get_source_expressions()
+        if not sub_exprs:
+            return False
+        for each in sub_exprs:
+            if not self._is_constant_expression(each):
+                return False
+        return True
+
+
+
+    def _filter_subquery_and_constant_expressions(self, expressions):
+        ret = []
+        for expression in expressions:
+            if self._is_subquery(expression):
+                continue
+            if self._is_constant_expression(expression):
+                continue
+            if not self._has_nested_subquery(expression):
+                ret.append(expression)
+        return ret
+
+    def _has_nested_subquery(self, expression):
+        if self._is_subquery(expression):
+            return True
+        for sub_expr in expression.get_source_expressions():
+            if self._has_nested_subquery(sub_expr):
+                return True
+        return False
+
+    def _is_subquery(self, expression):
+        return isinstance(expression, Subquery)
 
     def _as_microsoft(self, node):
         as_microsoft = None

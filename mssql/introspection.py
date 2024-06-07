@@ -98,19 +98,22 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns a list of table and view names in the current database.
         """
-        sql = """SELECT
-                    TABLE_NAME,
-                    TABLE_TYPE,
-                    CAST(ep.value AS VARCHAR) AS COMMENT
-                FROM INFORMATION_SCHEMA.TABLES i
-                LEFT JOIN sys.tables t ON t.name = i.TABLE_NAME
-                LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
-                AND ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
-                AND i.TABLE_SCHEMA = %s""" % (
-            get_schema_name())
+        if VERSION >= (4, 2) and self.connection.features.supports_comments:
+            sql = """SELECT
+                        TABLE_NAME,
+                        TABLE_TYPE,
+                        CAST(ep.value AS VARCHAR) AS COMMENT
+                    FROM INFORMATION_SCHEMA.TABLES i
+                    LEFT JOIN sys.tables t ON t.name = i.TABLE_NAME
+                    LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
+                    AND ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
+                    WHERE i.TABLE_SCHEMA = %s""" % (
+                get_schema_name())
+        else:
+            sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s' % (get_schema_name())
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
-        if VERSION >= (4, 2):
+        if VERSION >= (4, 2) and self.connection.features.supports_comments:
             return [TableInfo(row[0], types.get(row[1]), row[2])
                     for row in cursor.fetchall()
                     if row[0] not in self.ignored_tables]
@@ -166,7 +169,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     column.append(collation_name[0] if collation_name else '')
                 else:
                     column.append('')
-            if VERSION >= (4, 2):
+            if VERSION >= (4, 2) and self.connection.features.supports_comments:
                 sql = """select CAST(ep.value AS VARCHAR) AS COMMENT
                         FROM sys.columns c
                         INNER JOIN sys.tables t ON c.object_id = t.object_id
@@ -185,7 +188,17 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     column[1] = SQL_AUTOFIELD
             if column[1] == Database.SQL_WVARCHAR and column[3] < 4000:
                 column[1] = Database.SQL_WCHAR
-            if VERSION >= (4, 2):
+            # Remove surrounding parentheses for default values
+            if column[7]:
+                default_value = column[7]
+                start = 0
+                end = -1
+                for _ in range(2):
+                    if default_value[start] == '(' and default_value[end] == ')':
+                        start += 1
+                        end -= 1
+                column[7] = default_value[start:end + 1]
+            if VERSION >= (4, 2) and self.connection.features.supports_comments:
                 items.append(FieldInfo(*column))
             else:
                 items.append(BaseFieldInfo(*column))
@@ -325,6 +338,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     # Potentially misleading: primary key and unique constraints still have indexes attached to them.
                     # Should probably be updated with the additional info from the sys.indexes table we fetch later on.
                     "index": False,
+                    "default": False,
                 }
             # Record the details
             constraints[constraint]['columns'].append(column)
@@ -352,6 +366,32 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     "foreign_key": None,
                     "check": True,
                     "index": False,
+                    "default": False,
+                }
+            # Record the details
+            constraints[constraint]['columns'].append(column)
+        # Now get DEFAULT constraint columns
+        cursor.execute("""
+            SELECT
+                [name],
+                COL_NAME([parent_object_id], [parent_column_id])
+            FROM
+                [sys].[default_constraints]
+            WHERE
+                OBJECT_NAME([parent_object_id]) = %s
+        """, [table_name])
+        for constraint, column in cursor.fetchall():
+            # If we're the first column, make the record
+            if constraint not in constraints:
+                constraints[constraint] = {
+                    "columns": [],
+                    "primary_key": False,
+                    "unique": False,
+                    "unique_constraint": False,
+                    "foreign_key": None,
+                    "check": False,
+                    "index": False,
+                    "default": True,
                 }
             # Record the details
             constraints[constraint]['columns'].append(column)
@@ -395,6 +435,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                     "unique_constraint": unique_constraint,
                     "foreign_key": None,
                     "check": False,
+                    "default": False,
                     "index": True,
                     "orders": [],
                     "type": Index.suffix if type_ in (1, 2) else desc.lower(),

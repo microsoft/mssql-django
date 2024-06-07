@@ -20,7 +20,7 @@ from django.db.backends.ddl_references import (
     Table,
 )
 from django import VERSION as django_version
-from django.db.models import Index, UniqueConstraint
+from django.db.models import NOT_PROVIDED, Index, UniqueConstraint
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
@@ -72,6 +72,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_alter_column_type = "ALTER COLUMN %(column)s %(type)s"
     sql_create_column = "ALTER TABLE %(table)s ADD %(column)s %(definition)s"
     sql_delete_column = "ALTER TABLE %(table)s DROP COLUMN %(column)s"
+    sql_delete_default = "ALTER TABLE %(table)s DROP CONSTRAINT %(name)s"
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
     sql_delete_table = """
         DECLARE @sql_foreign_constraint_name nvarchar(128)
@@ -174,6 +175,59 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 'default': default,
             },
             params,
+        )    
+
+    def _alter_column_database_default_sql(
+        self, model, old_field, new_field, drop=False
+    ):
+        """
+        Hook to specialize column database default alteration.
+
+        Return a (sql, params) fragment to add or drop (depending on the drop
+        argument) a default to new_field's column.
+        """
+        column = self.quote_name(new_field.column)
+        
+        if drop:
+            # SQL Server requires the name of the default constraint
+            result = self.execute(
+                self._sql_select_default_constraint_name % {
+                    "table": self.quote_value(model._meta.db_table),
+                    "column": self.quote_value(new_field.column),
+                },
+                has_result=True
+            )
+            if result:
+                for row in result:
+                    column = self.quote_name(next(iter(row)))
+
+            sql = self.sql_alter_column_no_default
+            default_sql = ""
+            params = []
+        else:
+            sql = self.sql_alter_column_default
+            default_sql, params = self.db_default_sql(new_field)
+
+        new_db_params = new_field.db_parameters(connection=self.connection)
+        return (
+            sql
+            % {
+                "column": column,
+                "type": new_db_params["type"],
+                "default": default_sql,
+            },
+            params,
+        )
+
+    def _alter_column_comment_sql(self, model, new_field, new_type, new_db_comment):
+        return (
+            self.sql_alter_column_comment
+            % {
+                "table": self.quote_name(model._meta.db_table),
+                "column": new_field.column,
+                "comment": self._comment_sql(new_db_comment),
+            },
+            [],
         )
     
     def _alter_column_comment_sql(self, model, new_field, new_type, new_db_comment):
@@ -347,6 +401,15 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _add_deferred_unique_index_for_field(self, field, statement):
         self._deferred_unique_indexes[str(field)].append(statement)
+
+    def _column_generated_sql(self, field):
+        """Return the SQL to use in a GENERATED ALWAYS clause."""
+        expression_sql, params = field.generated_sql(self.connection)
+        persistency_sql = "PERSISTED" if field.db_persist else ""
+        if self.connection.features.requires_literal_defaults:
+            expression_sql = expression_sql % tuple(self.quote_value(p) for p in params)
+            params = ()
+        return f"GENERATED ALWAYS AS ({expression_sql}) {persistency_sql}", params
 
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
@@ -529,6 +592,22 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self._delete_unique_constraints(model, old_field, new_field, strict)
             # Drop indexes, SQL Server requires explicit deletion
             self._delete_indexes(model, old_field, new_field)
+        # db_default change?
+        if django_version >= (5,0):
+            if new_field.db_default is not NOT_PROVIDED:
+                if (
+                    old_field.db_default is NOT_PROVIDED
+                    or new_field.db_default != old_field.db_default
+                ):
+                    actions.append(
+                        self._alter_column_database_default_sql(model, old_field, new_field)
+                    )
+            elif old_field.db_default is not NOT_PROVIDED:
+                actions.append(
+                    self._alter_column_database_default_sql(
+                        model, old_field, new_field, drop=True
+                    )
+                )
         # When changing a column NULL constraint to NOT NULL with a given
         # default value, we need to perform 4 steps:
         #  1. Add a default for new incoming writes
@@ -545,6 +624,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             new_default is not None and
             not self.skip_default(new_field)
         )
+        if django_version >= (5,0):
+            needs_database_default = needs_database_default and new_field.db_default is NOT_PROVIDED
         if needs_database_default:
             actions.append(self._alter_column_default_sql(model, old_field, new_field))
         # Nullability change?
@@ -572,7 +653,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         post_actions.append((create_index_sql_statement, ()))
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
-            new_field.has_default() and
+            (new_field.has_default() or (django_version >= (5,0) and new_field.db_default is not NOT_PROVIDED)) and
             (old_field.null and not new_field.null)
         )
         if actions or null_actions:
@@ -594,14 +675,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     params,
                 )
             if four_way_default_alteration:
+                if django_version >= (5,0) and new_field.db_default is not NOT_PROVIDED:
+                    default_sql, params = self.db_default_sql(new_field)
+                else:
+                    default_sql = "%s"
+                    params = [new_default]
                 # Update existing rows with default value
                 self.execute(
                     self.sql_update_with_default % {
                         "table": self.quote_name(table),
                         "column": self.quote_name(new_field.column),
-                        "default": "%s",
+                        "default": default_sql,
                     },
-                    [new_default],
+                    params,
                 )
                 # Since we didn't run a NOT NULL change before we need to do it
                 # now
@@ -963,6 +1049,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # It might not actually have a column behind it
         if definition is None:
             return
+        if col_type_suffix := field.db_type_suffix(connection=self.connection):
+            definition += f" {col_type_suffix}"
+        # Remove column type from definition if field is generated
+        if (django_version >= (5,0) and field.generated):
+            definition = definition[definition.find('AS'):]
+        # Nullable columns with default values require 'WITH VALUES' to set existing rows
+        if 'DEFAULT' in definition and field.null:
+            definition = definition.replace('NULL', 'WITH VALUES')
 
         if (self.connection.features.supports_nullable_unique_constraints and
                 not field.many_to_many and field.null and field.unique):
@@ -987,7 +1081,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         self.execute(sql, params)
         # Drop the default if we need to
         # (Django usually does not use in-database defaults)
-        if not self.skip_default(field) and self.effective_default(field) is not None:
+        if (
+            ((django_version >= (5,0) and field.db_default is NOT_PROVIDED) or django_version < (5,0))
+            and not self.skip_default(field)
+            and self.effective_default(field) is not None
+        ):
             changes_sql, params = self._alter_column_default_sql(model, None, field, drop=True)
             sql = self.sql_alter_column % {
                 "table": self.quote_name(table),
@@ -1017,13 +1115,25 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.connection.close()
 
     if django_version >= (4, 0):
-        def _create_unique_sql(self, model, fields,
-                               name=None, condition=None, deferrable=None,
-                               include=None, opclasses=None, expressions=None):
-            if (deferrable and not getattr(self.connection.features, 'supports_deferrable_unique_constraints', False) or
-                (condition and not self.connection.features.supports_partial_indexes) or
-                (include and not self.connection.features.supports_covering_indexes) or
-                    (expressions and not self.connection.features.supports_expression_indexes)):
+        def _create_unique_sql(
+                self,
+                model,
+                fields,
+                name=None,
+                condition=None,
+                deferrable=None,
+                include=None,
+                opclasses=None,
+                expressions=None,
+                nulls_distinct=None
+            ):
+            if not self._unique_supported(
+                condition=condition,
+                deferrable=deferrable,
+                include=include,
+                expressions=expressions,
+                nulls_distinct=nulls_distinct,
+            ):
                 return None
 
             def create_unique_name(*args, **kwargs):
@@ -1055,6 +1165,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     condition=' WHERE ' + condition,
                     **statement_args,
                     include=include,
+                    nulls_distinct=''
                 ) if self.connection.features.supports_partial_indexes else None
             else:
                 return Statement(
@@ -1064,6 +1175,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     columns=columns,
                     **statement_args,
                     include=include,
+                    nulls_distinct=''
                 )
     else:
         def _create_unique_sql(self, model, columns,
@@ -1187,6 +1299,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             definition, extra_params = self.column_sql(model, field)
             if definition is None:
                 continue
+            # Remove column type from definition if field is generated
+            if (django_version >= (5,0) and field.generated):
+                definition = definition[definition.find('AS'):]
 
             if (self.connection.features.supports_nullable_unique_constraints and
                     not field.many_to_many and field.null and field.unique):
@@ -1284,17 +1399,22 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.create_model(field.remote_field.through)
 
     def _delete_unique_sql(
-        self, model, name, condition=None, deferrable=None, include=None,
-        opclasses=None, expressions=None
+        self,
+        model,
+        name,
+        condition=None,
+        deferrable=None,
+        include=None,
+        opclasses=None,
+        expressions=None,
+        nulls_distinct=None,
     ):
-        if (
-            (
-                deferrable and
-                not self.connection.features.supports_deferrable_unique_constraints
-            ) or
-            (condition and not self.connection.features.supports_partial_indexes) or
-            (include and not self.connection.features.supports_covering_indexes) or
-            (expressions and not self.connection.features.supports_expression_indexes)
+        if not self._unique_supported(
+            condition=condition,
+            deferrable=deferrable,
+            include=include,
+            expressions=expressions,
+            nulls_distinct=nulls_distinct,
         ):
             return None
         if condition or include or opclasses:
@@ -1463,6 +1583,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     "table": self.quote_name(db_table),
                     "name": self.quote_name(name),
                 })
+        # Drop default constraint, SQL Server requires explicit deletion
+        for name, infodict in constraints.items():
+            if field.column in infodict['columns'] and infodict['default']:
+                self.execute(self.sql_delete_default % {
+                    "table": self.quote_name(model._meta.db_table),
+                    "name": self.quote_name(name),
+                })
         # Delete the column
         sql = self.sql_delete_column % {
             "table": self.quote_name(db_table),
@@ -1504,4 +1631,27 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             template,
             table=Table(table, self.quote_name),
             name=self.quote_name(name),
+
+    def _unique_supported(
+        self,
+        condition=None,
+        deferrable=None,
+        include=None,
+        expressions=None,
+        nulls_distinct=None,
+    ):
+        return (
+            (not condition or self.connection.features.supports_partial_indexes)
+            and (
+                not deferrable
+                or self.connection.features.supports_deferrable_unique_constraints
+            )
+            and (not include or self.connection.features.supports_covering_indexes)
+            and (
+                not expressions or self.connection.features.supports_expression_indexes
+            )
+            and (
+                nulls_distinct is None
+                or self.connection.features.supports_nulls_distinct_unique_constraints
+            )
         )
