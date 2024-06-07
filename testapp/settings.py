@@ -5,6 +5,8 @@ from pathlib import Path
 
 from django import VERSION
 
+import django.db.models.options as options
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATABASES = {
@@ -301,3 +303,6 @@ REGEX_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_key_iregex',
     'model_fields.test_jsonfield.TestQuerying.test_key_regex',
 ]
+
+if not 'db_table_schema' in options.DEFAULT_NAMES : 
+    options.DEFAULT_NAMES = options.DEFAULT_NAMES + ('db_table_schema',)
