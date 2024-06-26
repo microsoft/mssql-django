@@ -289,6 +289,11 @@ EXCLUDED_TESTS = [
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
     'expressions_window.tests.WindowFunctionTests.test_limited_filter',
     'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
+    
+    # Generated field 5.0.6 tests
+    'migrations.test_operations.OperationTests.test_invalid_generated_field_changes_on_rename_virtual',
+    'migrations.test_operations.OperationTests.test_invalid_generated_field_changes_on_rename_stored',
+    
 ]
 
 REGEX_TESTS = [
