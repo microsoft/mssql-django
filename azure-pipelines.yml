@@ -24,6 +24,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.12 - Django 5.1:
+          python.version: '3.12'
+          tox.env: 'py312-django51'
+        Python3.11 - Django 5.1:
+          python.version: '3.11'
+          tox.env: 'py311-django51'
+        Python3.10 - Django 5.1:
+          python.version: '3.10'
+          tox.env: 'py310-django51'
+
         Python3.12 - Django 5.0:
           python.version: '3.12'
           tox.env: 'py312-django50'
@@ -34,6 +44,9 @@ jobs:
           python.version: '3.10'
           tox.env: 'py310-django50'
 
+        Python3.12 - Django 4.2:
+          python.version: '3.12'
+          tox.env: 'py311-django42'
         Python3.11 - Django 4.2:
           python.version: '3.11'
           tox.env: 'py311-django42'
@@ -46,43 +59,6 @@ jobs:
         Python 3.8 - Django 4.2:
           python.version: '3.8'
           tox.env: 'py38-django42'
-
-        Python3.11 - Django 4.1:
-          python.version: '3.11'
-          tox.env: 'py311-django41'
-        Python3.10 - Django 4.1:
-          python.version: '3.10'
-          tox.env: 'py310-django41'
-        Python 3.9 - Django 4.1:
-          python.version: '3.9'
-          tox.env: 'py39-django41'
-        Python 3.8 - Django 4.1:
-          python.version: '3.8'
-          tox.env: 'py38-django41'
-
-        Python3.11 - Django 4.0:
-          python.version: '3.11'
-          tox.env: 'py311-django40'
-        Python3.10 - Django 4.0:
-          python.version: '3.10'
-          tox.env: 'py310-django40'
-        Python 3.9 - Django 4.0:
-          python.version: '3.9'
-          tox.env: 'py39-django40'
-        Python 3.8 - Django 4.0:
-          python.version: '3.8'
-          tox.env: 'py38-django40'
-
-        Python3.11 - Django 3.2:
-          python.version: '3.11'
-          tox.env: 'py311-django32'
-        Python 3.9 - Django 3.2:
-          python.version: '3.9'
-          tox.env: 'py39-django32'
-        Python 3.8 - Django 3.2:
-          python.version: '3.8'
-          tox.env: 'py38-django32'
-
 
     steps:
       - task: CredScan@3
@@ -138,6 +114,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.12 - Django 5.1:
+          python.version: '3.12'
+          tox.env: 'py312-django51'
+        Python3.11 - Django 5.1:
+          python.version: '3.11'
+          tox.env: 'py311-django51'
+        Python3.10 - Django 5.1:
+          python.version: '3.10'
+          tox.env: 'py310-django51'
+
         Python3.12 - Django 5.0:
           python.version: '3.12'
           tox.env: 'py312-django50'
@@ -148,6 +134,9 @@ jobs:
           python.version: '3.10'
           tox.env: 'py310-django50'
 
+        Python3.12 - Django 4.2:
+          python.version: '3.12'
+          tox.env: 'py311-django42'
         Python3.11 - Django 4.2:
           python.version: '3.11'
           tox.env: 'py311-django42'
@@ -160,42 +149,6 @@ jobs:
         Python 3.8 - Django 4.2:
           python.version: '3.8'
           tox.env: 'py38-django42'
-
-        Python3.11 - Django 4.1:
-          python.version: '3.11'
-          tox.env: 'py311-django41'
-        Python3.10 - Django 4.1:
-          python.version: '3.10'
-          tox.env: 'py310-django41'
-        Python 3.9 - Django 4.1:
-          python.version: '3.9'
-          tox.env: 'py39-django41'
-        Python 3.8 - Django 4.1:
-          python.version: '3.8'
-          tox.env: 'py38-django41'
-
-        Python3.11 - Django 4.0:
-          python.version: '3.11'
-          tox.env: 'py311-django40'
-        Python3.10 - Django 4.0:
-          python.version: '3.10'
-          tox.env: 'py310-django40'
-        Python 3.9 - Django 4.0:
-          python.version: '3.9'
-          tox.env: 'py39-django40'
-        Python 3.8 - Django 4.0:
-          python.version: '3.8'
-          tox.env: 'py38-django40'
-
-        Python3.11 - Django 3.2:
-          python.version: '3.11'
-          tox.env: 'py311-django32'
-        Python 3.9 - Django 3.2:
-          python.version: '3.9'
-          tox.env: 'py39-django32'
-        Python 3.8 - Django 3.2:
-          python.version: '3.8'
-          tox.env: 'py38-django32'
 
     steps:
       - task: UsePythonVersion@0

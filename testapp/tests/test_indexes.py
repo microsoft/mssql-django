@@ -115,9 +115,10 @@ class TestCorrectIndexes(TestCase):
                 expected_index_causes = []
                 if field.db_index:
                     expected_index_causes.append('db_index=True')
-                for field_names in model_cls._meta.index_together:
-                    if field.name in field_names:
-                        expected_index_causes.append(f'index_together[{field_names}]')
+                if VERSION <= (5, 0):
+                    for field_names in model_cls._meta.index_together:
+                        if field.name in field_names:
+                            expected_index_causes.append(f'index_together[{field_names}]')
                 if field._unique and field.null:
                     # This is implemented using a (filtered) unique index (not a constraint) to get ANSI NULL behaviour
                     expected_index_causes.append('unique=True & null=True')
