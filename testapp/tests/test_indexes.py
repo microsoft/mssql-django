@@ -9,6 +9,7 @@ from django.db.migrations.state import ProjectState
 from django.db.models import UniqueConstraint
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler, ProgrammingError
 from django.test import TestCase
+from unittest import skipIf
 
 from . import get_constraints
 from ..models import (
@@ -210,3 +211,156 @@ class TestAddAndAlterUniqueIndex(TestCase):
                 migration.apply(new_state, editor)
         except django.db.utils.ProgrammingError as e:
             self.fail('Check if can alter field from unique, nullable to unique non-nullable for issue #23, AlterField failed with exception: %s' % e)
+
+class TestKeepIndexWithDbcomment(TestCase):
+    def _find_key_with_type_idx(self, input_dict):
+        for key, value in input_dict.items():
+            if value.get("type") == "idx":
+                return key
+        return None
+
+    @skipIf(VERSION < (4, 2), "db_comment not available before 4.2")
+    def test_drop_foreignkey(self):
+        app_label = "test_drop_foreignkey"
+        operations = [
+                migrations.CreateModel(
+                    name="brand",
+                    fields=[
+                        ("id", models.AutoField(primary_key=True)),
+                        ("name", models.CharField(max_length=100)),
+                    ],
+                ),
+                migrations.CreateModel(
+                    name="car1",
+                    fields=[
+                        ("id", models.AutoField(primary_key=True)),
+                        (
+                            "brand",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.CASCADE,
+                                to="test_drop_foreignkey.brand",
+                                related_name="car1",
+                                db_constraint=True,
+                            ),
+                        ),
+                    ],
+                ),
+                migrations.CreateModel(
+                    name="car2",
+                    fields=[
+                        ("id", models.AutoField(primary_key=True)),
+                        (
+                            "brand",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.CASCADE,
+                                to="test_drop_foreignkey.brand",
+                                related_name="car2",
+                                db_constraint=True,
+                            ),
+                        ),
+                    ],
+                ),
+                migrations.CreateModel(
+                    name="car3",
+                    fields=[
+                        ("id", models.AutoField(primary_key=True)),
+                        (
+                            "brand",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.CASCADE,
+                                to="test_drop_foreignkey.brand",
+                                related_name="car3",
+                                db_constraint=True,
+                            ),
+                        ),
+                    ],
+                ),
+            ]
+        migration = Migration("name", app_label)
+        migration.operations = operations
+        with connection.schema_editor(atomic=True) as editor:
+            project_state = migration.apply(ProjectState(), editor)
+
+        alter_fk_car1 = migrations.AlterField(
+            model_name="car1",
+            name="brand",
+            field=models.ForeignKey(
+                to="test_drop_foreignkey.brand",
+                on_delete=django.db.models.deletion.CASCADE,
+                db_constraint=False,
+                related_name="car1",
+            ),
+        )
+        alter_fk_car2 = migrations.AlterField(
+            model_name="car2",
+            name="brand",
+            field=models.ForeignKey(
+                to="test_drop_foreignkey.brand",
+                on_delete=django.db.models.deletion.CASCADE,
+                db_constraint=False,
+                related_name="car2",
+                db_comment=""
+            ),
+        )
+        alter_fk_car3 = migrations.AlterField(
+            model_name="car3",
+            name="brand",
+            field=models.ForeignKey(
+                to="test_drop_foreignkey.brand",
+                on_delete=django.db.models.deletion.CASCADE,
+                db_constraint=False,
+                related_name="car3",
+                db_comment="fk_on_delete_keep_index"
+            ),
+        )
+        new_state = project_state.clone()
+        with connection.schema_editor(atomic=True) as editor:
+            alter_fk_car1.state_forwards("test_drop_foreignkey", new_state)
+            alter_fk_car1.database_forwards(
+                "test_drop_foreignkey", editor, project_state, new_state
+            )
+        car_index = self._find_key_with_type_idx(
+            get_constraints(
+                table_name=new_state.apps.get_model(
+                    "test_drop_foreignkey", "car1"
+                )._meta.db_table
+            )
+        )
+        # Test alter foreignkey without db_comment field
+        # The index should be dropped (keep the old behavior)
+        self.assertIsNone(car_index)
+
+        project_state = new_state
+        new_state = new_state.clone()
+        with connection.schema_editor(atomic=True) as editor:
+            alter_fk_car2.state_forwards("test_drop_foreignkey", new_state)
+            alter_fk_car2.database_forwards(
+                "test_drop_foreignkey", editor, project_state, new_state
+            )
+        car_index = self._find_key_with_type_idx(
+            get_constraints(
+                table_name=new_state.apps.get_model(
+                    "test_drop_foreignkey", "car2"
+                )._meta.db_table
+            )
+        )
+        # Test alter fk with empty db_comment
+        self.assertIsNone(car_index)
+
+        project_state = new_state
+        new_state = new_state.clone()
+        with connection.schema_editor(atomic=True) as editor:
+            alter_fk_car3.state_forwards("test_drop_foreignkey", new_state)
+            alter_fk_car3.database_forwards(
+                "test_drop_foreignkey", editor, project_state, new_state
+            )
+        car_index = self._find_key_with_type_idx(
+            get_constraints(
+                table_name=new_state.apps.get_model(
+                    "test_drop_foreignkey", "car3"
+                )._meta.db_table
+            )
+        )
+        # Test alter fk with fk_on_delete_keep_index in db_comment
+        # Index should be preserved in this case
+        self.assertIsNotNone(car_index)
