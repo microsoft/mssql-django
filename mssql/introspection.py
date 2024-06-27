@@ -17,13 +17,34 @@ SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 SQL_SMALLAUTOFIELD = -777333
 SQL_TIMESTAMP_WITH_TIMEZONE = -155
+from django.db import connection
 
 FieldInfo = namedtuple("FieldInfo", BaseFieldInfo._fields + ("comment",))
 TableInfo = namedtuple("TableInfo", BaseTableInfo._fields + ("comment",))
 
 def get_schema_name():
-    return getattr(settings, 'SCHEMA_TO_INSPECT', 'SCHEMA_NAME()')
+    # get default schema choosen by user in settings.py else SCHEMA_NAME()
+    settings_dict = connection.settings_dict
+    schema = settings_dict.get('SCHEMA', False)
+    return f"'{schema}'" if schema else 'SCHEMA_NAME()'
 
+def get_table_name(object, table_name, custom_schema):
+    """
+    get the name of the table on this format schema].[table_name 
+    if
+    schema = custom schema defined in medels meta (db_table_schema)
+            else
+            schema choosen by user in settings.py    
+    else
+    return the name of the table without schema (defalut one will be used)
+    """
+    if custom_schema:
+        return f'{custom_schema}].[{table_name}'
+    settings_dict = object.connection.settings_dict
+    schema_name = settings_dict.get('SCHEMA', False)
+    if schema_name: 
+        return f'{schema_name}].[{table_name}'
+    return table_name
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
     # Map type codes to Django Field types.
@@ -237,7 +258,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
         key_columns.extend([tuple(row) for row in cursor.fetchall()])
         return key_columns
 
-    def get_constraints(self, cursor, table_name):
+    def get_constraints(self, cursor, table_name, table_name_schema='SCHEMA_NAME()'):
         """
         Retrieves any constraints or keys (unique, pk, fk, check, index)
         across one or more columns.
@@ -296,12 +317,12 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 kc.table_name = fk.table_name AND
                 kc.column_name = fk.column_name
             WHERE
-                kc.table_schema = {get_schema_name()} AND
+                kc.table_schema = {table_name_schema} AND
                 kc.table_name = %s
             ORDER BY
                 kc.constraint_name ASC,
                 kc.ordinal_position ASC
-        """, [table_name])
+        """ , [table_name])
         for constraint, column, kind, ref_table, ref_column in cursor.fetchall():
             # If we're the first column, make the record
             if constraint not in constraints:
@@ -331,7 +352,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 kc.constraint_name = c.constraint_name
             WHERE
                 c.constraint_type = 'CHECK' AND
-                kc.table_schema = {get_schema_name()} AND
+                kc.table_schema = {table_name_schema} AND
                 kc.table_name = %s
         """, [table_name])
         for constraint, column in cursor.fetchall():
@@ -398,7 +419,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 ic.object_id = c.object_id AND
                 ic.column_id = c.column_id
             WHERE
-                t.schema_id = SCHEMA_ID({get_schema_name()}) AND
+                t.schema_id = SCHEMA_ID({table_name_schema}) AND
                 t.name = %s
             ORDER BY
                 i.index_id ASC,

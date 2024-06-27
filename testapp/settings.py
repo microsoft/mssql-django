@@ -5,6 +5,8 @@ from pathlib import Path
 
 from django import VERSION
 
+import django.db.models.options as options
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATABASES = {
@@ -15,6 +17,7 @@ DATABASES = {
         "PASSWORD": "MyPassword42",
         "HOST": "localhost",
         "PORT": "1433",
+        "SCHEMA" :"dbo",
         "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
     },
     'other': {
@@ -305,3 +308,6 @@ REGEX_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_key_iregex',
     'model_fields.test_jsonfield.TestQuerying.test_key_regex',
 ]
+
+if not 'db_table_schema' in options.DEFAULT_NAMES : 
+    options.DEFAULT_NAMES = options.DEFAULT_NAMES + ('db_table_schema',)

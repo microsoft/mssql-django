@@ -13,7 +13,7 @@ class TestTableWithTrigger(TransactionTestCase):
                 ON [testapp_author]
                 FOR INSERT
                 AS
-                INSERT INTO [testapp_editor]([name]) VALUES ('Bar')
+                INSERT INTO [test_schema].[editor]([name]) VALUES ('Bar')
             """)
 
         try:
