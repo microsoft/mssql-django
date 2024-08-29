@@ -224,7 +224,6 @@ EXCLUDED_TESTS = [
     'lookup.tests.LookupTests.test_lookup_rhs',
     'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_previous_and_next_in_order',
     'ordering.tests.OrderingTests.test_default_ordering_does_not_affect_group_by',
-    'queries.test_explain.ExplainUnsupportedTests.test_message',
     'aggregation.tests.AggregateTestCase.test_coalesced_empty_result_set',
     'aggregation.tests.AggregateTestCase.test_empty_result_optimization',
     'queries.tests.Queries6Tests.test_col_alias_quoted',

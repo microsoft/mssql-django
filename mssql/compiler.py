@@ -361,7 +361,7 @@ class SQLCompiler(compiler.SQLCompiler):
                     params.extend(h_params)
 
             explain = self.query.explain_info if django.VERSION >= (4, 0) else self.query.explain_query
-            if explain:
+            if explain and hasattr(self.query, 'explain_format'):
                 result.insert(0, self.connection.ops.explain_query_prefix(
                     self.query.explain_format,
                     **self.query.explain_options
