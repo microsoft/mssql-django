@@ -13,6 +13,7 @@ from django.db.models.sql.where import WhereNode
 from django.utils import timezone
 from django.utils.encoding import force_str
 from django import VERSION as django_version
+from django.utils.regex_helper import _lazy_re_compile
 import pytz
 
 DJANGO41 = django_version >= (4, 1)
@@ -134,7 +135,8 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def convert_booleanfield_value(self, value, expression, connection):
         return bool(value) if value in (0, 1) else value
-
+    
+    _extract_format_re = _lazy_re_compile(r"[A-Z_]+")
 
     if DJANGO41:
         def date_extract_sql(self, lookup_type, sql, params):
@@ -147,6 +149,9 @@ class DatabaseOperations(BaseDatabaseOperations):
             elif lookup_type == 'iso_year':
                 sql = "YEAR(DATEADD(day, 26 - DATEPART(isoww, %s), %s))" % (sql, sql)
             else:
+                lookup_type = lookup_type.upper()
+                if not self._extract_format_re.fullmatch(lookup_type):
+                    raise ValueError(f"Invalid lookup type: {lookup_type!r}")
                 sql = "DATEPART(%s, %s)" % (lookup_type, sql)
             return sql, params
     else:
