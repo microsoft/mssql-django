@@ -165,6 +165,9 @@ class DatabaseOperations(BaseDatabaseOperations):
             elif lookup_type == 'iso_year':
                 return "YEAR(DATEADD(day, 26 - DATEPART(isoww, %s), %s))" % (field_name, field_name)
             else:
+                lookup_type = lookup_type.upper()
+                if not self._extract_format_re.fullmatch(lookup_type):
+                    raise ValueError(f"Invalid lookup type: {lookup_type!r}")
                 return "DATEPART(%s, %s)" % (lookup_type, field_name)
 
     def date_interval_sql(self, timedelta):
