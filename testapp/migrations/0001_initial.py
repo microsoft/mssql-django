@@ -5,6 +5,7 @@ from django.db import migrations, models
 import django
 
 def forwards(apps, schema_editor):
+    #create schema for testing purpose
     if not schema_editor.connection.vendor == 'microsoft':
         return
     schema_editor.execute("CREATE SCHEMA test_schema;")
