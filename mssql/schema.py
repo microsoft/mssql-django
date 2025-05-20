@@ -292,7 +292,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     def _model_indexes_sql(self, model):
         """
         Return a list of all index SQL statements (field indexes,
-        index_together, Meta.indexes) for the specified model.
+        indexes, Meta.indexes) for the specified model.
         """
         if not model._meta.managed or model._meta.proxy or model._meta.swapped:
             return []
@@ -300,9 +300,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for field in model._meta.local_fields:
             output.extend(self._field_indexes_sql(model, field))
 
-        for field_names in model._meta.index_together:
-            fields = [model._meta.get_field(field) for field in field_names]
-            output.append(self._create_index_sql(model, fields, suffix="_idx"))
+        for index in model._meta.indexes:
+            fields = [model._meta.get_field(fname) for fname in index.fields]
+            idx_suffix = f"_{index.name}" if index.name else "_idx"
+            output.append(self._create_index_sql(model, fields, suffix=idx_suffix))
 
         if django_version >= (4, 0):
             for field_names in model._meta.unique_together:
@@ -803,10 +804,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if old_field.db_index and new_field.db_index:
                 index_columns.append([old_field])
             else:
-                for fields in model._meta.index_together:
-                    columns = [model._meta.get_field(field) for field in fields]
-                    if old_field.column in [c.column for c in columns]:
-                        index_columns.append(columns)
+                for index in model._meta.indexes:
+                  columns = [model._meta.get_field(name) for name in index.fields]
+                  if old_field.column in [col.column for col in columns]:
+                     index_columns.append(columns)
             if index_columns:
                 for columns in index_columns:
                     create_index_sql_statement = self._create_index_sql(model, columns)
@@ -935,10 +936,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             index_columns.append([old_field.column])
         elif old_field.null != new_field.null:
             index_columns.append([old_field.column])
-        for fields in model._meta.index_together:
-            columns = [model._meta.get_field(field).column for field in fields]
-            if old_field.column in columns:
-                index_columns.append(columns)
+        for index in model._meta.indexes:
+           columns = [model._meta.get_field(field_name).column for field_name in index.fields]
+           if old_field.column in columns:
+             index_columns.append(columns)
+
 
         for index in model._meta.indexes:
             columns = [model._meta.get_field(field).column for field in index.fields]
@@ -1340,7 +1342,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                                 model, field, field_type, field.db_comment
                             )
                         )
-        # Add any field index and index_together's (deferred as SQLite3 _remake_table needs it)
+        # Add any field index and indexes (deferred as SQLite3 _remake_table needs it)
         self.deferred_sql.extend(self._model_indexes_sql(model))
         self.deferred_sql = list(set(self.deferred_sql))
 

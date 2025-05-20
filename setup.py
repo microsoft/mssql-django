@@ -42,9 +42,9 @@ setup(
     license='BSD',
     packages=find_packages(),
     install_requires=[
-        'django>=3.2,<5.1',
+        'django>=3.2,<5.3',
         'pyodbc>=3.0',
-        'pytz',
+        'pytz',        
     ],
     package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,

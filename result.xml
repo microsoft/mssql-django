@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+	<testsuite name="testapp.tests.test_indexes.TestAddAndAlterUniqueIndex-20250519202735" tests="1" file="testapp/tests/test_indexes.py" time="1.729" timestamp="2025-05-19T20:27:36" failures="0" errors="0" skipped="0">
+		<testcase classname="testapp.tests.test_indexes.TestAddAndAlterUniqueIndex" name="test_alter_unique_nullable_to_non_nullable" time="1.729" timestamp="2025-05-19T20:27:36" file="testapp\tests\test_indexes.py" line="185">
+			<!--
+Test a single migration that creates a field with unique=True and null=True and then alters
+the field to set null=False. See https://github.com/microsoft/mssql-django/issues/22
+-->
+		</testcase>
+	</testsuite>
+	<testsuite name="testapp.tests.test_indexes.TestCorrectIndexes-20250519202735" tests="1" file="testapp/tests/test_indexes.py" time="37.222" timestamp="2025-05-19T20:28:14" failures="0" errors="0" skipped="0">
+		<testcase classname="testapp.tests.test_indexes.TestCorrectIndexes" name="test_correct_indexes_exist" time="37.222" timestamp="2025-05-19T20:28:14" file="testapp\tests\test_indexes.py" line="79">
+			<!--
+Check there are the correct number of indexes for each field after all migrations
+by comparing what the model says (e.g. `db_index=True` / `meta.indexes` etc.)
+with the actual constraints found in the database.
+This acts as a general regression test for issues such as:
+ - duplicate index created (e.g. https://github.com/microsoft/mssql-django/issues/77)
+ - index dropped but accidentally not recreated
+ - index incorrectly 'recreated' when it was never actually dropped or required at all
+Note of course that it only covers cases which exist in testapp/models.py and associated migrations
+-->
+		</testcase>
+	</testsuite>
+	<testsuite name="testapp.tests.test_indexes.TestIndexesBeingDropped-20250519202735" tests="1" file="testapp/tests/test_indexes.py" time="0.273" timestamp="2025-05-19T20:28:14" failures="0" errors="0" skipped="0">
+		<testcase classname="testapp.tests.test_indexes.TestIndexesBeingDropped" name="test_unique_index_dropped" time="0.273" timestamp="2025-05-19T20:28:14" file="testapp\tests\test_indexes.py" line="156">
+			<!--
+Issues https://github.com/microsoft/mssql-django/issues/110
+and https://github.com/microsoft/mssql-django/issues/90
+Unique indexes not being dropped when changing non-nullable
+foreign key with unique_together to nullable causing
+dependent on column error
+-->
+		</testcase>
+	</testsuite>
+	<testsuite name="testapp.tests.test_indexes.TestIndexesRetained-20250519202735" tests="3" file="testapp/tests/test_indexes.py" time="0.002" timestamp="2025-05-19T20:28:15" failures="0" errors="0" skipped="0">
+		<testcase classname="testapp.tests.test_indexes.TestIndexesRetained" name="test_field_made_nullable" time="0.001" timestamp="2025-05-19T20:28:15" file="testapp\tests\test_indexes.py" line="58"/>
+		<testcase classname="testapp.tests.test_indexes.TestIndexesRetained" name="test_field_renamed" time="0.000" timestamp="2025-05-19T20:28:15" file="testapp\tests\test_indexes.py" line="62"/>
+		<testcase classname="testapp.tests.test_indexes.TestIndexesRetained" name="test_table_renamed" time="0.000" timestamp="2025-05-19T20:28:15" file="testapp\tests\test_indexes.py" line="66"/>
+	</testsuite>
+	<testsuite name="testapp.tests.test_indexes.TestKeepIndexWithDbcomment-20250519202735" tests="1" file="testapp/tests/test_indexes.py" time="1.625" timestamp="2025-05-19T20:28:17" failures="0" errors="0" skipped="0">
+		<testcase classname="testapp.tests.test_indexes.TestKeepIndexWithDbcomment" name="test_drop_foreignkey" time="1.625" timestamp="2025-05-19T20:28:17" file="testapp\tests\test_indexes.py" line="223"/>
+	</testsuite>
+</testsuites>
