@@ -24,6 +24,33 @@ jobs:
 
     strategy:
       matrix:
+      #added support to django 5.2 and 5.1
+        Python3.13 - Django 5.2:
+          python.version: '3.13'
+          tox.env: 'py313-django52'
+        Python3.12 - Django 5.2:
+          python.version: '3.12'
+          tox.env: 'py312-django52'
+        Python3.11 - Django 5.2:
+          python.version: '3.11'
+          tox.env: 'py311-django52'
+        Python3.10 - Django 5.2:
+          python.version: '3.10'
+          tox.env: 'py310-django52'
+
+        Python3.13 - Django 5.1:
+          python.version: '3.13'
+          tox.env: 'py313-django51'
+        Python3.12 - Django 5.1:
+          python.version: '3.12'
+          tox.env: 'py312-django51'
+        Python3.11 - Django 5.1:
+          python.version: '3.11'
+          tox.env: 'py311-django51'
+        Python3.10 - Django 5.1:
+          python.version: '3.10'
+          tox.env: 'py310-django51'
+
         Python3.12 - Django 5.0:
           python.version: '3.12'
           tox.env: 'py312-django50'
@@ -138,6 +165,32 @@ jobs:
 
     strategy:
       matrix:
+        Python3.13 - Django 5.2:
+          python.version: '3.13'
+          tox.env: 'py313-django52'
+        Python3.12 - Django 5.2:
+          python.version: '3.12'
+          tox.env: 'py312-django52'
+        Python3.11 - Django 5.2:
+          python.version: '3.11'
+          tox.env: 'py311-django52'
+        Python3.10 - Django 5.2:
+          python.version: '3.10'
+          tox.env: 'py310-django52'
+
+        Python3.13 - Django 5.1:
+          python.version: '3.13'
+          tox.env: 'py313-django51'
+        Python3.12 - Django 5.1:
+          python.version: '3.12'
+          tox.env: 'py312-django51'
+        Python3.11 - Django 5.1:
+          python.version: '3.11'
+          tox.env: 'py311-django51'
+        Python3.10 - Django 5.1:
+          python.version: '3.10'
+          tox.env: 'py310-django51'
+
         Python3.12 - Django 5.0:
           python.version: '3.12'
           tox.env: 'py312-django50'

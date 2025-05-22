@@ -41,8 +41,9 @@ setup(
     },
     license='BSD',
     packages=find_packages(),
+    #added django support for 5.1 and 5.2
     install_requires=[
-        'django>=3.2,<5.1',
+        'django>=3.2,<5.3',
         'pyodbc>=3.0',
         'pytz',
     ],

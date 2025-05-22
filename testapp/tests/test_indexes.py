@@ -79,7 +79,7 @@ class TestCorrectIndexes(TestCase):
     def test_correct_indexes_exist(self):
         """
         Check there are the correct number of indexes for each field after all migrations
-        by comparing what the model says (e.g. `db_index=True` / `index_together` etc.)
+        by comparing what the model says (e.g. `db_index=True` / `meta.indexes` etc.)
         with the actual constraints found in the database.
         This acts as a general regression test for issues such as:
          - duplicate index created (e.g. https://github.com/microsoft/mssql-django/issues/77)
@@ -116,9 +116,15 @@ class TestCorrectIndexes(TestCase):
                 expected_index_causes = []
                 if field.db_index:
                     expected_index_causes.append('db_index=True')
-                for field_names in model_cls._meta.index_together:
-                    if field.name in field_names:
-                        expected_index_causes.append(f'index_together[{field_names}]')
+                # This block checks if the current field is part of any explicit Index defined in Meta.indexes.
+                # Meta.indexes is the modern, recommended way  to define custom indexes on model fields.
+                # It is more flexible and powerful than the legacy index_together option, which is now removed.
+                # By using Meta.indexes, we ensure compatibility with current and future Django versions.
+                # The earlier code using index_together is replaced with this.  
+                for index in model_cls._meta.indexes:
+                    if field.name in index.fields:
+                           expected_index_causes.append(f'indexes[{tuple(index.fields)}]')
+
                 if field._unique and field.null:
                     # This is implemented using a (filtered) unique index (not a constraint) to get ANSI NULL behaviour
                     expected_index_causes.append('unique=True & null=True')
