@@ -121,9 +121,16 @@ class TestBulkUpdate(TestCase):
             (1, 'a', datetime.datetime(year=2024, month=1, day=1)),
             (2, 'b', datetime.datetime(year=2023, month=12, day=31))
         )
-        objs = ModelWithNullableFieldsOfDifferentTypes.objects.bulk_create(ModelWithNullableFieldsOfDifferentTypes(int_value=row_data[0],
-                                                                                                                   name=row_data[1],
-                                                                                                                   date=row_data[2]) for row_data in data)
+        objs = ModelWithNullableFieldsOfDifferentTypes.objects.bulk_create(
+            (ModelWithNullableFieldsOfDifferentTypes(int_value=row_data[0],
+                                                     name=row_data[1],
+                                                     date=row_data[2]) for row_data in data),
+        )
+        #since bulk_create does not return the created objects, we need to fetch them again
+        # to be able to update them
+        # and we need to set the values to None to be able to test the bulk_update
+        # since the fields are nullable
+        objs = list(ModelWithNullableFieldsOfDifferentTypes.objects.all())
         for obj in objs:
             obj.int_value = None
             obj.name = None
