@@ -42,7 +42,7 @@ setup(
     license='BSD',
     packages=find_packages(),
     install_requires=[
-        'django>=3.2,<5.1',
+        'django>=3.2,<5.2',
         'pyodbc>=3.0',
         'pytz',
     ],
