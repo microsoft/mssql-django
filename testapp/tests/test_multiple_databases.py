@@ -6,11 +6,9 @@ from unittest import skipUnless
 from django import VERSION
 from django.core.exceptions import ValidationError
 from django.db import OperationalError
-from django.db.backends.sqlite3.operations import DatabaseOperations
+from django.db import connections
 from django.test import TestCase, skipUnlessDBFeature
-
 from ..models import BinaryData, Pizza, Topping
-
 if VERSION >= (3, 2):
     from ..models import TestCheckConstraintWithUnicode
 
@@ -21,29 +19,35 @@ if VERSION >= (3, 2):
 )
 class TestMultpleDatabases(TestCase):
     databases = ['default', 'sqlite']
+def test_in_split_parameter_list_as_sql(self):
+    # Issue: https://github.com/microsoft/mssql-django/issues/92
 
-    def test_in_split_parameter_list_as_sql(self):
-        # Issue: https://github.com/microsoft/mssql-django/issues/92
+    # Mimic databases that have a limit on parameters (e.g. Oracle DB)
+    mssql_ops = connections['default'].ops
+    old_max_in_list_size = mssql_ops.max_in_list_size
+    mssql_ops.max_in_list_size = lambda: 100
 
-        # Mimic databases that have a limit on parameters (e.g. Oracle DB)
-        old_max_in_list_size = DatabaseOperations.max_in_list_size
-        DatabaseOperations.max_in_list_size = lambda self: 100
+    mssql_iterations = 3000
+    Pizza.objects.bulk_create([Pizza() for _ in range(mssql_iterations)])
+    Topping.objects.bulk_create([Topping() for _ in range(mssql_iterations)])
+    prefetch_result = Pizza.objects.prefetch_related('toppings')
+    self.assertEqual(len(prefetch_result), mssql_iterations)
 
-        mssql_iterations = 3000
-        Pizza.objects.bulk_create([Pizza() for _ in range(mssql_iterations)])
-        Topping.objects.bulk_create([Topping() for _ in range(mssql_iterations)])
-        prefetch_result = Pizza.objects.prefetch_related('toppings')
-        self.assertEqual(len(prefetch_result), mssql_iterations)
+    # Different iterations since SQLite has max host parameters of 999 for versions prior to 3.32.0
+    # Info about limit: https://www.sqlite.org/limits.html
+    sqlite_ops = connections['sqlite'].ops
+    old_sqlite_max_in_list_size = sqlite_ops.max_in_list_size
+    sqlite_ops.max_in_list_size = lambda: 999
 
-        # Different iterations since SQLite has max host parameters of 999 for versions prior to 3.32.0
-        # Info about limit: https://www.sqlite.org/limits.html
-        sqlite_iterations = 999
-        Pizza.objects.using('sqlite').bulk_create([Pizza() for _ in range(sqlite_iterations)])
-        Topping.objects.using('sqlite').bulk_create([Topping() for _ in range(sqlite_iterations)])
-        prefetch_result_sqlite = Pizza.objects.using('sqlite').prefetch_related('toppings')
-        self.assertEqual(len(prefetch_result_sqlite), sqlite_iterations)
+    sqlite_iterations = 999
+    Pizza.objects.using('sqlite').bulk_create([Pizza() for _ in range(sqlite_iterations)])
+    Topping.objects.using('sqlite').bulk_create([Topping() for _ in range(sqlite_iterations)])
+    prefetch_result_sqlite = Pizza.objects.using('sqlite').prefetch_related('toppings')
+    self.assertEqual(len(prefetch_result_sqlite), sqlite_iterations)
 
-        DatabaseOperations.max_in_list_size = old_max_in_list_size
+    # Restore original methods
+    mssql_ops.max_in_list_size = old_max_in_list_size
+    sqlite_ops.max_in_list_size = old_sqlite_max_in_list_size
 
     def test_binaryfield_init(self):
         binary_data = b'\x00\x46\xFE'
