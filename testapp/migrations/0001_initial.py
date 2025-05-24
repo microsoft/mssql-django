@@ -4,7 +4,7 @@ import uuid
 
 from django.db import migrations, models
 import django
-
+import datetime
 
 class Migration(migrations.Migration):
 
@@ -55,7 +55,7 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('post', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='testapp.Post')),
                 ('text', models.TextField(verbose_name='text')),
-                ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
+                ('created_at', models.DateTimeField(default=datetime.datetime.now)),
             ],
         ),
         migrations.CreateModel(

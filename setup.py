@@ -43,10 +43,10 @@ setup(
     },
     license='BSD',
     packages=find_packages(),
+    #since we are using zoneInfo,We don't need to install pytz anymore
     install_requires=[
         'django>=3.2,<5.2',
         'pyodbc>=3.0',
-        'pytz',
     ],
     package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
