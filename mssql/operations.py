@@ -13,7 +13,7 @@ from django.db.models.sql.where import WhereNode
 from django.utils import timezone
 from django.utils.encoding import force_str
 from django import VERSION as django_version
-import pytz
+from zoneinfo import ZoneInfo
 
 DJANGO41 = django_version >= (4, 1)
 
@@ -46,11 +46,10 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         # SQL Server has no built-in support for tz database, see:
         # http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
-        zone = pytz.timezone(tzname)
-        # no way to take DST into account at this point
-        now = datetime.datetime.now()
-        delta = zone.localize(now, is_dst=False).utcoffset()
-        return delta.days * 86400 + delta.seconds - zone.dst(now).seconds
+        zone = ZoneInfo(tzname)  # Create a time zone object using the standard library's zoneinfo module.
+        now = datetime.datetime.now(zone)  # Get the current local time as a timezone-aware datetime.
+        delta = now.utcoffset()  # Get the UTC offset (as a timedelta) for this aware datetime.
+        return int(delta.total_seconds())  # Return the total offset in seconds.
 
     def bulk_batch_size(self, fields, objs):
         """

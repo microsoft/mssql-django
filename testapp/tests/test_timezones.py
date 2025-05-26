@@ -5,9 +5,9 @@ import datetime
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import override_settings
-
+from zoneinfo import ZoneInfo
 from ..models import TimeZone
-
+from mssql.operations import DatabaseOperations
 class TestDateTimeField(TestCase):
 
     def test_iso_week_day(self):
@@ -105,3 +105,25 @@ class TestDateTimeToDateTimeOffsetMigration(TestCase):
             # Migrate back to DATETIME2 for other unit tests
             with connection.schema_editor() as cursor:
                 cursor.execute("ALTER TABLE [testapp_timezone] ALTER column [date] datetime2")
+class DummyConnection:
+    timezone_name = 'UTC'
+    timezone = ZoneInfo('UTC')
+
+class TestGetUTCOffset(TestCase):
+    def setUp(self):
+        self.ops = DatabaseOperations(None)
+        self.ops.connection = DummyConnection()
+
+    def test_utc(self):
+        offset = self.ops._get_utcoffset('UTC')
+        self.assertEqual(offset, 0)
+
+    def test_new_york(self):
+        # Offset will depend on DST, so check it's either -18000 or -14400
+        offset = self.ops._get_utcoffset('America/New_York')
+        self.assertIn(offset, (-18000, -14400))
+
+    def test_london(self):
+        # Offset will depend on DST, so check it's either 0 or 3600
+        offset = self.ops._get_utcoffset('Europe/London')
+        self.assertIn(offset, (0, 3600))
