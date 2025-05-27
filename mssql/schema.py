@@ -5,7 +5,9 @@ import binascii
 import datetime
 
 from collections import defaultdict
-
+from django import VERSION as django_version
+if django_version >= (5, 2):
+    from django.db.models.fields.composite import CompositePrimaryKey
 from django.db.backends.base.schema import (
     BaseDatabaseSchemaEditor,
     _is_relevant_relation,
@@ -1308,7 +1310,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
                 if autoinc_sql:
                     self.deferred_sql.extend(autoinc_sql)
-
+        composite_pk_sql = None
+         # Check if Django version is >= 5.2 and the model has composite primary key fields
+        if django_version >= (5, 2) and hasattr(model._meta, "pk_fields"):
+          #specifically refers to the primary key field of that model.
+          pk = model._meta.pk
+          # If the primary key is a CompositePrimaryKey instance
+          if isinstance(pk, CompositePrimaryKey):
+              # Get the column names for all fields in the composite primary key
+             pk_columns = [field.column for field in model._meta.pk_fields]
+             # Build the PRIMARY KEY SQL clause for the composite key
+             composite_pk_sql = "PRIMARY KEY (%s)" % ", ".join(self.quote_name(col) for col in pk_columns)
         # Add any unique_togethers (always deferred, as some fields might be
         # created afterwards, like geometry fields with some backends)
         for field_names in model._meta.unique_together:
@@ -1319,8 +1331,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.deferred_sql.append(self._create_unique_sql(model, fields, condition=condition))
             else:
                 self.deferred_sql.append(self._create_unique_sql(model, columns, condition=condition))
-
+        # Generate SQL for all model constraints (e.g., UniqueConstraint, CheckConstraint, etc.)
         constraints = [constraint.constraint_sql(model, self) for constraint in model._meta.constraints]
+        # If a composite primary key SQL clause was generated, insert it at the beginning of the constraints list
+        if composite_pk_sql:
+          constraints.insert(0, composite_pk_sql)
         # Make the table
         sql = self.sql_create_table % {
             "table": self.quote_name(model._meta.db_table),

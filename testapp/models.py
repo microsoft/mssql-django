@@ -8,7 +8,8 @@ from django import VERSION
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
-
+if VERSION >= (5, 2):
+   from django.db.models.fields.composite import CompositePrimaryKey
 # We are using this Mixin to test casting of BigAuto and Auto fields
 class BigAutoFieldMixin(models.Model):
     id = models.BigAutoField(primary_key=True)
@@ -252,3 +253,9 @@ class Book(models.Model):
         db_column="publisher_id_column",
     )
     updated = models.DateTimeField(auto_now=True)
+ #create a model to test CompositePrimaryKey 
+if VERSION >= (5, 2):
+    class Release(models.Model):
+      pk = models.CompositePrimaryKey("version", "name")
+      version = models.IntegerField()
+      name = models.CharField(max_length=20)   
