@@ -333,6 +333,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 cstr_parts['Integrated Security'] = 'SSPI'
 
         cstr_parts['DATABASE'] = database
+        cstr_parts['Encrypt'] = encrypt
 
         if ms_drivers.match(driver) and os.name == 'nt':
             cstr_parts['MARS_Connection'] = 'yes'
