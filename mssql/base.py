@@ -285,6 +285,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         password = conn_params.get('PASSWORD', None)
         port = conn_params.get('PORT', None)
         trusted_connection = conn_params.get('TrustServerCertificate', 'yes')
+        encrypt = conn_params.get('Encrypt', 'yes')
 
         options = conn_params.get('OPTIONS', {})
         driver = options.get('driver', 'ODBC Driver 18 for SQL Server')
