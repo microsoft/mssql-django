@@ -284,11 +284,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         user = conn_params.get('USER', None)
         password = conn_params.get('PASSWORD', None)
         port = conn_params.get('PORT', None)
-        trusted_connection = conn_params.get('TrustServerCertificate', 'yes')
-        encrypt = conn_params.get('Encrypt', 'yes')
+        trusted_connection = conn_params.get('Trusted_Connection', 'yes')
 
         options = conn_params.get('OPTIONS', {})
-        driver = options.get('driver', 'ODBC Driver 18 for SQL Server')
+        driver = options.get('driver', 'ODBC Driver 17 for SQL Server')
         dsn = options.get('dsn', None)
         options_extra_params = options.get('extra_params', '')
 
@@ -333,7 +332,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 cstr_parts['Integrated Security'] = 'SSPI'
 
         cstr_parts['DATABASE'] = database
-        cstr_parts['Encrypt'] = encrypt
 
         if ms_drivers.match(driver) and os.name == 'nt':
             cstr_parts['MARS_Connection'] = 'yes'

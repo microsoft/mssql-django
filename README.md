@@ -115,9 +115,9 @@ Dictionary. Current available keys are:
 
 -  driver
 
-   String. ODBC Driver to use (`"ODBC Driver 18 for SQL Server"`,
+   String. ODBC Driver to use (`"ODBC Driver 17 for SQL Server"`,
    `"SQL Server Native Client 11.0"`, `"FreeTDS"` etc).
-   Default is `"ODBC Driver 18 for SQL Server"`.
+   Default is `"ODBC Driver 17 for SQL Server"`.
 
 -  isolation_level
 
@@ -249,7 +249,7 @@ Here is an example of the database settings:
             'PORT': '',
 
             'OPTIONS': {
-                'driver': 'ODBC Driver 18 for SQL Server',
+                'driver': 'ODBC Driver 17 for SQL Server',
             },
         },
     }
