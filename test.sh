@@ -10,9 +10,12 @@ DJANGO_VERSION="$(python -m django --version)"
 cd django
 git fetch --depth=1 origin +refs/tags/*:refs/tags/*
 git checkout $DJANGO_VERSION
-# Replace py3.txt in django repo tests with the one from this repo
-# We're testing what if pylibmc is skipped for python 3.12+ and pymemcache is used instead
-mv -f ../py3.txt tests/requirements/py3.txt
+
+# Modify the pylibmc line in-place to skip it for Python >= 3.12
+# pylibmc requires libmemcached-dev and does not provide wheels for Python >= 3.12.
+# Django's test suite will fall back to pymemcache if pylibmc is unavailable.
+sed -i 's/^pylibmc; sys_platform != '\''win32'\''/pylibmc; sys_platform != '\''win32'\'' and python_version < '\''3.12'\''/' tests/requirements/py3.txt
+
 pip install -r tests/requirements/py3.txt
 
 coverage run tests/runtests.py --settings=testapp.settings --noinput \
