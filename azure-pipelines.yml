@@ -216,6 +216,17 @@ jobs:
           sudo dpkg -i packages-microsoft-prod.deb
           rm packages-microsoft-prod.deb
 
+          # Wait until dpkg lock is released (max 60 seconds)
+          # This is necessary because the ODBC driver installation can conflict with other apt operations
+          # such as the installation of the SQL Server package above.
+          # If the lock is not released, the script will wait and retry.
+          # This is a workaround for the issue where the ODBC driver installation fails due to dpkg lock.
+          for i in {1..30}; do
+              sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+              echo "Waiting for dpkg lock to be released..."
+              sleep 2
+          done
+
           sudo apt-get update
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
         displayName: Install ODBC Driver
