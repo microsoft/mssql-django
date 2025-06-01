@@ -14,7 +14,7 @@ git checkout $DJANGO_VERSION
 # Modify the pylibmc line in-place to skip it for Python >= 3.12
 # pylibmc requires libmemcached-dev and does not provide wheels for Python >= 3.12.
 # Django's test suite will fall back to pymemcache if pylibmc is unavailable.
-sed -i -E "s#^(pylibmc; sys_platform != ['\"]win32['\"])(?!.*python_version)#\1 and python_version < '3.12'#" tests/requirements/py3.txt
+sed -i "s|^pylibmc; sys_platform != 'win32'$|pylibmc; sys_platform != 'win32' and python_version < '3.12'|" tests/requirements/py3.txt
 
 # Debug: Show the updated pylibmc line
 echo "---- PATCHED py3.txt LINE ----"
