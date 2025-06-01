@@ -15,119 +15,119 @@ variables:
 - group: DjangoTestApp
 
 jobs:
-  # - job: Windows
-  #   pool:
-  #     name: Django-1ES-pool
-  #     demands:
-  #     - imageOverride -equals JDBC-MMS2019-SQL2019-2
-  #   timeoutInMinutes: 120
+  - job: Windows
+    pool:
+      name: Django-1ES-pool
+      demands:
+      - imageOverride -equals JDBC-MMS2019-SQL2019-2
+    timeoutInMinutes: 120
 
-  #   strategy:
-  #     matrix:
-  #       Python3.12 - Django 5.0:
-  #         python.version: '3.12'
-  #         tox.env: 'py312-django50'
-  #       Python3.11 - Django 5.0:
-  #         python.version: '3.11'
-  #         tox.env: 'py311-django50'
-  #       Python3.10 - Django 5.0:
-  #         python.version: '3.10'
-  #         tox.env: 'py310-django50'
+    strategy:
+      matrix:
+        Python3.12 - Django 5.0:
+          python.version: '3.12'
+          tox.env: 'py312-django50'
+        Python3.11 - Django 5.0:
+          python.version: '3.11'
+          tox.env: 'py311-django50'
+        Python3.10 - Django 5.0:
+          python.version: '3.10'
+          tox.env: 'py310-django50'
 
-  #       Python3.11 - Django 4.2:
-  #         python.version: '3.11'
-  #         tox.env: 'py311-django42'
-  #       Python3.10 - Django 4.2:
-  #         python.version: '3.10'
-  #         tox.env: 'py310-django42'
-  #       Python 3.9 - Django 4.2:
-  #         python.version: '3.9'
-  #         tox.env: 'py39-django42'
-  #       Python 3.8 - Django 4.2:
-  #         python.version: '3.8'
-  #         tox.env: 'py38-django42'
+        Python3.11 - Django 4.2:
+          python.version: '3.11'
+          tox.env: 'py311-django42'
+        Python3.10 - Django 4.2:
+          python.version: '3.10'
+          tox.env: 'py310-django42'
+        Python 3.9 - Django 4.2:
+          python.version: '3.9'
+          tox.env: 'py39-django42'
+        Python 3.8 - Django 4.2:
+          python.version: '3.8'
+          tox.env: 'py38-django42'
 
-  #       Python3.11 - Django 4.1:
-  #         python.version: '3.11'
-  #         tox.env: 'py311-django41'
-  #       Python3.10 - Django 4.1:
-  #         python.version: '3.10'
-  #         tox.env: 'py310-django41'
-  #       Python 3.9 - Django 4.1:
-  #         python.version: '3.9'
-  #         tox.env: 'py39-django41'
-  #       Python 3.8 - Django 4.1:
-  #         python.version: '3.8'
-  #         tox.env: 'py38-django41'
+        Python3.11 - Django 4.1:
+          python.version: '3.11'
+          tox.env: 'py311-django41'
+        Python3.10 - Django 4.1:
+          python.version: '3.10'
+          tox.env: 'py310-django41'
+        Python 3.9 - Django 4.1:
+          python.version: '3.9'
+          tox.env: 'py39-django41'
+        Python 3.8 - Django 4.1:
+          python.version: '3.8'
+          tox.env: 'py38-django41'
 
-  #       Python3.11 - Django 4.0:
-  #         python.version: '3.11'
-  #         tox.env: 'py311-django40'
-  #       Python3.10 - Django 4.0:
-  #         python.version: '3.10'
-  #         tox.env: 'py310-django40'
-  #       Python 3.9 - Django 4.0:
-  #         python.version: '3.9'
-  #         tox.env: 'py39-django40'
-  #       Python 3.8 - Django 4.0:
-  #         python.version: '3.8'
-  #         tox.env: 'py38-django40'
+        Python3.11 - Django 4.0:
+          python.version: '3.11'
+          tox.env: 'py311-django40'
+        Python3.10 - Django 4.0:
+          python.version: '3.10'
+          tox.env: 'py310-django40'
+        Python 3.9 - Django 4.0:
+          python.version: '3.9'
+          tox.env: 'py39-django40'
+        Python 3.8 - Django 4.0:
+          python.version: '3.8'
+          tox.env: 'py38-django40'
 
-  #       Python3.11 - Django 3.2:
-  #         python.version: '3.11'
-  #         tox.env: 'py311-django32'
-  #       Python 3.9 - Django 3.2:
-  #         python.version: '3.9'
-  #         tox.env: 'py39-django32'
-  #       Python 3.8 - Django 3.2:
-  #         python.version: '3.8'
-  #         tox.env: 'py38-django32'
+        Python3.11 - Django 3.2:
+          python.version: '3.11'
+          tox.env: 'py311-django32'
+        Python 3.9 - Django 3.2:
+          python.version: '3.9'
+          tox.env: 'py39-django32'
+        Python 3.8 - Django 3.2:
+          python.version: '3.8'
+          tox.env: 'py38-django32'
 
 
-  #   steps:
-  #     - task: CredScan@3
-  #       inputs:
-  #         toolMajorVersion: 'V2'
+    steps:
+      - task: CredScan@3
+        inputs:
+          toolMajorVersion: 'V2'
 
-  #     - task: UsePythonVersion@0
-  #       inputs:
-  #         versionSpec: "$(python.version)"
-  #       displayName: Use Python $(python.version)
+      - task: UsePythonVersion@0
+        inputs:
+          versionSpec: "$(python.version)"
+        displayName: Use Python $(python.version)
 
-  #     - powershell: |
-  #         $IP=Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $(Get-NetConnectionProfile -IPv4Connectivity Internet | Select-Object -ExpandProperty InterfaceIndex) | Select-Object -ExpandProperty IPAddress
+      - powershell: |
+          $IP=Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $(Get-NetConnectionProfile -IPv4Connectivity Internet | Select-Object -ExpandProperty InterfaceIndex) | Select-Object -ExpandProperty IPAddress
 
-  #         (Get-Content $pwd/testapp/settings.py).replace('localhost', $IP) | Set-Content $pwd/testapp/settings.py
+          (Get-Content $pwd/testapp/settings.py).replace('localhost', $IP) | Set-Content $pwd/testapp/settings.py
 
-  #         Invoke-WebRequest https://download.microsoft.com/download/6/f/f/6ffefc73-39ab-4cc0-bb7c-4093d64c2669/en-US/17.10.5.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
-  #         msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
-  #         Get-OdbcDriver
-  #       displayName: Install ODBC
+          Invoke-WebRequest https://download.microsoft.com/download/6/f/f/6ffefc73-39ab-4cc0-bb7c-4093d64c2669/en-US/17.10.5.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
+          msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
+          Get-OdbcDriver
+        displayName: Install ODBC
 
-  #     - powershell: |
-  #         Import-Module "sqlps"
-  #         Invoke-Sqlcmd @"
-  #             EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
-  #             ALTER LOGIN [sa] ENABLE;
-  #             ALTER LOGIN [sa] WITH PASSWORD = '$(TestAppPassword)', CHECK_POLICY=OFF;
-  #         "@
-  #       displayName: Set up SQL Server
+      - powershell: |
+          Import-Module "sqlps"
+          Invoke-Sqlcmd @"
+              EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
+              ALTER LOGIN [sa] ENABLE;
+              ALTER LOGIN [sa] WITH PASSWORD = '$(TestAppPassword)', CHECK_POLICY=OFF;
+          "@
+        displayName: Set up SQL Server
 
-  #     - powershell: |
-  #         Restart-Service -Name MSSQLSERVER -Force
-  #       displayName: Restart SQL Server
+      - powershell: |
+          Restart-Service -Name MSSQLSERVER -Force
+        displayName: Restart SQL Server
 
-  #     - powershell: |
-  #         (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassWord)' | Set-Content testapp\settings.py
-  #       displayName: Change PASSWORD in settings.py
+      - powershell: |
+          (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassWord)' | Set-Content testapp\settings.py
+        displayName: Change PASSWORD in settings.py
 
-  #     - powershell: |
-  #         python -m pip install --upgrade pip wheel setuptools
-  #         python -m pip install tox
-  #         git clone https://github.com/django/django.git
+      - powershell: |
+          python -m pip install --upgrade pip wheel setuptools
+          python -m pip install tox
+          git clone https://github.com/django/django.git
 
-  #         python -m tox -e $(tox.env)
-  #       displayName: Run tox
+          python -m tox -e $(tox.env)
+        displayName: Run tox
 
   - job: Linux
     pool:
@@ -230,16 +230,6 @@ jobs:
           sudo apt-get update
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
         displayName: Install ODBC Driver
-
-      # - script: |
-      #     # Since pylibmc isn't supported for Python 3.12+ 
-      #     # We need to install libmemcached-dev to build it - dependency for Django test suite
-      #     # https://github.com/django/django/blob/1a744343999c9646912cee76ba0a2fa6ef5e6240/.github/workflows/schedule_tests.yml#L50
-      #     if [[ "$(python --version)" == *"3.12"* ]] || [[ "$(python --version)" == *"3.13"* ]]; then
-      #       echo "Installing libmemcached-dev for Python 3.12+"
-      #       sudo apt-get install -y libmemcached-dev
-      #     fi
-      #   displayName: Install libmemcached for Python 3.12+
 
       - script: |
           python -m pip install --upgrade pip wheel setuptools
