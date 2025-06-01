@@ -221,13 +221,14 @@ jobs:
         displayName: Install ODBC Driver
 
       - script: |
-          # Since pylibmc isn't supported for Python 3.10 and above 
+          # Since pylibmc isn't supported for Python 3.12+ 
           # We need to install libmemcached-dev to build it - dependency for Django test suite
           # https://github.com/django/django/blob/1a744343999c9646912cee76ba0a2fa6ef5e6240/.github/workflows/schedule_tests.yml#L50
-          if [[ "$(python --version)" =~ 3\.[1-9] ]]; then
+          if [[ "$(python --version)" == *"3.12"* ]] || [[ "$(python --version)" == *"3.13"* ]]; then
+            echo "Installing libmemcached-dev for Python 3.12+"
             sudo apt-get install -y libmemcached-dev
           fi
-        displayName: Install libmemcached for Python 3.10+
+        displayName: Install libmemcached for Python 3.12+
 
       - script: |
           python -m pip install --upgrade pip wheel setuptools
