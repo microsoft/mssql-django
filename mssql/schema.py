@@ -301,7 +301,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             output.extend(self._field_indexes_sql(model, field))
         # meta.index_together is removed in Django 5.1, so add a version check to handle compatibility
         if django_version <= (5, 0):
-
             # Iterate over each set of field names defined in index_together
             for field_names in model._meta.index_together:
                 # Get the actual field objects for each field name
@@ -310,7 +309,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 sql = self._create_index_sql(model, fields, suffix="_idx")
                 # If SQL was generated (not None), add it to the output list
                 if sql:
-                   output.append(sql)
+                  output.append(sql)
 
         if django_version >= (4, 0):
             for field_names in model._meta.unique_together:
@@ -948,19 +947,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             index_columns.append([old_field.column])
         elif old_field.null != new_field.null:
             index_columns.append([old_field.column])
+        for index in model._meta.indexes:
+            columns = [model._meta.get_field(field).column for field in index.fields]
+            if old_field.column in columns:
+                index_columns.append(columns)    
         # Handle index_together for only django version <= 5.0
         if django_version <= (5, 0):  
             # Iterate over each set of field names defined in index_together
             for fields in model._meta.index_together:
-            # Get the actual column names for each field in the set
-            columns = [model._meta.get_field(field).column for field in fields]
-            # If the old field's column is among these columns, add to index_columns for later index deletion
-            if old_field.column in columns:
-                index_columns.append(columns)  
-        for index in model._meta.indexes:
-            columns = [model._meta.get_field(field).column for field in index.fields]
-            if old_field.column in columns:
-                index_columns.append(columns)
+               # Get the actual column names for each field in the set
+               columns = [model._meta.get_field(field).column for field in fields]
+               # If the old field's column is among these columns, add to index_columns for later index deletion
+               if old_field.column in columns:
+                  index_columns.append(columns)  
 
         for fields in model._meta.unique_together:
             columns = [model._meta.get_field(field).column for field in fields]
@@ -1567,3 +1566,4 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 or self.connection.features.supports_nulls_distinct_unique_constraints
             )
         )
+    
