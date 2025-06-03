@@ -232,9 +232,8 @@ def json_HasKeyLookup(self, compiler, connection):
     Implementation of HasKey lookup for SQL Server.
     Handles for both SQL Server 2022+ (using JSON_PATH_EXISTS) and older versions (using OPENJSON).
     """
-    # this if else block will be dealing with geting the lhs JSON path
-    # Process JSON path from the left-hand side.
-    # if dealing with the nested JSON structure then if block will be executed
+    # Determine the JSON path for the left-hand side (lhs).
+    # If dealing with a nested JSON structure, use KeyTransform to extract the path.
     if isinstance(self.lhs, KeyTransform):
         lhs, _, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
         lhs_json_path = compile_json_path(lhs_key_transforms)
