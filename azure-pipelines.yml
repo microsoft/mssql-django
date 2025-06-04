@@ -225,6 +225,10 @@ jobs:
             echo "Waiting for dpkg lock to be released..."
             sleep 10
           done
+          if ! sudo apt-get update; then
+            echo "Failed to update packages after 30 attempts. Exiting."
+            exit 1
+          fi
 
           # Add retry logic for installing package
           for i in {1..30}; do
