@@ -216,8 +216,34 @@ jobs:
           sudo dpkg -i packages-microsoft-prod.deb
           rm packages-microsoft-prod.deb
 
-          sudo apt-get update
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
+          # Add retry logic for handling dpkg lock
+          for i in {1..30}; do
+            echo "Attempt $i of 30 to update packages..."
+            if sudo apt-get update; then
+              break
+            fi
+            echo "Waiting for dpkg lock to be released..."
+            sleep 10
+          done
+          if ! sudo apt-get update; then
+            echo "Failed to update packages after 30 attempts. Exiting."
+            exit 1
+          fi
+
+          # Add retry logic for installing package
+          for i in {1..30}; do
+            echo "Attempt $i of 30 to install ODBC driver..."
+            if sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17; then
+              break
+            fi
+            echo "Waiting for dpkg lock to be released..."
+            sleep 10
+          done
+          # Exit with a non-zero status if installation fails after all retries
+          if ! sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17; then
+            echo "Failed to install ODBC driver after 30 attempts. Exiting."
+            exit 1
+          fi
         displayName: Install ODBC Driver
 
       - script: |
