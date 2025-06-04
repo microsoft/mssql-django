@@ -94,6 +94,7 @@ def sqlserver_power(self, compiler, connection, **extra_context):
         )
 
 def sqlserver_mod(self, compiler, connection):
+    # MSSQL doesn't have keyword MOD
     # Get the source expressions (the two arguments to the Mod function)
     expr = self.get_source_expressions()
     # Compile the first argument (dividend) to SQL and parameters
