@@ -303,13 +303,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if django_version < (5, 1):
             # Iterate over each set of field names defined in index_together
             for field_names in model._meta.index_together:
-              # Get the actual field objects for each field name
-              fields = [model._meta.get_field(field) for field in field_names]
-              # Generate the SQL statement to create the index for these fields
-              sql=self._create_index_sql(model, fields, suffix="_idx")
-              # If SQL was generated (not None), add it to the output list
-              if sql:
-                output.append(sql)
+               # Get the actual field objects for each field name
+               fields = [model._meta.get_field(field) for field in field_names]
+               # Generate the SQL statement to create the index for these fields
+               sql=self._create_index_sql(model, fields, suffix="_idx")
+               # If SQL was generated (not None), add it to the output list
+               if sql:
+                 output.append(sql)
 
         if django_version >= (4, 0):
             for field_names in model._meta.unique_together:
@@ -812,13 +812,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             else:
                 # Handle index_together for only django version < 5.1
                 if django_version < (5, 1):
-                 # Get the field objects for each field name in the index_together. 
-                 for fields in model._meta.index_together:
-                    # If the old field's column is among the columns for this index,
-                    # add this set of columns to index_columns for later index recreation.
-                    columns = [model._meta.get_field(field) for field in fields]
-                    if old_field.column in [c.column for c in columns]:
-                        index_columns.append(columns)
+                   # Get the field objects for each field name in the index_together. 
+                   for fields in model._meta.index_together:
+                      # If the old field's column is among the columns for this index,
+                      # add this set of columns to index_columns for later index recreation.
+                      columns = [model._meta.get_field(field) for field in fields]
+                      if old_field.column in [c.column for c in columns]:
+                         index_columns.append(columns)
             if index_columns:
                 for columns in index_columns:
                     create_index_sql_statement = self._create_index_sql(model, columns)
