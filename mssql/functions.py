@@ -94,18 +94,33 @@ def sqlserver_power(self, compiler, connection, **extra_context):
         )
 
 def sqlserver_mod(self, compiler, connection):
-    # MSSQL doesn't have keyword MOD
+    # Get the source expressions (the two arguments to the Mod function)
     expr = self.get_source_expressions()
-    number_a = compiler.compile(expr[0])
-    number_b = compiler.compile(expr[1])
-    return self.as_sql(
-        compiler, connection,
-        function="",
-        template='(ABS({a}) - FLOOR(ABS({a}) / ABS({b})) * ABS({b})) * SIGN({a}) * SIGN({b})'.format(
-            a=number_a[0], b=number_b[0]),
-        arg_joiner=""
-    )
-
+    # Compile the first argument (dividend) to SQL and parameters
+    sql1, params1 = compiler.compile(expr[0])
+    # Compile the second argument (divisor) to SQL and parameters
+    sql2, params2 = compiler.compile(expr[1])
+    # Build the SQL template for modulus using ABS, FLOOR, and SIGN to mimic Python's % operator
+    # This ensures correct sign handling for negative numbers, matching Python's behavior
+    # We cannot use the standard SQL modulus operator (%) here because Django expects a function call, not an operator,
+    template = '(ABS(%s) - FLOOR(ABS(%s) / ABS(%s)) * ABS(%s)) * SIGN(%s) * SIGN(%s)'   
+    # Substitute the compiled SQL fragments into the template
+    sql = template % (sql1, sql1, sql2, sql2, sql1, sql2)   
+    # Combine all parameters in the correct order for the SQL statement
+    params = params1 + params1 + params2 + params2 + params1 + params2
+    try:
+       # Try direct SQL and param return
+       return sql, params
+    except TypeError:
+        # Fallback for older Django handling
+        return self.as_sql(
+           compiler,
+           connection,
+           function="",
+           template=sql,
+           arg_joiner="",
+           params=params
+        )
 
 def sqlserver_nth_value(self, compiler, connection, **extra_content):
     raise NotSupportedError('This backend does not support the NthValue function')
