@@ -301,8 +301,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             output.extend(self._field_indexes_sql(model, field))
         # meta.index_together is removed in Django 5.1, so add a version check to handle compatibility
         if django_version <= (5, 0):
+           if model._meta.index_together: 
             # Iterate over each set of field names defined in index_together
-            for field_names in model._meta.index_together:
+             for field_names in model._meta.index_together:
                 # Get the actual field objects for each field name
                 fields = [model._meta.get_field(field) for field in field_names]
                 # Generate the SQL statement to create the index for these fields
