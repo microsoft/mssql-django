@@ -101,16 +101,14 @@ def sqlserver_mod(self, compiler, connection):
     sql1, params1 = compiler.compile(expr[0])
     # Compile the second argument (divisor) to SQL and parameters
     sql2, params2 = compiler.compile(expr[1])
-    # Build the SQL template for modulus using ABS, FLOOR, and SIGN to mimic Python's % operator
-    # This ensures correct sign handling for negative numbers, matching Python's behavior
-    # We cannot use the standard SQL modulus operator (%) here because Django expects a function call, not an operator,
-    template = '(ABS(%s) - FLOOR(ABS(%s) / ABS(%s)) * ABS(%s)) * SIGN(%s) * SIGN(%s)'   
+    # The template uses the SQL Server syntax for modulus
+    template = '(%s %% %s)'
     # Substitute the compiled SQL fragments into the template
-    sql = template % (sql1, sql1, sql2, sql2, sql1, sql2)   
+    sql= template % (sql1, sql2)
     # Combine all parameters in the correct order for the SQL statement
-    params = params1 + params1 + params2 + params2 + params1 + params2
+    params=params1+params2
     try:
-       # Try direct SQL and param return
+       # return SQL and params
        return sql, params
     except TypeError:
         # Fallback for older Django handling
