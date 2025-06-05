@@ -133,13 +133,18 @@ def _as_sql_variance(self, compiler, connection):
     return self.as_sql(compiler, connection, function=function)
 
 def _as_sql_window(self, compiler, connection, template=None):
+    # Get the expressions supported by the backend
     connection.ops.check_expression_support(self)
+    # Raise an error if window expressions are not supported.
     if not connection.features.supports_over_clause:
         raise NotSupportedError("This backend does not support window expressions.")
+    # Compile the source expression for the window function.
     expr_sql, params = compiler.compile(self.source_expression)
+    # Initialize window SQL parts and parameters.
     window_sql, window_params = [], ()
-
+    # Handle PARTITION BY clause if present.
     if self.partition_by is not None:
+        # Compile the PARTITION BY clause.
         sql_expr, sql_params = self.partition_by.as_sql(
             compiler=compiler,
             connection=connection,
@@ -148,21 +153,32 @@ def _as_sql_window(self, compiler, connection, template=None):
         window_sql.append(sql_expr)
         window_params += tuple(sql_params)
 
+    # Handle ORDER BY clause if present.
     if self.order_by is not None:
+        # Compile the ORDER BY clause.
         order_sql, order_params = compiler.compile(self.order_by)
+        # Handles cases where order_by compiles to empty
+        if not order_sql.strip():
+            order_sql = "ORDER BY (SELECT NULL)"
+            order_params = ()
         window_sql.append(order_sql)
         window_params += tuple(order_params)
     else:
-        # MSSQL window functions require an OVER clause with ORDER BY
+        # Default to ORDER BY (SELECT NULL) if no order_by is specified.
         window_sql.append('ORDER BY (SELECT NULL)')
 
+    # Handle frame specification if present.
     if self.frame:
+        # Compile the frame clause.
         frame_sql, frame_params = compiler.compile(self.frame)
         window_sql.append(frame_sql)
         window_params += tuple(frame_params)
 
+    # Use provided template or default to self.template.
     template = template or self.template
-
+    # Format the final SQL statement for the window function.
+    sql = template % {"expression": expr_sql, "window": " ".join(window_sql).strip()}
+    # Return the formatted SQL and combined parameters.
     return (
         template % {"expression": expr_sql, "window": " ".join(window_sql).strip()},
         (*params, *window_params),
