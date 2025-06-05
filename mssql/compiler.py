@@ -176,8 +176,6 @@ def _as_sql_window(self, compiler, connection, template=None):
 
     # Use provided template or default to self.template.
     template = template or self.template
-    # Format the final SQL statement for the window function.
-    sql = template % {"expression": expr_sql, "window": " ".join(window_sql).strip()}
     # Return the formatted SQL and combined parameters.
     return (
         template % {"expression": expr_sql, "window": " ".join(window_sql).strip()},
