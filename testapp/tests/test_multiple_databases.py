@@ -6,7 +6,14 @@ from unittest import skipUnless
 from django import VERSION
 from django.core.exceptions import ValidationError
 from django.db import OperationalError
-from django.db.backends.sqlite3.operations import DatabaseOperations
+"""
+    Import BaseDatabaseOperations before sqlite3.operations.DatabaseOperations because:
+    1. DatabaseOperations in sqlite3.operations inherits from BaseDatabaseOperations.
+    2. Importing the base class first avoids potential circular import issues.
+    3. This order ensures the base class is available for subclassing.
+    4. This behavior was introduced in Django 5.1 and is backward compatible with earlier versions.
+"""
+from django.db.backends.base.operations import BaseDatabaseOperations
 from django.test import TestCase, skipUnlessDBFeature
 
 from ..models import BinaryData, Pizza, Topping
@@ -26,8 +33,8 @@ class TestMultpleDatabases(TestCase):
         # Issue: https://github.com/microsoft/mssql-django/issues/92
 
         # Mimic databases that have a limit on parameters (e.g. Oracle DB)
-        old_max_in_list_size = DatabaseOperations.max_in_list_size
-        DatabaseOperations.max_in_list_size = lambda self: 100
+        old_max_in_list_size = BaseDatabaseOperations.max_in_list_size
+        BaseDatabaseOperations.max_in_list_size = lambda self: 100
 
         mssql_iterations = 3000
         Pizza.objects.bulk_create([Pizza() for _ in range(mssql_iterations)])
@@ -43,7 +50,7 @@ class TestMultpleDatabases(TestCase):
         prefetch_result_sqlite = Pizza.objects.using('sqlite').prefetch_related('toppings')
         self.assertEqual(len(prefetch_result_sqlite), sqlite_iterations)
 
-        DatabaseOperations.max_in_list_size = old_max_in_list_size
+        BaseDatabaseOperations.max_in_list_size = old_max_in_list_size
 
     def test_binaryfield_init(self):
         binary_data = b'\x00\x46\xFE'

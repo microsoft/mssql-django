@@ -21,6 +21,7 @@ CLASSIFIERS = [
     'Framework :: Django :: 4.1',
     'Framework :: Django :: 4.2',
     'Framework :: Django :: 5.0',
+    'Framework :: Django :: 5.1',
 ]
 
 this_directory = path.abspath(path.dirname(__file__))
@@ -42,7 +43,7 @@ setup(
     license='BSD',
     packages=find_packages(),
     install_requires=[
-        'django>=3.2,<5.1',
+        'django>=3.2,<5.2',
         'pyodbc>=3.0',
         'pytz',
     ],
