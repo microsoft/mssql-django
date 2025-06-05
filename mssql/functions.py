@@ -94,31 +94,31 @@ def sqlserver_power(self, compiler, connection, **extra_context):
         )
 
 def sqlserver_mod(self, compiler, connection):
-    # MSSQL doesn't have keyword MOD
+    # MSSQL doesn't have the MOD keyword
     # Get the source expressions (the two arguments to the Mod function)
     expr = self.get_source_expressions()
-    # Compile the first argument (dividend) to SQL and parameters
-    sql1, params1 = compiler.compile(expr[0])
-    # Compile the second argument (divisor) to SQL and parameters
-    sql2, params2 = compiler.compile(expr[1])
-    # The template uses the SQL Server syntax for modulus
-    template = '(%s %% %s)'
-    # Substitute the compiled SQL fragments into the template
-    sql= template % (sql1, sql2)
-    # Combine all parameters in the correct order for the SQL statement
-    params=params1+params2
+    # Compile the left-hand side (lhs) expression to SQL and parameters.
+    lhs_sql, lhs_params = compiler.compile(expr[0])
+    # Compile the right-hand side (rhs) expression to SQL and parameters.
+    rhs_sql, rhs_params = compiler.compile(expr[1])   
+    # Build the SQL template for modulo using ABS, FLOOR, and SIGN functions.
+    template = '(ABS(%s) - FLOOR(ABS(%s) / ABS(%s)) * ABS(%s)) * SIGN(%s) * SIGN(%s)'  
+    # Substitute the compiled SQL expressions into the template.
+    sql = template % (lhs_sql, lhs_sql, rhs_sql, rhs_sql, lhs_sql, rhs_sql)   
+    # Combine all parameters in the correct order for the SQL statement.
+    params = lhs_params + lhs_params + rhs_params + rhs_params + lhs_params + rhs_params    
     try:
-       # return SQL and params
-       return sql, params
+        # return sql,params
+        return sql, params
     except TypeError:
         # Fallback for older Django handling
         return self.as_sql(
-           compiler,
-           connection,
-           function="",
-           template=sql,
-           arg_joiner="",
-           params=params
+            compiler,
+            connection,
+            function="",
+            template=sql,
+            arg_joiner="",
+            params=params
         )
 
 def sqlserver_nth_value(self, compiler, connection, **extra_content):
