@@ -377,7 +377,11 @@ def _get_check_sql(self, model, schema_editor):
         query = Query(model=model, alias_cols=False)
     else:
         query = Query(model=model)
-    # Build the query to check the condition of the CheckConstraint.    
+    # Build the query to check the condition of the CheckConstraint.
+    # Note: Starting from Django 5.1, the CheckConstraint API changed:
+    # the attribute 'self.check' was replaced by 'self.condition'.
+    # For backwards compatibility, we use 'self.check' for versions < 5.1,
+    # and 'self.condition' for 5.1 and above.
     if VERSION >= (5, 1):
         where = query.build_where(self.condition)
     else:
