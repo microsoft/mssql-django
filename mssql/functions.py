@@ -16,8 +16,10 @@ from django.db.models.functions.text import Replace
 from django.db.models.lookups import In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
-from django.db.models import Value
-from django.db.models.functions import JSONArray
+# import value and JSONArray for Django 5.2+
+if VERSION >= (5, 2):
+    from django.db.models import Value
+    from django.db.models.functions import JSONArray
 
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
