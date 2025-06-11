@@ -377,7 +377,16 @@ def _get_check_sql(self, model, schema_editor):
         query = Query(model=model, alias_cols=False)
     else:
         query = Query(model=model)
-    where = query.build_where(self.check)
+    # Build the query to check the condition of the CheckConstraint.
+    # Note: Starting from Django 5.1, the CheckConstraint API changed:
+    # the attribute 'self.check' was replaced by 'self.condition'.
+    # For backwards compatibility, we use 'self.check' for versions < 5.1,
+    # and 'self.condition' for 5.1 and above.
+    if VERSION >= (5, 1):
+        where = query.build_where(self.condition)
+    else:
+        # use check for backwards compatibility    
+        where = query.build_where(self.check)    
     compiler = query.get_compiler(connection=schema_editor.connection)
     sql, params = where.as_sql(compiler, schema_editor.connection)
     if schema_editor.connection.vendor == 'microsoft':
