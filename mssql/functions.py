@@ -16,6 +16,8 @@ from django.db.models.functions.text import Replace
 from django.db.models.lookups import In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
+from django.db.models import Value
+from django.db.models.functions import JSONArray
 
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
@@ -211,6 +213,70 @@ def unquote_json_rhs(rhs_params):
             rhs_params = [param.replace('"', '') for param in rhs_params]
     return rhs_params
 
+def sqlserver_json_array(self, compiler, connection, **extra_context):
+    """
+    SQL Server implementation of JSONArray.
+    """
+    elements = []  # List to hold SQL fragments for each array element
+    params = []    # List to hold parameters for the SQL query
+
+    # Iterate through each source expression (element of the array)
+    for arg in self.source_expressions:
+        # Check if the argument is a Value instance
+        if isinstance(arg, Value):
+            # If it's a Value, we need to handle it based on its type
+            val = arg.value
+            # If the value is None, we represent it as SQL NULL
+            if val is None:
+                elements.append('NULL')     
+            elif isinstance(val, (int, float)):
+                # Numbers are inserted as it is, without quotes
+                elements.append('%s')
+                params.append(str(val))
+            elif isinstance(val, (list, dict)):
+                # Nested JSON structures are handled with JSON_QUERY
+                elements.append('JSON_QUERY(%s)')
+                params.append(json.dumps(val))
+            else:
+                # Strings and other types are cast to NVARCHAR(MAX)
+                elements.append('CAST(%s AS NVARCHAR(MAX))')
+                params.append(str(val))
+        else:
+            # Compile non-Value expressions (e.g., fields, functions)
+            arg_sql, arg_params = compiler.compile(arg)
+            if isinstance(arg, JSONArray):
+                # Nested JSONArray: use its SQL directly
+                elements.append(arg_sql)
+            else:
+                # Other expressions: cast to NVARCHAR(MAX)
+                elements.append(f'CAST({arg_sql} AS NVARCHAR(MAX))')
+            if arg_params:
+                params.extend(arg_params)
+    # If there are no elements, return an empty JSON array
+    if not elements:
+        return "JSON_QUERY('[]')", []
+
+    # Build the SQL for the JSON array using STRING_AGG and CASE for formatting
+    sql = (
+        "JSON_QUERY(("
+        "SELECT '[' + "
+        "STRING_AGG("
+        "CASE "
+        "WHEN value IS NULL THEN 'null' "  # NULLs as JSON null
+        "WHEN ISJSON(value) = 1 THEN value "  # Valid JSON: insert as-is
+        "WHEN ISNUMERIC(value) = 1 THEN CAST(value AS NVARCHAR(MAX)) "  # Numbers: insert as-is
+        "ELSE CONCAT('\"', REPLACE(REPLACE(value, '\\', '\\\\'), '\"', '\\\"'), '\"') "  # Strings: escape and quote
+        "END, "
+        "','"
+        ") + ']' "
+        f"FROM (VALUES {','.join('(' + el + ')' for el in elements)}) AS t(value)))"
+    )
+
+    return sql, params
+
+# Register for Django 5.2+ so that JSONArray uses this implementation on SQL Server
+if VERSION >= (5, 2):
+    JSONArray.as_microsoft = sqlserver_json_array
 
 def json_KeyTransformExact_process_rhs(self, compiler, connection):
     rhs, rhs_params = key_transform_exact_process_rhs(self, compiler, connection)
