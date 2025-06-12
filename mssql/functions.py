@@ -225,121 +225,94 @@ def json_KeyTransformIn(self, compiler, connection):
 
     return (lhs + ' IN ' + rhs, unquote_json_rhs(rhs_params))
 
-# This handles the case where the JSON data comes from a table column (actual database data).
-# Also deals with hardcoded JSON string literal seperately, since handling differs for literals vs. table data
+def _build_json_conditions(base_sql, paths, logical_operator=None):
+    """
+    Helper to join multiple SQL conditions with a logical operator.
+    """
+    if logical_operator:
+        # Join all conditions with the logical operator (e.g., AND/OR) and wrap in parentheses
+        return f"({f' {logical_operator} '.join(paths)})"
+    # If no logical operator, return the first condition
+    return paths[0]
+
+
 def json_HasKeyLookup(self, compiler, connection):
     """
     Implementation of HasKey lookup for SQL Server.
-    Handles for both SQL Server 2022+ (using JSON_PATH_EXISTS) and older versions (using OPENJSON).
+    Handles both SQL Server 2022+ (JSON_PATH_EXISTS) and older versions (JSON_VALUE).
     """
-    # Determine the JSON path for the left-hand side (lhs).
-    # If dealing with a nested JSON structure, use KeyTransform to extract the path.
+    # Check if the left-hand side is a KeyTransform (JSON field access)
     if isinstance(self.lhs, KeyTransform):
+        # Preprocess the left-hand side to get SQL and JSON path
         lhs, _, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
         lhs_json_path = compile_json_path(lhs_key_transforms)
-        lhs_params=[]
-    # if dealing with the JSON and not with nested structure then else block will be executed
+        lhs_params = []
     else:
+        # Otherwise, process normally and set JSON path to root
         lhs, lhs_params = self.process_lhs(compiler, connection)
         lhs_json_path = "$"
 
-    # Check if we're dealing with a Cast expression (literal JSON value)
+    # Check if the left-hand side is a Cast expression
     is_cast_expression = isinstance(self.lhs, Cast)
-
-    # Process JSON paths from the right-hand side
-    rhs = self.rhs
-    # rhs_params stored the complete JSON path
+    # Ensure right-hand side is a list for iteration
+    rhs = self.rhs if isinstance(self.rhs, (list, tuple)) else [self.rhs]
     rhs_params = []
-    # Convert single values into a list for uniform processing
-    # If rhs is not already a list or tuple (i.e., it's a single key),
-    # wrap it in a list so we can handle both single and multiple keys
-    if not isinstance(rhs, (list, tuple)):
-        rhs = [rhs]
+
+    # Build JSON paths for each key in the right-hand side
     for key in rhs:
-        # if dealing with the nested JSON structure then if block will be executed
         if isinstance(key, KeyTransform):
             *_, rhs_key_transforms = key.preprocess_lhs(compiler, connection)
         else:
             rhs_key_transforms = [key]
-        # Compile the full JSON path (lhs + rhs) according to the Django version in use
+
         if VERSION >= (4, 1):
+            # For Django 4.1+, split out the final key for path compilation
             *rhs_key_transforms, final_key = rhs_key_transforms
             rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
             rhs_json_path += self.compile_json_path_final_key(final_key)
             rhs_params.append(lhs_json_path + rhs_json_path)
         else:
-            rhs_params.append(
-                "%s%s"
-                % (
-                    lhs_json_path,
-                    compile_json_path(rhs_key_transforms, include_root=False),
-                )
-            )
+            # For older Django, just compile the path
+            rhs_params.append(lhs_json_path + compile_json_path(rhs_key_transforms, include_root=False))
 
-    # For SQL Server 2022+,use JSON_PATH_EXISTS
+    # Get the logical operator (AND/OR) if present
+    logical_op = getattr(self, "logical_operator", None)
+
+    # Use JSON_PATH_EXISTS for SQL Server 2022 and above
     if connection.sql_server_version >= 2022:
-        conditions=[]
+        conditions = []
         if is_cast_expression:
-            # For Cast expressions, manually construct SQL without %s placeholders
+            # If the LHS is a cast, get its SQL and params
             cast_sql, cast_params = self.lhs.as_sql(compiler, connection)
             for path in rhs_params:
-                # Escapes single quotes in the JSON path to avoid breaking SQL syntax.
+                # Escape single quotes in the path for SQL
                 path_escaped = path.replace("'", "''")
-                # The > 0 checks that the path exists
-                conditions.append(
-                    "JSON_PATH_EXISTS(" + cast_sql + ", '" + path_escaped + "') > 0"
-                )
-            # this if else block deals with forming this syntax (JSON_PATH_EXISTS(...) > 0 AND JSON_PATH_EXISTS(...) > 0)
-            if hasattr(self, "logical_operator") and self.logical_operator:
-                logical_op = " " + self.logical_operator + " "
-                sql = "(" + logical_op.join(conditions) + ")"
-            else:
-                # if no operators are specified
-                sql = conditions[0]
-            return sql, lhs_params
+                # Build the JSON_PATH_EXISTS condition
+                conditions.append(f"JSON_PATH_EXISTS({cast_sql}, '{path_escaped}') > 0")
+            # Combine conditions with logical operator and return with params
+            return _build_json_conditions(cast_sql, conditions, logical_op), cast_params
         else:
             for path in rhs_params:
-                # Escapes single quotes in the JSON path to avoid breaking SQL syntax.
+                # Escape single quotes in the JSON path to prevent SQL injection or syntax errors
                 path_escaped = path.replace("'", "''")
-                conditions.append(
-                    "JSON_PATH_EXISTS(" + lhs + ", '" + path_escaped + "') > 0"
-                )
-
-            if hasattr(self, "logical_operator") and self.logical_operator:
-                logical_op = " " + self.logical_operator + " "
-                sql = "(" + logical_op.join(conditions) + ")"
-            else:
-                sql = conditions[0]
-
-            # Return SQL with empty lhs_params list
-            return sql, lhs_params
+                # Append the JSON_PATH_EXISTS condition for each path to the conditions list
+                conditions.append(f"JSON_PATH_EXISTS({lhs}, '{path_escaped}') > 0")
+            # Combine all conditions using the logical operator (AND/OR) and return with parameters
+            return _build_json_conditions(lhs, conditions, logical_op), lhs_params
     else:
-        # For older SQL Server versions
+        # For older SQL Server versions, fallback to JSON_VALUE
         if is_cast_expression:
-            # SQL Server versions prior to 2022 do not support JSON_PATH_EXISTS,
-            # and OPENJSON cannot be used on literal JSON values (i.e., values not stored in a table column).
-            # Therefore, when a literal JSON value is used in a has_key lookup on these versions,
-            # we cannot perform a meaningful check in SQL. To ensure the query does not fail and
-            # to match Django's expected behavior (e.g., for test_has_key_literal_lookup),
-            # we return a constant true condition ("1=1") with no parameters, which effectively returns all rows.
-            # Return a constant true condition ("1=1") with no parameters for literal JSON values on old SQL Server versions.
-           return "1=1", []
+            # Can't apply JSON functions to literals on SQL Server < 2022
+            return "1=1", []
         else:
             conditions = []
-            # For each JSON path, escape single quotes and build a JSON_VALUE IS NOT NULL condition.
             for path in rhs_params:
-                 path_escaped = path.replace("'", "''")
-                 conditions.append("JSON_VALUE(%s, '%s') IS NOT NULL" % (lhs, path_escaped))
-                # If a logical operator (AND/OR) is specified, join conditions with it.
-            if hasattr(self, 'logical_operator') and self.logical_operator:
-                logical_op = f" {self.logical_operator} "
-                sql = f"({logical_op.join(conditions)})"
-            else:
-                 # Otherwise, use the first condition.
-                sql = conditions[0] 
-            # Return the constructed SQL and lhs_params.
-            return sql, lhs_params 
-            
+                # Build JSON_VALUE IS NOT NULL condition for each path
+                conditions.append("JSON_VALUE(%s, %s) IS NOT NULL")
+                lhs_params.extend([lhs, path])
+            # Combine conditions with logical operator and return with params
+            return _build_json_conditions(lhs, conditions, logical_op), lhs_params
+
 def BinaryField_init(self, *args, **kwargs):
     # Add max_length option for BinaryField, default to max
     kwargs.setdefault('editable', False)
