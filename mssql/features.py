@@ -3,8 +3,10 @@
 
 from django.db.backends.base.features import BaseDatabaseFeatures
 from django.utils.functional import cached_property
-
-
+from django import VERSION as django_version
+# Import CompositePrimaryKey only if Django version is 5.2 or higher
+if django_version >= (5, 2):    
+    from django.db.models.fields.composite import CompositePrimaryKey
 class DatabaseFeatures(BaseDatabaseFeatures):
     allows_group_by_select_index = False
     allow_sliced_subqueries_with_in = False
@@ -63,8 +65,11 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_default_keyword_in_bulk_insert = True
     supports_stored_generated_columns = True
     supports_virtual_generated_columns = True
-
-
+    # CompositePrimaryKey support is only available in Django 5.2 and later
+    supports_composite_primary_keys = django_version >= (5, 2)
+    if django_version >= (5, 2) and isinstance(CompositePrimaryKey, type):
+       # Set fallback tupple lookup support
+       supports_tuple_lookups = False
     @cached_property
     def has_zoneinfo_database(self):
         with self.connection.cursor() as cursor:
