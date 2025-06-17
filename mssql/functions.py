@@ -94,18 +94,32 @@ def sqlserver_power(self, compiler, connection, **extra_context):
         )
 
 def sqlserver_mod(self, compiler, connection):
-    # MSSQL doesn't have keyword MOD
+    # MSSQL doesn't have the MOD keyword
+    # Get the source expressions (the two arguments to the Mod function)
     expr = self.get_source_expressions()
-    number_a = compiler.compile(expr[0])
-    number_b = compiler.compile(expr[1])
-    return self.as_sql(
-        compiler, connection,
-        function="",
-        template='(ABS({a}) - FLOOR(ABS({a}) / ABS({b})) * ABS({b})) * SIGN({a}) * SIGN({b})'.format(
-            a=number_a[0], b=number_b[0]),
-        arg_joiner=""
-    )
-
+    # Compile the left-hand side (lhs) expression to SQL and parameters.
+    lhs_sql, lhs_params = compiler.compile(expr[0])
+    # Compile the right-hand side (rhs) expression to SQL and parameters.
+    rhs_sql, rhs_params = compiler.compile(expr[1])   
+    # Build the SQL template for modulo using ABS, FLOOR, and SIGN functions.
+    template = '(ABS(%s) - FLOOR(ABS(%s) / ABS(%s)) * ABS(%s)) * SIGN(%s) * SIGN(%s)'  
+    # Substitute the compiled SQL expressions into the template.
+    sql = template % (lhs_sql, lhs_sql, rhs_sql, rhs_sql, lhs_sql, rhs_sql)   
+    # Combine all parameters in the correct order for the SQL statement.
+    params = lhs_params + lhs_params + rhs_params + rhs_params + lhs_params + rhs_params    
+    try:
+        # return sql,params
+        return sql, params
+    except TypeError:
+        # Fallback for older Django handling
+        return self.as_sql(
+            compiler,
+            connection,
+            function="",
+            template=sql,
+            arg_joiner="",
+            params=params
+        )
 
 def sqlserver_nth_value(self, compiler, connection, **extra_content):
     raise NotSupportedError('This backend does not support the NthValue function')
@@ -332,7 +346,7 @@ def _get_check_sql(self, model, schema_editor):
     # Note: Starting from Django 5.1, the CheckConstraint API changed:
     # the attribute 'self.check' was replaced by 'self.condition'.
     # For backwards compatibility, we use 'self.check' for versions < 5.1,
-    # and 'self.condition' for 5.1 and above.   
+    # and 'self.condition' for 5.1 and above.
     if VERSION >= (5, 1):
         where = query.build_where(self.condition)
     else:
