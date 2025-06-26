@@ -239,40 +239,40 @@ def json_KeyTransformIn(self, compiler, connection):
 
     return (lhs + ' IN ' + rhs, unquote_json_rhs(rhs_params))
 
-def _build_json_conditions(base_sql, paths, logical_operator=None):
-    """
-    Helper to join multiple SQL conditions with a logical operator.
-    """
-    if logical_operator:
-        # Join all conditions with the logical operator (e.g., AND/OR) and wrap in parentheses
-        return f"({f' {logical_operator} '.join(paths)})"
-    # If no logical operator, return the first condition
-    return paths[0]
-
-
 def json_HasKeyLookup(self, compiler, connection):
     """
     Implementation of HasKey lookup for SQL Server.
-    Handles both SQL Server 2022+ (JSON_PATH_EXISTS) and older versions (JSON_VALUE).
+
+    Supports two methods depending on SQL Server version:
+    - SQL Server 2022+: Uses JSON_PATH_EXISTS function
+    - Older versions: Uses JSON_VALUE IS NOT NULL
     """
-    # Check if the left-hand side is a KeyTransform (JSON field access)
+
+    def _combine_conditions(conditions):
+        if hasattr(self, 'logical_operator') and self.logical_operator:
+            logical_op = f" {self.logical_operator} "
+            return f"({logical_op.join(conditions)})"
+        else:
+            return conditions[0]
+
+    # Process JSON path from the left-hand side.
     if isinstance(self.lhs, KeyTransform):
-        # Preprocess the left-hand side to get SQL and JSON path
         lhs, _, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
         lhs_json_path = compile_json_path(lhs_key_transforms)
         lhs_params = []
     else:
-        # Otherwise, process normally and set JSON path to root
         lhs, lhs_params = self.process_lhs(compiler, connection)
-        lhs_json_path = "$"
+        lhs_json_path = '$'
 
-    # Check if the left-hand side is a Cast expression
+    # Check if we're dealing with a Cast expression (literal JSON value)
     is_cast_expression = isinstance(self.lhs, Cast)
-    # Ensure right-hand side is a list for iteration
-    rhs = self.rhs if isinstance(self.rhs, (list, tuple)) else [self.rhs]
-    rhs_params = []
 
-    # Build JSON paths for each key in the right-hand side
+    # Process JSON paths from the right-hand side
+    rhs = self.rhs
+    if not isinstance(rhs, (list, tuple)):
+        rhs = [rhs]
+
+    rhs_params = []
     for key in rhs:
         if isinstance(key, KeyTransform):
             *_, rhs_key_transforms = key.preprocess_lhs(compiler, connection)
@@ -280,52 +280,49 @@ def json_HasKeyLookup(self, compiler, connection):
             rhs_key_transforms = [key]
 
         if VERSION >= (4, 1):
-            # For Django 4.1+, split out the final key for path compilation
             *rhs_key_transforms, final_key = rhs_key_transforms
             rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
             rhs_json_path += self.compile_json_path_final_key(final_key)
             rhs_params.append(lhs_json_path + rhs_json_path)
         else:
-            # For older Django, just compile the path
-            rhs_params.append(lhs_json_path + compile_json_path(rhs_key_transforms, include_root=False))
+            rhs_params.append(
+                '%s%s' % (
+                    lhs_json_path,
+                    compile_json_path(rhs_key_transforms, include_root=False)
+                )
+            )
 
-    # Get the logical operator (AND/OR) if present
-    logical_op = getattr(self, "logical_operator", None)
-
-    # Use JSON_PATH_EXISTS for SQL Server 2022 and above
+    # For SQL Server 2022+, use JSON_PATH_EXISTS
     if connection.sql_server_version >= 2022:
+        params = []
         conditions = []
         if is_cast_expression:
-            # If the LHS is a cast, get its SQL and params
             cast_sql, cast_params = self.lhs.as_sql(compiler, connection)
+
             for path in rhs_params:
-                # Escape single quotes in the path for SQL
                 path_escaped = path.replace("'", "''")
-                # Build the JSON_PATH_EXISTS condition
                 conditions.append(f"JSON_PATH_EXISTS({cast_sql}, '{path_escaped}') > 0")
-            # Combine conditions with logical operator and return with params
-            return _build_json_conditions(cast_sql, conditions, logical_op), cast_params
+            params.extend(cast_params)
+
+            return _combine_conditions(conditions), params
         else:
             for path in rhs_params:
-                # Escape single quotes in the JSON path to prevent SQL injection or syntax errors
                 path_escaped = path.replace("'", "''")
-                # Append the JSON_PATH_EXISTS condition for each path to the conditions list
-                conditions.append(f"JSON_PATH_EXISTS({lhs}, '{path_escaped}') > 0")
-            # Combine all conditions using the logical operator (AND/OR) and return with parameters
-            return _build_json_conditions(lhs, conditions, logical_op), lhs_params
+                conditions.append("JSON_PATH_EXISTS(%s, '%s') > 0" % (lhs, path_escaped))
+
+            return _combine_conditions(conditions), lhs_params
+
     else:
-        # For older SQL Server versions, fallback to JSON_VALUE
         if is_cast_expression:
-            # Can't apply JSON functions to literals on SQL Server < 2022
             return "1=1", []
         else:
             conditions = []
             for path in rhs_params:
-                # Build JSON_VALUE IS NOT NULL condition for each path
-                conditions.append("JSON_VALUE(%s, %s) IS NOT NULL")
-                lhs_params.extend([lhs, path])
-            # Combine conditions with logical operator and return with params
-            return _build_json_conditions(lhs, conditions, logical_op), lhs_params
+                path_escaped = path.replace("'", "''")
+                conditions.append("JSON_VALUE(%s, '%s') IS NOT NULL" % (lhs, path_escaped))
+
+            return _combine_conditions(conditions), lhs_params
+
 
 def BinaryField_init(self, *args, **kwargs):
     # Add max_length option for BinaryField, default to max
