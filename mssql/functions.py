@@ -301,7 +301,7 @@ def json_HasKeyLookup(self, compiler, connection):
             )
 
     # For SQL Server 2022+, use JSON_PATH_EXISTS
-    if connection.sql_server_version >= 2022:
+    if connection.sql_server_version >= 2022: 
         params = []
         conditions = []
         if is_cast_expression:
