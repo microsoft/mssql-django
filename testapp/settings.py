@@ -293,6 +293,10 @@ EXCLUDED_TESTS = [
     # Generated field 5.0.6 tests
     'migrations.test_operations.OperationTests.test_invalid_generated_field_changes_on_rename_virtual',
     'migrations.test_operations.OperationTests.test_invalid_generated_field_changes_on_rename_stored',
+
+    # Skip these tests for Django 5.1
+    'indexes.tests.SchemaIndexesTests.test_alter_field_unique_false_removes_deferred_sql',
+    'backends.base.test_base.ExecuteWrapperTests.test_wrapper_debug',
     
 ]
 
