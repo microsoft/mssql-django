@@ -249,6 +249,7 @@ def json_HasKeyLookup(self, compiler, connection):
     """
 
     def _combine_conditions(conditions):
+        # Combine multiple conditions with the logical operator if present, else return the first condition
         if hasattr(self, 'logical_operator') and self.logical_operator:
             logical_op = f" {self.logical_operator} "
             return f"({logical_op.join(conditions)})"
@@ -257,10 +258,12 @@ def json_HasKeyLookup(self, compiler, connection):
 
     # Process JSON path from the left-hand side.
     if isinstance(self.lhs, KeyTransform):
+        # If lhs is a KeyTransform, preprocess to get SQL and JSON path
         lhs, _, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
         lhs_json_path = compile_json_path(lhs_key_transforms)
         lhs_params = []
     else:
+        # Otherwise, process lhs normally
         lhs, lhs_params = self.process_lhs(compiler, connection)
         lhs_json_path = '$'
 
@@ -270,21 +273,26 @@ def json_HasKeyLookup(self, compiler, connection):
     # Process JSON paths from the right-hand side
     rhs = self.rhs
     if not isinstance(rhs, (list, tuple)):
+        # Ensure rhs is a list for uniform processing
         rhs = [rhs]
 
     rhs_params = []
     for key in rhs:
         if isinstance(key, KeyTransform):
+            # If key is a KeyTransform, preprocess to get JSON path
             *_, rhs_key_transforms = key.preprocess_lhs(compiler, connection)
         else:
+            # Otherwise, treat key as a single transform
             rhs_key_transforms = [key]
 
         if VERSION >= (4, 1):
+            # For Django 4.1+, split out the final key and compile the path
             *rhs_key_transforms, final_key = rhs_key_transforms
             rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
             rhs_json_path += self.compile_json_path_final_key(final_key)
             rhs_params.append(lhs_json_path + rhs_json_path)
         else:
+            # For older Django, just compile the path
             rhs_params.append(
                 '%s%s' % (
                     lhs_json_path,
@@ -297,28 +305,36 @@ def json_HasKeyLookup(self, compiler, connection):
         params = []
         conditions = []
         if is_cast_expression:
+            # If lhs is a Cast, get its SQL and params
             cast_sql, cast_params = self.lhs.as_sql(compiler, connection)
 
             for path in rhs_params:
+                # Escape single quotes in the path
                 path_escaped = path.replace("'", "''")
+                # Build the JSON_PATH_EXISTS condition
                 conditions.append(f"JSON_PATH_EXISTS({cast_sql}, '{path_escaped}') > 0")
             params.extend(cast_params)
 
             return _combine_conditions(conditions), params
         else:
             for path in rhs_params:
+                # Escape single quotes in the path
                 path_escaped = path.replace("'", "''")
+                # Build the JSON_PATH_EXISTS condition using lhs
                 conditions.append("JSON_PATH_EXISTS(%s, '%s') > 0" % (lhs, path_escaped))
 
             return _combine_conditions(conditions), lhs_params
 
     else:
         if is_cast_expression:
+            # If lhs is a Cast and SQL Server is old, just return a dummy condition
             return "1=1", []
         else:
             conditions = []
             for path in rhs_params:
+                # Escape single quotes in the path
                 path_escaped = path.replace("'", "''")
+                # Build the JSON_VALUE IS NOT NULL condition
                 conditions.append("JSON_VALUE(%s, '%s') IS NOT NULL" % (lhs, path_escaped))
 
             return _combine_conditions(conditions), lhs_params
