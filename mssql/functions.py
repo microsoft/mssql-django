@@ -326,7 +326,12 @@ def json_HasKeyLookup(self, compiler, connection):
 
     else:
         if is_cast_expression:
-            # If lhs is a Cast and SQL Server version is old, always return true (not supported)
+            # SQL Server versions prior to 2022 do not support JSON_PATH_EXISTS,
+            # and OPENJSON cannot be used on literal JSON values (i.e., values not stored in a table column).
+            # Therefore, when a literal JSON value is used in a has_key lookup on these versions,
+            # we cannot perform a meaningful check in SQL. To ensure the query does not fail and
+            # to match Django's expected behavior (e.g., for test_has_key_literal_lookup),
+            # we return a constant true condition ("1=1") with no parameters, which effectively returns all rows.
             return "1=1", []
         else:
             conditions = []
