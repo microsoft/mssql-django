@@ -19,6 +19,7 @@ coverage run tests/runtests.py --settings=testapp.settings --noinput \
     backends \
     basic \
     bulk_create \
+    composite_pk \
     constraints \
     custom_columns \
     custom_lookups \
