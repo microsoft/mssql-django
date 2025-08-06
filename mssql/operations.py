@@ -380,6 +380,21 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         if name.startswith('[') and name.endswith(']'):
             return name  # Quoting once is enough.
+        
+        # Handle schema.table names properly
+        if '.' in name and not (name.startswith('[') and name.endswith(']')):
+            parts = name.split('.')
+            if len(parts) == 2:
+                schema, table = parts
+                # Only split if both parts are meaningful (not empty)
+                if schema and table:
+                    # Quote each part separately if they aren't already quoted
+                    if not (schema.startswith('[') and schema.endswith(']')):
+                        schema = '[%s]' % schema
+                    if not (table.startswith('[') and table.endswith(']')):
+                        table = '[%s]' % table
+                    return '%s.%s' % (schema, table)
+        
         return '[%s]' % name
 
     def random_function_sql(self):
