@@ -10,7 +10,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 3.2, 4.0, 4.1, 4.2 and 5.0
+-  Supports Django 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, and 5.2
 -  Tested on Microsoft SQL Server 2016, 2017, 2019, 2022
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -272,6 +272,13 @@ The following features are currently not fully supported:
 - Filtered index
 - Date extract function
 - Bulk insert into a table with a trigger and returning the rows inserted
+
+### Django 5.2 Specific Limitations
+
+Django 5.2 introduces some new features that require SQL Server-specific implementations:
+- Tuple lookups (e.g., `(col1, col2) IN (...)`) are not supported by SQL Server and need conversion to individual column comparisons
+- Complex aggregation queries with filtered references may need optimization for SQL Server
+- These limitations are documented in the test exclusions and are good candidates for community contributions
 
 JSONField lookups have limitations, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
