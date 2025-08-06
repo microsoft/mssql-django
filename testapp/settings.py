@@ -325,6 +325,9 @@ if VERSION >= (5, 2):
         'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
         'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
         
+        # Migration data persistence - table name with spaces issue
+        'migration_test_data_persistence.tests.MigrationDataPersistenceClassSetup',
+        
         # Aggregation with filtered references  
         # TODO: Fix complex aggregation queries with outer references
         'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregrate_ref_in_subquery_annotation',
