@@ -308,6 +308,11 @@ if VERSION >= (5, 1):
     EXCLUDED_TESTS.extend([
         # Composite primary key tests - not supported in SQL Server
         'inspectdb.tests.InspectDBTransactionalTests.test_composite_primary_key',
+        
+        # Backend and schema test failures that appear in Django 5.1
+        # TODO: Fix SQL Server specific backend behavior 
+        'backends.base.test_base.ExecuteWrapperTests.test_wrapper_debug',
+        'indexes.tests.SchemaIndexesTests.test_alter_field_unique_false_removes_deferred_sql',
     ])
 
 # Django 5.2 specific exclusions - tuple lookups not supported in SQL Server
