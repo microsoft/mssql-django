@@ -298,6 +298,9 @@ EXCLUDED_TESTS = [
     'indexes.tests.SchemaIndexesTests.test_alter_field_unique_false_removes_deferred_sql',
     'backends.base.test_base.ExecuteWrapperTests.test_wrapper_debug',
     
+    # Composite primary key tests - not supported in SQL Server
+    'inspectdb.tests.InspectDBTransactionalTests.test_composite_primary_key',
+    
 ]
 
 REGEX_TESTS = [
