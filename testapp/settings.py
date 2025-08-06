@@ -292,15 +292,7 @@ EXCLUDED_TESTS = [
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
     'expressions_window.tests.WindowFunctionTests.test_limited_filter',
     'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
-    
-    # Generated field 5.0.6 tests
-    'migrations.test_operations.OperationTests.test_invalid_generated_field_changes_on_rename_virtual',
-    'migrations.test_operations.OperationTests.test_invalid_generated_field_changes_on_rename_stored',
 
-    # Skip these tests for Django 5.1
-    'indexes.tests.SchemaIndexesTests.test_alter_field_unique_false_removes_deferred_sql',
-    'backends.base.test_base.ExecuteWrapperTests.test_wrapper_debug',
-    
 ]
 
 # Django 5.0 specific exclusions - these tests fail due to SQL Server limitations
