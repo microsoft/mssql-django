@@ -11,6 +11,9 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 ## Features
 
 -  Supports Django 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, and 5.2
+   - **Django 5.0 and below**: Full production support
+   - **Django 5.1**: Supported with minor limitations (composite primary key inspectdb)
+   - **Django 5.2**: Supported with documented limitations (see Django 5.2 Specific Limitations section below)
 -  Tested on Microsoft SQL Server 2016, 2017, 2019, 2022
 -  Passes most of the tests of the Django test suite
 -  Compatible with
@@ -273,12 +276,42 @@ The following features are currently not fully supported:
 - Date extract function
 - Bulk insert into a table with a trigger and returning the rows inserted
 
+### Django 5.1 Specific Limitations
+
+Django 5.1 introduces composite primary key support which has limited compatibility with SQL Server:
+- **inspectdb command**: Cannot properly inspect tables with composite primary keys
+- **Backend debugging**: SQL execution wrapper debug functionality may not work correctly
+- **Schema operations**: Some field unique constraint removal operations may have issues
+- Most other Django 5.1 features work correctly with SQL Server
+
 ### Django 5.2 Specific Limitations
 
-Django 5.2 introduces some new features that require SQL Server-specific implementations:
-- Tuple lookups (e.g., `(col1, col2) IN (...)`) are not supported by SQL Server and need conversion to individual column comparisons
-- Complex aggregation queries with filtered references may need optimization for SQL Server
-- These limitations are documented in the test exclusions and are good candidates for community contributions
+Django 5.2 introduces new features that may cause regressions for existing Django 5.0+ applications. The following features have known limitations when upgrading to Django 5.2:
+
+**Critical Limitations (May Affect Common Use Cases):**
+- **Tuple lookups**: Queries like `Model.objects.filter((col1, col2)__in=[(val1, val2)])` will fail with SQL syntax errors as SQL Server doesn't support `(col1, col2) IN (...)` syntax
+- **Multi-column foreign key relationships**: Complex queries involving foreign keys with multiple columns may fail in Django 5.2 due to tuple lookup generation
+- **JSONField with special characters**: JSONField lookups involving special characters (quotes, emojis, escape sequences) may generate invalid SQL
+- **JSONField bulk updates**: Bulk update operations on JSONField with null handling may fail
+
+**Moderate Impact:**
+- **Complex aggregations**: Some aggregation queries with filtered references and subqueries may not work correctly
+- **Prefetch operations**: `prefetch_related()` operations on multi-column foreign keys may fail
+- **Migration data persistence**: Issues with migration data persistence tests involving table names with spaces
+
+**Low Impact (Edge Cases):**
+- **Migration operations**: Advanced migration operations involving composite primary keys and generated fields
+- **Backend debugging**: Certain backend debugging and introspection features
+- **JSONField CASE WHEN updates**: JSONField updates using CASE WHEN expressions with null handling
+
+**Specific Test Failures in Django 5.2:**
+- All `foreign_object.test_tuple_lookups.TupleLookupsTests.*` tests
+- All `foreign_object.tests.MultiColumnFKTests.*` tests involving complex queries
+- `model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars*` tests
+- `queries.test_bulk_update.BulkUpdateTests.test_json_field_sql_null` test
+- Various migration and backend debugging tests
+
+**Workaround**: These limitations are documented in the test exclusions (`testapp/settings.py`) and are excellent candidates for community contributions. Applications using Django 5.0 and below are unaffected by these limitations.
 
 JSONField lookups have limitations, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
 

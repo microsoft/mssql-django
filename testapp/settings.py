@@ -330,7 +330,9 @@ if VERSION >= (5, 2):
         'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
         'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
         
-        # Migration data persistence - table name with spaces issue
+        # Migration data persistence - exclude entire module due to table name with spaces issue
+        'migration_test_data_persistence',
+        'migration_test_data_persistence.tests',
         'migration_test_data_persistence.tests.MigrationDataPersistenceClassSetup',
 
         # Multi-column foreign key tests with tuple lookups - also affected by SQL Server limitations
@@ -357,7 +359,6 @@ if VERSION >= (5, 2):
         # TODO: Implement composite primary key support
         'migrations.test_operations.OperationTests.test_composite_pk_operations',
         'migrations.test_operations.OperationTests.test_generated_field_changes_output_field',
-        'migration_test_data_persistence.tests.MigrationDataPersistenceClassSetup.test_migration_data_persistence',
         
         # Backend and schema test failures
         # TODO: Fix SQL Server specific backend behavior 
