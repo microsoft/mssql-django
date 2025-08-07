@@ -362,7 +362,7 @@ if VERSION >= (5, 2):
         
         # Backend and schema test failures
         # TODO: Fix SQL Server specific backend behavior 
-        'backends.base.test_base.ExecuteWrapperTests.test_wrapper_debug',
+        # 'backends.base.test_base.ExecuteWrapperTests.test_wrapper_debug',  # Removed duplicate; now only in Django 5.2+ block
         'indexes.tests.SchemaIndexesTests.test_alter_field_unique_false_removes_deferred_sql',
         
         # Aggregation with filtered references  
