@@ -330,11 +330,6 @@ if VERSION >= (5, 2):
         'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
         'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
         
-        # Migration data persistence - exclude entire module due to table name with spaces issue
-        'migration_test_data_persistence',
-        'migration_test_data_persistence.tests',
-        'migration_test_data_persistence.tests.MigrationDataPersistenceClassSetup',
-
         # Multi-column foreign key tests with tuple lookups - also affected by SQL Server limitations
         # TODO: Fix tuple lookup generation for multi-column FKs 
         'foreign_object.tests.MultiColumnFKTests.test_double_nested_query',
