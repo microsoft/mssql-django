@@ -377,9 +377,28 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         Returns a quoted version of the given table, index or column name. Does
         not quote the given name if it's already been quoted.
+        
+        Supports:
+        - Schema.table format: quotes both schema and table separately
+        - Names with spaces: handles proper quoting
         """
+        if not name:
+            return name
+        
+        # Already quoted
         if name.startswith('[') and name.endswith(']'):
             return name  # Quoting once is enough.
+        
+        # Enhanced schema.table support for Django 5.2+
+        if django_version >= (5, 2) and '.' in name and not name.startswith('['):
+            parts = name.split('.', 1)  # Split only on first dot
+            schema = parts[0].strip()
+            table = parts[1].strip()
+            
+            # Always quote both parts for SQL Server safety
+            return '[%s].[%s]' % (schema, table)
+        
+        # Always quote single names for SQL Server safety
         return '[%s]' % name
 
     def random_function_sql(self):
