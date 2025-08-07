@@ -29,8 +29,9 @@ class DatabaseCreation(BaseDatabaseCreation):
         try:
             test_database_name = super()._create_test_db(verbosity, autoclobber, keepdb)
             
-            # Create required schemas for Django tests
-            self._create_test_schemas(test_database_name, verbosity)
+            # Create required schemas for Django tests (only for 5.2)
+            if django_version >= (5, 2):
+                self._create_test_schemas(test_database_name, verbosity)
             
             return test_database_name
         except InterfaceError as err:
