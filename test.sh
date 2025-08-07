@@ -7,7 +7,7 @@ set -e
 
 DJANGO_VERSION="$(python -m django --version)"
 
-cd /opt/django-source
+cd django
 git fetch --depth=1 origin +refs/tags/*:refs/tags/*
 git checkout $DJANGO_VERSION
 pip install -r tests/requirements/py3.txt
