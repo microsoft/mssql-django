@@ -378,35 +378,27 @@ class DatabaseOperations(BaseDatabaseOperations):
         Returns a quoted version of the given table, index or column name. Does
         not quote the given name if it's already been quoted.
         
-        Handles special cases:
+        Supports:
         - Schema.table format: quotes both schema and table separately
-        - Names with spaces or special characters: ensures proper quoting
-        - Already quoted names: leaves them unchanged
+        - Names with spaces: handles proper quoting
         """
         if not name:
             return name
-            
-        # If already fully quoted, return as-is
+        
+        # Already quoted
         if name.startswith('[') and name.endswith(']'):
             return name  # Quoting once is enough.
         
-        # Handle schema.table format (e.g., "inspectdb_schema.table name")
-        if '.' in name and not (name.startswith('[') and name.endswith(']')):
-            parts = name.split('.', 1)  # Split on first dot only
-            schema_part = parts[0]
-            table_part = parts[1]
+        # Handle schema.table format (e.g., "inspectdb_special.table name")
+        if '.' in name and not name.startswith('['):
+            parts = name.split('.', 1)  # Split only on first dot
+            schema = parts[0].strip()
+            table = parts[1].strip()
             
-            # Quote schema part if needed
-            if not (schema_part.startswith('[') and schema_part.endswith(']')):
-                schema_part = '[%s]' % schema_part
-                
-            # Quote table part if needed  
-            if not (table_part.startswith('[') and table_part.endswith(']')):
-                table_part = '[%s]' % table_part
-                
-            return '%s.%s' % (schema_part, table_part)
+            # Always quote both parts for SQL Server safety
+            return '[%s].[%s]' % (schema, table)
         
-        # For simple names, just add brackets
+        # Always quote single names for SQL Server safety
         return '[%s]' % name
 
     def random_function_sql(self):
