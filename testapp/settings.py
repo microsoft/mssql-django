@@ -334,7 +334,7 @@ if VERSION >= (5, 2):
         'inspectdb.tests.InspectDBTestCase.test_custom_normalize_table_name',
         'inspectdb.tests.InspectDBTestCase.test_special_column_name_introspection', 
         'inspectdb.tests.InspectDBTestCase.test_table_name_introspection',
-
+        
         # Multi-column foreign key tests with tuple lookups - also affected by SQL Server limitations
         # TODO: Fix tuple lookup generation for multi-column FKs 
         'foreign_object.tests.MultiColumnFKTests.test_double_nested_query',

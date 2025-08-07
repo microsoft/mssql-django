@@ -389,8 +389,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         if name.startswith('[') and name.endswith(']'):
             return name  # Quoting once is enough.
         
-        # Handle schema.table format (e.g., "inspectdb_special.table name")
-        if '.' in name and not name.startswith('['):
+        # Enhanced schema.table support for Django 5.2+
+        if django_version >= (5, 2) and '.' in name and not name.startswith('['):
             parts = name.split('.', 1)  # Split only on first dot
             schema = parts[0].strip()
             table = parts[1].strip()
