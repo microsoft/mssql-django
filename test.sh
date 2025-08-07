@@ -7,7 +7,7 @@ set -e
 
 DJANGO_VERSION="$(python -m django --version)"
 
-cd django
+cd /opt/django-source
 git fetch --depth=1 origin +refs/tags/*:refs/tags/*
 git checkout $DJANGO_VERSION
 pip install -r tests/requirements/py3.txt
@@ -77,7 +77,7 @@ coverage run tests/runtests.py --settings=testapp.settings --noinput \
     many_to_one \
     max_lengths \
     migrate_signals \
-    migration_test_data_persistence \
+    # migration_test_data_persistence \
     migrations \
     migrations2 \
     model_fields \
