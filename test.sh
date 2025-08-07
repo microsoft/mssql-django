@@ -77,7 +77,7 @@ coverage run tests/runtests.py --settings=testapp.settings --noinput \
     many_to_one \
     max_lengths \
     migrate_signals \
-    # migration_test_data_persistence \
+    migration_test_data_persistence \
     migrations \
     migrations2 \
     model_fields \
