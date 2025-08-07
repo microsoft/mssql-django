@@ -347,9 +347,6 @@ if VERSION >= (5, 2):
         'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_reverse_works',
         'foreign_object.tests.MultiColumnFKTests.test_reverse_query_returns_correct_result',
         
-        # migration_test_data_persistence
-        'migration_test_data_persistence.tests.MigrationDataPersistenceTestCase',
-
         # JSONField special character handling - SQL Server specific syntax issues
         # TODO: Fix JSONField key escaping for special characters
         'model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars',
@@ -377,29 +374,6 @@ if VERSION >= (5, 2):
         # TODO: Fix JSONField update with CASE WHEN handling
         'expressions.tests.BasicExpressionsTests.test_update_jsonfield_case_when_key_is_null',
         
-        # Many-to-many through model regression tests - foreign key constraint issues
-        # TODO: Fix foreign key constraint handling for m2m through models
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_add_on_m2m_with_intermediate_model',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_add_on_m2m_with_intermediate_model_value_required',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_clear_on_m2m_with_intermediate_model',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_custom_related_name_doesnt_conflict_with_fky_related_name',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_descriptor_related_name_dont_conflict',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_fk_related_name_dont_conflict_with_m2m_with_intermediate_model',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_join_trimming_reverse_m2m_with_custom_through',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_m2m_through_on_self_delete_cascade',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_m2m_through_on_self_delete_set_null_fails',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_m2m_with_custom_intermediate_model_doesnt_have_natural_key',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_m2m_with_intermediate_model',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_m2m_with_intermediate_model_callable_related_name',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_m2m_with_intermediate_model_value_required',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_nullable_self_reference_with_through_model',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_remove_on_m2m_with_intermediate_model',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_retrieve_intermediate_items',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_retrieve_reverse_intermediate_items',
-        'm2m_through_regress.tests.M2mThroughRegressionTests.test_reverse_generic_related_name_dont_conflict',
-        
-        # Other Django 5.2 specific failures
-        # Add more as they are identified by the community
     ])
 
 REGEX_TESTS = [
