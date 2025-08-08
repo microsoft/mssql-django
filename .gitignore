@@ -7,7 +7,6 @@ Thumbs.db
 
 *.egg-info
 *.dll
-!mssql/regex_clr.dll
 tests/local_settings.py
 
 # Virtual Env
