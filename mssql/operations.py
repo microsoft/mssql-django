@@ -556,12 +556,12 @@ class DatabaseOperations(BaseDatabaseOperations):
         rhs_sql, rhs_params = rhs
         if internal_type == 'DateField':
             sql = "CAST(DATEDIFF(day, %(rhs)s, %(lhs)s) AS bigint) * 86400 * 1000000"
-            params = rhs_params + lhs_params
+            params = (*rhs_params, *lhs_params)
         else:
             SECOND = "DATEDIFF(second, %(rhs)s, %(lhs)s)"
             MICROSECOND = "DATEPART(microsecond, %(lhs)s) - DATEPART(microsecond, %(rhs)s)"
             sql = "CAST({} AS bigint) * 1000000 + {}".format(SECOND, MICROSECOND)
-            params = rhs_params + lhs_params * 2 + rhs_params
+            params = tuple(rhs_params) + tuple(lhs_params) * 2 + tuple(rhs_params)
         return sql % {'lhs': lhs_sql, 'rhs': rhs_sql}, params
 
     def tablespace_sql(self, tablespace, inline=False):
