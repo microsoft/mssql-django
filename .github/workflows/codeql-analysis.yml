@@ -11,6 +11,12 @@
 #
 name: "CodeQL"
 
+# This workflow is triggered on pushes to the dev branch, pull requests targeting
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
 on:
   push:
     branches: [ dev ]
