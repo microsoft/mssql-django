@@ -3,6 +3,11 @@ trigger:
   - dev
   - 1ES
 
+pr:
+  branches:
+    include:
+      - dev
+
 schedules:
 - cron: "0 9 * * *"
   displayName: Daily midnight build
