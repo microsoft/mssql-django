@@ -16,9 +16,6 @@ schedules:
     - dev
   always: true
 
-variables:
-- group: DjangoTestApp
-
 jobs:
   - job: Windows
     pool:
