@@ -120,6 +120,13 @@ jobs:
 
 
     steps:
+      - script: |
+          echo "Provider=$(Build.Repository.Provider)"
+          echo "Reason=$(Build.Reason)"
+          echo "Branch=$(Build.SourceBranch)"
+          echo "SHA=$(Build.SourceVersion)"
+        displayName: Show build context
+
       - task: CredScan@3
         inputs:
           toolMajorVersion: 'V2'
