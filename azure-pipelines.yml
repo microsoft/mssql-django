@@ -1,3 +1,10 @@
+resources:
+  repositories:
+    - repository: self
+      type: github
+      name: microsoft/mssql-django
+      endpoint: "mssql-django-public"
+
 trigger:
   - master
   - dev
