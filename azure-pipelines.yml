@@ -120,7 +120,6 @@ jobs:
 
 
     steps:
-      - checkout: none
       - checkout: mssqldjango
       - task: CredScan@3
         inputs:
@@ -261,7 +260,6 @@ jobs:
           tox.env: 'py38-django32'
 
     steps:
-      - checkout: none
       - checkout: mssqldjango
       - task: UsePythonVersion@0
         inputs:
