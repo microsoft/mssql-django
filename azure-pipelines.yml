@@ -1,10 +1,3 @@
-# resources:
-#   repositories:
-#     - repository: mssqldjango
-#       type: github
-#       name: microsoft/mssql-django
-#       endpoint: mssql-django (1)-public
-
 trigger:
   - master
   - dev
@@ -120,7 +113,6 @@ jobs:
 
 
     steps:
-      # - checkout: mssqldjango
       - task: CredScan@3
         inputs:
           toolMajorVersion: 'V2'
@@ -260,7 +252,6 @@ jobs:
           tox.env: 'py38-django32'
 
     steps:
-      # - checkout: mssqldjango
       - task: UsePythonVersion@0
         inputs:
           versionSpec: "$(python.version)"
