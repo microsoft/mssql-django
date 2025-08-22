@@ -261,6 +261,24 @@ jobs:
           docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          
+          # Wait for SQL Server to be ready
+          echo "Waiting for SQL Server to start..."
+          for i in {1..60}; do
+            if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P $(TestAppPassword) -Q "SELECT 1" > /dev/null 2>&1; then
+              echo "SQL Server is ready after $i attempts"
+              break
+            fi
+            echo "Attempt $i: SQL Server not ready yet, waiting 5 seconds..."
+            sleep 5
+          done
+          
+          # Final verification
+          if ! docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P $(TestAppPassword) -Q "SELECT 1" > /dev/null 2>&1; then
+            echo "SQL Server failed to start properly after 5 minutes"
+            docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
+            exit 1
+          fi
         displayName: Install SQL Server
 
       - script: |
