@@ -372,22 +372,22 @@ jobs:
           odbcinst -q -d
           echo ""
           echo "Testing basic pyodbc connection (before Django):"
-          python -c "
+          python -c '
 import pyodbc
 import os
-password = os.environ.get('TestAppPassword', 'Unknown')
-print(f'Using password length: {len(password)}')
+password = os.environ.get("TestAppPassword", "Unknown")
+print("Using password length:", len(password))
 try:
-    conn_str = 'DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost;UID=sa;PWD=' + password
+    conn_str = "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost;UID=sa;PWD=" + password
     conn = pyodbc.connect(conn_str, timeout=10)
     cursor = conn.cursor()
-    cursor.execute('SELECT 1')
+    cursor.execute("SELECT 1")
     result = cursor.fetchone()
-    print(f'Direct pyodbc connection successful: {result}')
+    print("Direct pyodbc connection successful:", result)
     conn.close()
 except Exception as e:
-    print(f'Direct pyodbc connection failed: {e}')
-"
+    print("Direct pyodbc connection failed:", e)
+'
         env:
           TestAppPassword: $(TestAppPassword)
         displayName: Debug SQL Server connectivity
