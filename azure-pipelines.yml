@@ -258,7 +258,7 @@ jobs:
       - script: |
           docker version
           docker pull mcr.microsoft.com/mssql/server:2022-latest
-          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+          docker run -e 'ACCEPT_EULA=Y' -e "SA_PASSWORD=$(TestAppPassword)" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           
@@ -342,7 +342,8 @@ jobs:
         displayName: Install Python requirements
 
       - script: |
-          sed -i 's/MyPassword42/$(TestAppPassword)/g' testapp/settings.py
+          # Use a different delimiter (|) to avoid issues with special characters in password
+          sed -i "s|MyPassword42|$(TestAppPassword)|g" testapp/settings.py
         displayName: Change PASSWORD in settings.py
 
       - script: |
@@ -356,41 +357,6 @@ jobs:
           echo "Database configuration:"
           grep -A 10 -B 2 "PASSWORD" testapp/settings.py
         displayName: Verify PASSWORD replacement
-
-      - script: |
-          echo "=== Debugging SQL Server Connection ==="
-          echo "Container status:"
-          docker ps
-          echo ""
-          echo "Container logs (last 20 lines):"
-          docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) | tail -20
-          echo ""
-          echo "Testing network connectivity to SQL Server:"
-          timeout 10 bash -c 'echo > /dev/tcp/localhost/1433' && echo "Port 1433 is accessible" || echo "Port 1433 is not accessible"
-          echo ""
-          echo "ODBC drivers available:"
-          odbcinst -q -d
-          echo ""
-          echo "Testing basic pyodbc connection (before Django):"
-          python -c '
-import pyodbc
-import os
-password = os.environ.get("TestAppPassword", "Unknown")
-print("Using password length:", len(password))
-try:
-    conn_str = "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost;UID=sa;PWD=" + password
-    conn = pyodbc.connect(conn_str, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("SELECT 1")
-    result = cursor.fetchone()
-    print("Direct pyodbc connection successful:", result)
-    conn.close()
-except Exception as e:
-    print("Direct pyodbc connection failed:", e)
-'
-        env:
-          TestAppPassword: $(TestAppPassword)
-        displayName: Debug SQL Server connectivity
 
       - script: tox -e $(tox.env)
         displayName: Run tox
