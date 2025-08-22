@@ -3,7 +3,6 @@ trigger:
   - dev
   - 1ES
 
-
 pr:
   branches:
     include:
