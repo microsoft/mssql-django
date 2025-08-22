@@ -1,7 +1,5 @@
 trigger:
-  - master
   - dev
-  - 1ES
 
 pr:
   branches:
