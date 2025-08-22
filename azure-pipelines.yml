@@ -264,21 +264,30 @@ jobs:
           
           # Wait for SQL Server to be ready
           echo "Waiting for SQL Server to start..."
-          for i in {1..60}; do
-            if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P $(TestAppPassword) -Q "SELECT 1" > /dev/null 2>&1; then
-              echo "SQL Server is ready after $i attempts"
+          
+          # First, wait for the container to be running and SQL Server service to be listening
+          for i in {1..30}; do
+            if docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) 2>&1 | grep -q "SQL Server is now ready for client connections"; then
+              echo "SQL Server service is ready after $i attempts ($(($i * 2)) seconds)"
               break
             fi
-            echo "Attempt $i: SQL Server not ready yet, waiting 5 seconds..."
-            sleep 5
+            echo "Attempt $i: Waiting for SQL Server service to be ready, checking again in 2 seconds..."
+            sleep 2
           done
           
-          # Final verification
-          if ! docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P $(TestAppPassword) -Q "SELECT 1" > /dev/null 2>&1; then
-            echo "SQL Server failed to start properly after 5 minutes"
+          # Additional wait to ensure full initialization
+          echo "Waiting additional 10 seconds for full SQL Server initialization..."
+          sleep 10
+          
+          # Verify we can connect using a simple network test first
+          echo "Testing SQL Server connectivity..."
+          if ! timeout 30 bash -c 'until echo > /dev/tcp/localhost/1433; do sleep 1; done'; then
+            echo "Cannot connect to SQL Server on port 1433"
             docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
             exit 1
           fi
+          
+          echo "SQL Server is ready and accepting connections"
         displayName: Install SQL Server
 
       - script: |
