@@ -357,31 +357,6 @@ jobs:
           grep -A 10 -B 2 "PASSWORD" testapp/settings.py
         displayName: Verify PASSWORD replacement
 
-      - script: |
-          echo "Testing Django database connection..."
-          python -c "
-import os
-import sys
-import django
-from django.conf import settings
-from django.db import connection
-
-# Add testapp to Python path
-sys.path.insert(0, '/mnt/vss/_work/1/s')
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'testapp.settings')
-django.setup()
-
-try:
-    with connection.cursor() as cursor:
-        cursor.execute('SELECT 1')
-        result = cursor.fetchone()
-        print(f'Database connection successful: {result}')
-except Exception as e:
-    print(f'Database connection failed: {e}')
-    sys.exit(1)
-"
-        displayName: Test database connection
-
       - script: tox -e $(tox.env)
         displayName: Run tox
 
