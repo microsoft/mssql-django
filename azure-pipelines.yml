@@ -262,22 +262,22 @@ jobs:
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           
-          # Wait for SQL Server to be ready
+          # Wait for SQL Server to be ready with increased timeout
           echo "Waiting for SQL Server to start..."
           
-          # First, wait for the container to be running and SQL Server service to be listening
-          for i in {1..30}; do
+          # Extended wait for the container to be running and SQL Server service to be listening
+          for i in {1..60}; do
             if docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) 2>&1 | grep -q "SQL Server is now ready for client connections"; then
-              echo "SQL Server service is ready after $i attempts ($(($i * 2)) seconds)"
+              echo "SQL Server service is ready after $i attempts ($(($i * 3)) seconds)"
               break
             fi
-            echo "Attempt $i: Waiting for SQL Server service to be ready, checking again in 2 seconds..."
-            sleep 2
+            echo "Attempt $i: Waiting for SQL Server service to be ready, checking again in 3 seconds..."
+            sleep 3
           done
           
-          # Additional wait to ensure full initialization
-          echo "Waiting additional 10 seconds for full SQL Server initialization..."
-          sleep 10
+          # Increased wait to ensure full initialization for database operations
+          echo "Waiting additional 60 seconds for full SQL Server initialization..."
+          sleep 60
           
           # Verify we can connect using a simple network test first
           echo "Testing SQL Server connectivity..."
