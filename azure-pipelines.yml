@@ -326,6 +326,25 @@ jobs:
         displayName: Install ODBC Driver
 
       - script: |
+          # Install mssql-tools to get sqlcmd
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools
+          
+          # Test SQL Server authentication
+          echo "Testing SQL Server authentication with SA user..."
+          export PATH="$PATH:/opt/mssql-tools/bin"
+          
+          # Try to connect and run a simple query
+          if sqlcmd -S localhost -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -t 30; then
+            echo "✅ SQL Server authentication successful!"
+          else
+            echo "❌ SQL Server authentication FAILED!"
+            echo "Container logs:"
+            docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
+            exit 1
+          fi
+        displayName: Test SQL Server Authentication
+
+      - script: |
           # Since pylibmc isn't supported for Python 3.12+ 
           # We need to install libmemcached-dev to build it - dependency for Django test suite
           # https://github.com/django/django/blob/1a744343999c9646912cee76ba0a2fa6ef5e6240/.github/workflows/schedule_tests.yml#L50
