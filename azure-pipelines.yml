@@ -329,20 +329,35 @@ jobs:
           # Install mssql-tools to get sqlcmd
           sudo ACCEPT_EULA=Y apt-get install -y mssql-tools
           
-          # Test SQL Server authentication
-          echo "Testing SQL Server authentication with SA user..."
+          # Wait for SQL Server authentication to be ready (retry loop)
+          echo "Waiting for SQL Server authentication to be ready..."
           export PATH="$PATH:/opt/mssql-tools/bin"
           
-          # Try to connect and run a simple query
-          if sqlcmd -S localhost -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -t 30; then
-            echo "✅ SQL Server authentication successful!"
-          else
-            echo "❌ SQL Server authentication FAILED!"
-            echo "Container logs:"
-            docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
-            exit 1
-          fi
-        displayName: Test SQL Server Authentication
+          # Retry authentication until SQL Server finishes its internal upgrade process
+          for i in {1..30}; do
+            echo "Authentication attempt $i of 30..."
+            if sqlcmd -S localhost -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -t 10 >/dev/null 2>&1; then
+              echo "✅ SQL Server authentication successful after $i attempts!"
+              break
+            else
+              if [ $i -eq 30 ]; then
+                echo "❌ SQL Server authentication FAILED after 30 attempts!"
+                echo "Final attempt with verbose output:"
+                sqlcmd -S localhost -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -t 10
+                echo ""
+                echo "Container logs:"
+                docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
+                exit 1
+              else
+                echo "Authentication failed (attempt $i), waiting 10 seconds before retry..."
+                echo "This is normal - SQL Server may still be upgrading internal databases..."
+                sleep 10
+              fi
+            fi
+          done
+          
+          echo "SQL Server is fully ready for authentication!"
+        displayName: Wait for SQL Server Authentication
 
       - script: |
           # Since pylibmc isn't supported for Python 3.12+ 
