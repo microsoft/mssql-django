@@ -336,14 +336,15 @@ jobs:
           # Retry authentication until SQL Server finishes its internal upgrade process
           for i in {1..30}; do
             echo "Authentication attempt $i of 30..."
-            if sqlcmd -S localhost -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -t 10 >/dev/null 2>&1; then
+            # Force IPv4 TCP to avoid potential localhost/IPv6 resolution issues on agents
+            if sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10 >/dev/null 2>&1; then
               echo "✅ SQL Server authentication successful after $i attempts!"
               break
             else
               if [ $i -eq 30 ]; then
                 echo "❌ SQL Server authentication FAILED after 30 attempts!"
                 echo "Final attempt with verbose output:"
-                sqlcmd -S localhost -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -t 10
+                sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10
                 echo ""
                 echo "Container logs:"
                 docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
@@ -391,6 +392,13 @@ jobs:
           echo "Database configuration:"
           grep -A 10 -B 2 "PASSWORD" testapp/settings.py
         displayName: Verify PASSWORD replacement
+
+      - script: |
+          # Force Django DB host to IPv4 loopback to avoid IPv6 localhost resolution issues
+          sed -i "s|\"HOST\": \"localhost\"|\"HOST\": \"127.0.0.1\"|g" testapp/settings.py
+          echo "Updated DB HOST to 127.0.0.1"
+          grep -n "\"HOST\"" -n testapp/settings.py
+        displayName: Use IPv4 loopback for DB host
 
       - script: tox -e $(tox.env)
         displayName: Run tox
