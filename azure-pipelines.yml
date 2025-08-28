@@ -257,8 +257,8 @@ jobs:
 
       - script: |
           docker version
-          docker pull mcr.microsoft.com/mssql/server:2019-latest
-          docker run -e 'ACCEPT_EULA=Y' -e "SA_PASSWORD=$(TestAppPassword)" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+          docker pull mcr.microsoft.com/mssql/server:2022-latest
+          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           
@@ -377,21 +377,8 @@ jobs:
         displayName: Install Python requirements
 
       - script: |
-          # Use a different delimiter (|) to avoid issues with special characters in password
-          sed -i "s|MyPassword42|$(TestAppPassword)|g" testapp/settings.py
+          sed -i 's/MyPassword42/$(TestAppPassword)/g' testapp/settings.py
         displayName: Change PASSWORD in settings.py
-
-      - script: |
-          echo "Verifying password replacement..."
-          if grep -q "MyPassword42" testapp/settings.py; then
-            echo "ERROR: Password replacement failed - MyPassword42 still found"
-            exit 1
-          else
-            echo "Password replacement successful"
-          fi
-          echo "Database configuration:"
-          grep -A 10 -B 2 "PASSWORD" testapp/settings.py
-        displayName: Verify PASSWORD replacement
 
       - script: |
           # Force Django DB host to IPv4 loopback to avoid IPv6 localhost resolution issues
