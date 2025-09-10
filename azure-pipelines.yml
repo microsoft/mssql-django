@@ -1,4 +1,4 @@
-name: MSSQL-Django-PR-Validation-$(Date:yyyyMMdd)$(Rev:.r)
+name: MSSQL-Django-PR-Validation
 
 trigger:
   - dev
