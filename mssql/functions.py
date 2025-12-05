@@ -24,8 +24,10 @@ if VERSION >= (5, 2):
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
         KeyTransform, KeyTransformIn, KeyTransformExact,
-        HasKeyLookup, compile_json_path)
-
+        HasKeyLookup)
+if VERSION >= (3, 1) and VERSION < (6, 0):
+    from django.db.models.fields.json import compile_json_path
+    
 if VERSION >= (3, 2):
     from django.db.models.functions.math import Random
 
@@ -327,7 +329,10 @@ def json_HasKeyLookup(self, compiler, connection):
     if isinstance(self.lhs, KeyTransform):
         # If lhs is a KeyTransform, preprocess to get SQL and JSON path
         lhs, _, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
-        lhs_json_path = compile_json_path(lhs_key_transforms)
+        if VERSION >= (6, 0):
+            lhs_json_path = connection.ops.compile_json_path(lhs_key_transforms)
+        else:
+            lhs_json_path = compile_json_path(lhs_key_transforms)
         lhs_params = []
     else:
         # Otherwise, process lhs normally and set default JSON path
@@ -355,7 +360,10 @@ def json_HasKeyLookup(self, compiler, connection):
         if VERSION >= (4, 1):
             # For Django 4.1+, split out the final key and build the JSON path accordingly
             *rhs_key_transforms, final_key = rhs_key_transforms
-            rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
+            if VERSION >= (6, 0):
+                rhs_json_path = connection.ops.compile_json_path(rhs_key_transforms, include_root=False)
+            else:
+                rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
             rhs_json_path += self.compile_json_path_final_key(final_key)
             rhs_params.append(lhs_json_path + rhs_json_path)
         else:
