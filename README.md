@@ -316,6 +316,17 @@ Django 5.2 introduces new features that may cause regressions for existing Djang
 
 JSONField lookups have limitations, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
+### Django 6.0 Specific Notes
+
+Django 6.0 requires Python 3.12 or higher (Python 3.10 and 3.11 support was dropped). Key changes in Django 6.0 that affect this backend:
+
+- **Python Version**: Django 6.0 requires Python 3.12, 3.13, or 3.14
+- **API Changes**: `DatabaseOperations.return_insert_columns()` was renamed to `returning_columns()` and `fetch_returned_insert_rows()` to `fetch_returned_rows()` - this backend provides compatibility aliases
+- **JSON Path Compilation**: The `compile_json_path` function was moved from `django.db.models.fields.json` to `connection.ops.compile_json_path()` - this is handled transparently by the backend
+- **DEFAULT_AUTO_FIELD**: Now defaults to `BigAutoField` - projects created with Django 3.2+ templates already have this set
+
+Most Django 5.2 limitations also apply to Django 6.0. The backend has been updated to handle all breaking changes in Django 6.0.
+
 ## Contributing
 
 More details on contributing can be found [here](CONTRIBUTING.md).
