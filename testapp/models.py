@@ -180,6 +180,18 @@ if VERSION >= (3, 1):
 
 
 if VERSION >= (3, 2):
+    # Django 6.0+ renamed 'check' parameter to 'condition' in CheckConstraint
+    if VERSION >= (6, 0):
+        _check_constraint_kwargs = {
+            'condition': ~models.Q(name__startswith='\u00f7'),
+            'name': 'name_does_not_starts_with_\u00f7',
+        }
+    else:
+        _check_constraint_kwargs = {
+            'check': ~models.Q(name__startswith='\u00f7'),
+            'name': 'name_does_not_starts_with_\u00f7',
+        }
+
     class TestCheckConstraintWithUnicode(models.Model):
         name = models.CharField(max_length=100)
 
@@ -188,10 +200,7 @@ if VERSION >= (3, 2):
                 'supports_table_check_constraints',
             }
             constraints = [
-                models.CheckConstraint(
-                    check=~models.Q(name__startswith='\u00f7'),
-                    name='name_does_not_starts_with_\u00f7',
-                )
+                models.CheckConstraint(**_check_constraint_kwargs)
             ]
 
 
