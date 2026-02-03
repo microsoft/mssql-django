@@ -546,10 +546,11 @@ class DatabaseOperations(BaseDatabaseOperations):
                           RuntimeWarning)
         else:
             # Then reset the counters on each table.
-            sql_list.extend(['%s %s (%s, %s, %s) %s %s;' % (
+            # DBCC CHECKIDENT requires the table name in single quotes
+            sql_list.extend(['%s %s (\'%s\', %s, %s) %s %s;' % (
                 style.SQL_KEYWORD('DBCC'),
                 style.SQL_KEYWORD('CHECKIDENT'),
-                style.SQL_FIELD(self.quote_name(seq["table"])),
+                self.quote_name(seq["table"]),
                 style.SQL_KEYWORD('RESEED'),
                 style.SQL_FIELD('%d' % seq['start_id']),
                 style.SQL_KEYWORD('WITH'),
