@@ -92,11 +92,10 @@ PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
 
-# Django 6.0+ defaults to BigAutoField
-if VERSION >= (6, 0):
-    DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-else:
-    DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+# Keep AutoField for testapp - existing migrations explicitly use AutoField
+# Django 6.0 changed the default to BigAutoField, but testapp migrations
+# are fixed and use AutoField, so we keep it consistent to avoid FK type mismatches
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 ENABLE_REGEX_TESTS = False
 USE_TZ = False
