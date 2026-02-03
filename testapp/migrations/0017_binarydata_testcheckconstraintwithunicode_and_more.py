@@ -21,6 +21,18 @@ class Migration(migrations.Migration):
     ]
 
     if VERSION >= (3, 2):
+        # Django 6.0+ renamed 'check' parameter to 'condition' in CheckConstraint
+        if VERSION >= (6, 0):
+            _check_constraint_kwargs = {
+                'condition': models.Q(('name__startswith', '÷'), _negated=True),
+                'name': 'name_does_not_starts_with_÷',
+            }
+        else:
+            _check_constraint_kwargs = {
+                'check': models.Q(('name__startswith', '÷'), _negated=True),
+                'name': 'name_does_not_starts_with_÷',
+            }
+
         operations += [
             migrations.CreateModel(
                 name='TestCheckConstraintWithUnicode',
@@ -34,6 +46,6 @@ class Migration(migrations.Migration):
             ),
             migrations.AddConstraint(
                 model_name='testcheckconstraintwithunicode',
-                constraint=models.CheckConstraint(check=models.Q(('name__startswith', '÷'), _negated=True), name='name_does_not_starts_with_÷'),
+                constraint=models.CheckConstraint(**_check_constraint_kwargs),
             ),
         ]

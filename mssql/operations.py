@@ -653,3 +653,40 @@ class DatabaseOperations(BaseDatabaseOperations):
         if isinstance(expression, RawSQL) and expression.conditional:
             return True
         return False
+
+    def adapt_json_value(self, value, encoder):
+        """
+        Transform a Python value to a JSON-serializable format.
+        Added in Django 6.0 to handle JSON encoding.
+        
+        Matches Django's default behavior: use the provided encoder (or None).
+        """
+        import json
+        
+        return json.dumps(value, cls=encoder)
+
+    def compile_json_path(self, key_transforms, include_root=True):
+        """
+        Compile a JSON path from a list of key transforms.
+        This method was moved from django.db.models.fields.json in Django 6.0
+        to connection.ops.compile_json_path().
+        """
+        path = ['$'] if include_root else []
+        for key_transform in key_transforms:
+            try:
+                num = int(key_transform)
+                path.append('[%s]' % num)
+            except ValueError:
+                path.append('.')
+                path.append(key_transform)
+        return ''.join(path)
+
+    # Django 6.0 renames return_insert_columns to returning_columns
+    # and fetch_returned_insert_rows to fetch_returned_rows
+    # Provide aliases for backwards compatibility
+    if django_version >= (6, 0):
+        def returning_columns(self, fields):
+            return self.return_insert_columns(fields)
+
+        def fetch_returned_rows(self, cursor, returning_params=None):
+            return self.fetch_returned_insert_rows(cursor)
