@@ -670,17 +670,28 @@ class DatabaseOperations(BaseDatabaseOperations):
         Compile a JSON path from a list of key transforms.
         This method was moved from django.db.models.fields.json in Django 6.0
         to connection.ops.compile_json_path().
+        
+        For SQL Server, we use bracket notation with escaped keys for any
+        non-simple key names to properly handle special characters.
         """
         import json
+        import re
         path = ['$'] if include_root else []
         for key_transform in key_transforms:
             try:
                 num = int(key_transform)
                 path.append('[%s]' % num)
             except ValueError:
-                path.append('.')
-                # Use json.dumps to properly escape special characters (e.g., quotes)
-                path.append(json.dumps(key_transform)[1:-1])
+                # Use bracket notation for keys with special characters
+                # json.dumps properly escapes quotes and other special chars
+                escaped_key = json.dumps(key_transform)
+                # Check if key is simple (alphanumeric/underscore only)
+                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', key_transform):
+                    path.append('.')
+                    path.append(key_transform)
+                else:
+                    # Use bracket notation: $["key with \"quotes\""]
+                    path.append('[%s]' % escaped_key)
         return ''.join(path)
 
     # Django 6.0 renames return_insert_columns to returning_columns

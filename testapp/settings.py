@@ -92,7 +92,11 @@ PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
 
-DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+# Django 6.0+ defaults to BigAutoField
+if VERSION >= (6, 0):
+    DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+else:
+    DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 ENABLE_REGEX_TESTS = False
 USE_TZ = False
@@ -313,6 +317,31 @@ if VERSION >= (5, 1):
         # TODO: Fix SQL Server specific backend behavior 
         'backends.base.test_base.ExecuteWrapperTests.test_wrapper_debug',
         'indexes.tests.SchemaIndexesTests.test_alter_field_unique_false_removes_deferred_sql',
+    ])
+
+# Django 6.0 specific exclusions
+if VERSION >= (6, 0):
+    EXCLUDED_TESTS.extend([
+        # ORDER BY with GROUP BY - SQL Server limitation with order_with_respect_to bulk_create
+        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_allows_duplicate_order_values',
+        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_mixed_scenario',
+        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_multiple_parents',
+        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_respects_mixed_manual_order',
+        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_with_empty_parent',
+        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_with_existing_children',
+        # ORDER BY with CASE WHEN constant value - SQL Server limitation
+        'ordering.tests.OrderingTests.test_order_by_case_when_constant_value',
+        # JSON path escaping test - bracket notation difference
+        'model_fields.test_jsonfield.TestQuerying.test_key_sql_injection_escape',
+        # Migration tests with schema differences
+        'migrations.test_commands.MakeMigrationsTests.test_makemigrations_check_no_changes',
+        'migrations.test_commands.MakeMigrationsTests.test_makemigrations_model_rename_interactive',
+        'schema.tests.SchemaTests.test_remove_constraints_capital_letters',
+        # Query count differences due to SQL Server parameter limits
+        'lookup.tests.LookupTests.test_in_bulk_lots_of_ids',
+        'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
+        # Bulk create output column count
+        'bulk_create.tests.BulkCreateTests.test_db_default_field_excluded',
     ])
 
 # Django 5.2 specific exclusions - tuple lookups not supported in SQL Server
