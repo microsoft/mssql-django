@@ -671,6 +671,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         This method was moved from django.db.models.fields.json in Django 6.0
         to connection.ops.compile_json_path().
         """
+        import json
         path = ['$'] if include_root else []
         for key_transform in key_transforms:
             try:
@@ -678,7 +679,8 @@ class DatabaseOperations(BaseDatabaseOperations):
                 path.append('[%s]' % num)
             except ValueError:
                 path.append('.')
-                path.append(key_transform)
+                # Use json.dumps to properly escape special characters (e.g., quotes)
+                path.append(json.dumps(key_transform)[1:-1])
         return ''.join(path)
 
     # Django 6.0 renames return_insert_columns to returning_columns
