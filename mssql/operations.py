@@ -389,6 +389,20 @@ class DatabaseOperations(BaseDatabaseOperations):
         if name.startswith('[') and name.endswith(']'):
             return name  # Quoting once is enough.
         
+        # SQL Server 2025 fix: stricter about periods in identifiers
+        # Aliases like 'ordering_article.pub_date' must be quoted as a single
+        # identifier [ordering_article.pub_date], not split into [ordering_article].[pub_date]
+        # Only split for known SQL Server schemas (dbo, sys, guest, etc.)
+        sql_server_version = getattr(self.connection, 'sql_server_version', 2019)
+        if sql_server_version >= 2025 and '.' in name and not name.startswith('['):
+            parts = name.split('.', 1)
+            schema = parts[0].strip().lower()
+            known_schemas = {'dbo', 'sys', 'guest', 'information_schema'}
+            if schema in known_schemas or schema.startswith('db_'):
+                return '[%s].[%s]' % (parts[0].strip(), parts[1].strip())
+            # Not a known schema - quote as single identifier (e.g., alias with period)
+            return '[%s]' % name
+        
         # Enhanced schema.table support for Django 5.2+
         if django_version >= (5, 2) and '.' in name and not name.startswith('['):
             parts = name.split('.', 1)  # Split only on first dot
