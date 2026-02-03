@@ -322,9 +322,16 @@ def json_HasKeyLookup(self, compiler, connection):
     - SQL Server 2022+: Uses JSON_PATH_EXISTS function
     - Older versions: Uses JSON_VALUE IS NOT NULL
     """
-    # Helper function to compile JSON path - uses connection.ops for all Django versions
+    # Helper function to compile JSON path
     def _compile_json_path(key_transforms, include_root=True):
-        return connection.ops.compile_json_path(key_transforms, include_root)
+        # For Django < 6.0, use Django's built-in compile_json_path
+        # For Django 6.0+, use connection.ops.compile_json_path()
+        # This is necessary because compile_json_path was moved in Django 6.0 from
+        # django.db.models.fields.json to connection.ops.compile_json_path()
+        if VERSION >= (6, 0):
+            return connection.ops.compile_json_path(key_transforms, include_root)
+        else:
+            return compile_json_path(key_transforms, include_root)
 
     def _combine_conditions(conditions):
         # Combine multiple conditions using the logical operator if present, otherwise return the first condition
