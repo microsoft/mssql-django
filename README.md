@@ -15,7 +15,7 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
    - **Django 5.1**: Supported with minor limitations (composite primary key inspectdb)
    - **Django 5.2**: Supported with enhanced SQL Server compatibility features and documented limitations (see Django 5.2 Specific Limitations section below)
    - **Django 6.0**: Supported with Python 3.12, 3.13, and 3.14 (see Django 6.0 Specific Notes section below)
--  Tested on Microsoft SQL Server 2016, 2017, 2019, 2022
+-  Tested on Microsoft SQL Server 2016, 2017, 2019, 2022, 2025
 -  Passes most of the tests of the Django test suite
 -  Enhanced SQL Server compatibility with automatic schema creation and improved identifier quoting
 -  Compatible with
