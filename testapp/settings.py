@@ -92,10 +92,13 @@ PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
 
-# Note: We do NOT override DEFAULT_AUTO_FIELD here so Django's integrated test suite
-# uses Django's default (BigAutoField in 6.0+). Our testapp models that need AutoField
-# (Question, Choice) have explicit id = models.AutoField(primary_key=True) to match
-# their existing migrations.
+# Set DEFAULT_AUTO_FIELD to suppress W042 warnings in Django's test suite.
+# Our testapp models that need AutoField (Question, Choice) have explicit
+# id = models.AutoField(primary_key=True) to match their existing migrations.
+if VERSION >= (6, 0):
+    DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+else:
+    DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 ENABLE_REGEX_TESTS = False
 USE_TZ = False
