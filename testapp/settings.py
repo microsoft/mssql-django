@@ -377,6 +377,7 @@ if VERSION >= (6, 0):
         'model_fields.test_jsonfield.TestQuerying.test_order_grouping_custom_decoder',
         'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_list_lookup',
+        'model_fields.test_jsonfield.TestQuerying.test_shallow_list_negative_lookup',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_lookup_obj_target',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_obj_lookup',
         
