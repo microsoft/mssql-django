@@ -378,42 +378,15 @@ class DatabaseOperations(BaseDatabaseOperations):
         Returns a quoted version of the given table, index or column name. Does
         not quote the given name if it's already been quoted.
         
-        Note: This method treats the name as a single identifier and quotes it
-        as-is. Names containing periods (like 'ordering_article.pub_date') are
-        quoted as a single identifier '[ordering_article.pub_date]', NOT split
-        into schema.table format. Schema-qualified names should be handled by
-        the caller using quote_table_name() if needed.
+        This method treats the name as a single identifier and quotes it as-is.
+        Names containing periods (like 'ordering_article.pub_date') are quoted
+        as a single identifier '[ordering_article.pub_date]', NOT split into
+        schema.table format.
         """
         if not name:
             return name
         if name.startswith('[') and name.endswith(']'):
             return name  # Quoting once is enough.
-        return '[%s]' % name
-
-    def quote_table_name(self, name):
-        """
-        Returns a quoted version of the given table name, with support for
-        schema.table format. If the name contains a period, it's treated as
-        schema.table and each part is quoted separately.
-        
-        Examples:
-        - 'my_table' -> '[my_table]'
-        - 'schema.table' -> '[schema].[table]'
-        """
-        if not name:
-            return name
-        
-        # Already quoted
-        if name.startswith('[') and name.endswith(']'):
-            return name  # Quoting once is enough.
-        
-        # Check for schema.table format
-        if '.' in name and not name.startswith('['):
-            parts = name.split('.', 1)  # Split only on first dot
-            schema = parts[0].strip()
-            table = parts[1].strip()
-            return '[%s].[%s]' % (schema, table)
-        
         return '[%s]' % name
 
     def random_function_sql(self):
