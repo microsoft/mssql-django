@@ -205,6 +205,8 @@ if VERSION >= (3, 2):
 
 
 class Question(models.Model):
+    # Explicit id to match migration 0018 (AutoField)
+    id = models.AutoField(primary_key=True)
     question_text = models.CharField(max_length=200)
     pub_date = models.DateTimeField('date published')
 
@@ -216,6 +218,8 @@ class Question(models.Model):
 
 
 class Choice(models.Model):
+    # Explicit id to match migration 0018 (AutoField)
+    id = models.AutoField(primary_key=True)
     question = models.ForeignKey(Question, on_delete=models.CASCADE, null=True)
     choice_text = models.CharField(max_length=200)
     votes = models.IntegerField(default=0)
