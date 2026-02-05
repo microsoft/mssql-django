@@ -257,8 +257,8 @@ jobs:
 
       - script: |
           docker version
-          docker pull mcr.microsoft.com/mssql/server:2022-latest
-          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+          docker pull mcr.microsoft.com/mssql/server:2025-latest
+          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2025-latest
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           
@@ -267,7 +267,7 @@ jobs:
           
           # Extended wait for the container to be running and SQL Server service to be listening
           for i in {1..60}; do
-            if docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) 2>&1 | grep -q "SQL Server is now ready for client connections"; then
+            if docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest) 2>&1 | grep -q "SQL Server is now ready for client connections"; then
               echo "SQL Server service is ready after $i attempts ($(($i * 3)) seconds)"
               break
             fi
@@ -283,7 +283,7 @@ jobs:
           echo "Testing SQL Server connectivity..."
           if ! timeout 30 bash -c 'until echo > /dev/tcp/localhost/1433; do sleep 1; done'; then
             echo "Cannot connect to SQL Server on port 1433"
-            docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
+            docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
             exit 1
           fi
           
@@ -347,7 +347,7 @@ jobs:
                 sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10
                 echo ""
                 echo "Container logs:"
-                docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
+                docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
                 exit 1
               else
                 echo "Authentication failed (attempt $i), waiting 10 seconds before retry..."
