@@ -20,6 +20,7 @@ from django.db.models.sql.query import Query
 if VERSION >= (5, 2):
     from django.db.models import Value
     from django.db.models.functions import JSONArray
+    from django.db.models.fields.composite import CompositePrimaryKey
 
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
@@ -468,7 +469,12 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=None):
     fields = [self.model._meta.get_field(name) for name in fields]
     if any(not f.concrete or f.many_to_many for f in fields):
         raise ValueError('bulk_update() can only be used with concrete fields.')
-    if any(f.primary_key for f in fields):
+    # Check for primary key fields, including composite PK fields in Django 5.2+
+    pk_field_names = set()
+    if VERSION >= (5, 2) and isinstance(self.model._meta.pk, CompositePrimaryKey):
+        # For composite PKs, get all field names that are part of the PK
+        pk_field_names = set(self.model._meta.pk.field_names)
+    if any(f.primary_key or f.name in pk_field_names for f in fields):
         raise ValueError('bulk_update() cannot be used with primary key fields.')
     if not objs:
         return 0

@@ -303,6 +303,7 @@ class SQLCompiler(compiler.SQLCompiler):
                     if do_offset_emulation:
                         if order_by:
                             ordering = []
+                            seen_columns = set()
                             for expr, (o_sql, o_params, _) in order_by:
                                 # value_expression in OVER clause cannot refer to
                                 # expressions or aliases in the select list. See:
@@ -313,6 +314,12 @@ class SQLCompiler(compiler.SQLCompiler):
                                     o_sql, _ = src.as_sql(self, self.connection)
                                     odir = 'DESC' if expr.descending else 'ASC'
                                     o_sql = '%s %s' % (o_sql, odir)
+                                # SQL Server doesn't allow duplicate columns in ORDER BY
+                                col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.endswith((' ASC', ' DESC')) else o_sql
+                                col_ref_upper = col_ref.upper()
+                                if col_ref_upper in seen_columns:
+                                    continue
+                                seen_columns.add(col_ref_upper)
                                 ordering.append(o_sql)
                                 params.extend(o_params)
                             offsetting_order_by = ', '.join(ordering)
@@ -383,6 +390,7 @@ class SQLCompiler(compiler.SQLCompiler):
 
             if order_by:
                 ordering = []
+                seen_columns = set()
                 for expr, (o_sql, o_params, _) in order_by:
                     if expr:
                         src = next(iter(expr.get_source_expressions()))
@@ -390,6 +398,14 @@ class SQLCompiler(compiler.SQLCompiler):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
+                    # SQL Server doesn't allow the same column to appear twice
+                    # in ORDER BY. Extract column reference (without ASC/DESC)
+                    # and skip duplicates.
+                    col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.endswith((' ASC', ' DESC')) else o_sql
+                    col_ref_upper = col_ref.upper()
+                    if col_ref_upper in seen_columns:
+                        continue
+                    seen_columns.add(col_ref_upper)
                     ordering.append(o_sql)
                     params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))
