@@ -14,7 +14,12 @@ from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
 if django.VERSION >= (3, 1):
-    from django.db.models.fields.json import compile_json_path, KeyTransform as json_KeyTransform
+    from django.db.models.fields.json import KeyTransform as json_KeyTransform
+    # compile_json_path was moved to connection.ops in Django 6.0
+    if django.VERSION < (6, 0):
+        from django.db.models.fields.json import compile_json_path
+    else:
+        compile_json_path = None
 if django.VERSION >= (4, 2):
     from django.core.exceptions import EmptyResultSet, FullResultSet
 
@@ -47,7 +52,12 @@ def _as_sql_greatest(self, compiler, connection):
 
 def _as_sql_json_keytransform(self, compiler, connection):
     lhs, params, key_transforms = self.preprocess_lhs(compiler, connection)
-    json_path = compile_json_path(key_transforms)
+    # For Django < 6.0, use Django's built-in compile_json_path
+    # For Django 6.0+, use connection.ops.compile_json_path()
+    if django.VERSION >= (6, 0):
+        json_path = connection.ops.compile_json_path(key_transforms)
+    else:
+        json_path = compile_json_path(key_transforms)
     return (
         "COALESCE(JSON_QUERY(%s, '%s'), JSON_VALUE(%s, '%s'))" %
         ((lhs, json_path) * 2)
