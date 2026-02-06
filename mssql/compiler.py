@@ -318,19 +318,23 @@ class SQLCompiler(compiler.SQLCompiler):
                                 # SQL Server doesn't allow duplicate columns in ORDER BY.
                                 # Handle the case where [col] and [table].[col] refer to
                                 # the same column (common with composite PK ordering).
-                                col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.endswith((' ASC', ' DESC')) else o_sql
-                                col_ref_upper = col_ref.upper()
-                                is_qualified = '.' in col_ref
-                                col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
-                                # Skip if exact duplicate or if qualified ref matches earlier unqualified ref
-                                if col_ref_upper in seen_full:
-                                    continue
-                                if is_qualified and col_name in seen_unqualified:
-                                    continue
-                                seen_full.add(col_ref_upper)
-                                if not is_qualified:
-                                    seen_unqualified.add(col_name)
-                                ordering.append(o_sql)
+                                # Also handle composite PK which may emit multiple comma-separated
+                                # columns in a single o_sql (e.g., "[t].[a] DESC, [t].[b] DESC").
+                                parts = [p.strip() for p in o_sql.split(',')]
+                                for part in parts:
+                                    col_ref = part.rsplit(' ', 1)[0] if part.endswith((' ASC', ' DESC')) else part
+                                    col_ref_upper = col_ref.upper()
+                                    is_qualified = '.' in col_ref
+                                    col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                                    # Skip if exact duplicate or if qualified ref matches earlier unqualified ref
+                                    if col_ref_upper in seen_full:
+                                        continue
+                                    if is_qualified and col_name in seen_unqualified:
+                                        continue
+                                    seen_full.add(col_ref_upper)
+                                    if not is_qualified:
+                                        seen_unqualified.add(col_name)
+                                    ordering.append(part)
                                 params.extend(o_params)
                             offsetting_order_by = ', '.join(ordering)
                             order_by = []
@@ -412,20 +416,27 @@ class SQLCompiler(compiler.SQLCompiler):
                     # SQL Server doesn't allow the same column to appear twice
                     # in ORDER BY. Handle the case where [col] and [table].[col]
                     # refer to the same column (common with composite PK ordering).
-                    col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.endswith((' ASC', ' DESC')) else o_sql
-                    col_ref_upper = col_ref.upper()
-                    is_qualified = '.' in col_ref
-                    col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
-                    # Skip if exact duplicate or if qualified ref matches earlier unqualified ref
-                    if col_ref_upper in seen_full:
-                        continue
-                    if is_qualified and col_name in seen_unqualified:
-                        continue
-                    seen_full.add(col_ref_upper)
-                    if not is_qualified:
-                        seen_unqualified.add(col_name)
-                    ordering.append(o_sql)
-                    params.extend(o_params)
+                    # Also handle composite PK which may emit multiple comma-separated
+                    # columns in a single o_sql (e.g., "[t].[a] DESC, [t].[b] DESC").
+                    parts = [p.strip() for p in o_sql.split(',')]
+                    deduped_parts = []
+                    for part in parts:
+                        col_ref = part.rsplit(' ', 1)[0] if part.endswith((' ASC', ' DESC')) else part
+                        col_ref_upper = col_ref.upper()
+                        is_qualified = '.' in col_ref
+                        col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                        # Skip if exact duplicate or if qualified ref matches earlier unqualified ref
+                        if col_ref_upper in seen_full:
+                            continue
+                        if is_qualified and col_name in seen_unqualified:
+                            continue
+                        seen_full.add(col_ref_upper)
+                        if not is_qualified:
+                            seen_unqualified.add(col_name)
+                        deduped_parts.append(part)
+                    if deduped_parts:
+                        ordering.append(', '.join(deduped_parts))
+                        params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))
 
                 # For subqueres with an ORDER BY clause, SQL Server also
