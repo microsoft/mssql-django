@@ -315,11 +315,14 @@ class SQLCompiler(compiler.SQLCompiler):
                                     odir = 'DESC' if expr.descending else 'ASC'
                                     o_sql = '%s %s' % (o_sql, odir)
                                 # SQL Server doesn't allow duplicate columns in ORDER BY
+                                # Extract column reference (strip ASC/DESC)
                                 col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.endswith((' ASC', ' DESC')) else o_sql
-                                col_ref_upper = col_ref.upper()
-                                if col_ref_upper in seen_columns:
+                                # Extract just the column name (after last dot) to handle both
+                                # [col] and [table].[col] referring to the same column
+                                col_name = col_ref.rsplit('.', 1)[-1].upper()
+                                if col_name in seen_columns:
                                     continue
-                                seen_columns.add(col_ref_upper)
+                                seen_columns.add(col_name)
                                 ordering.append(o_sql)
                                 params.extend(o_params)
                             offsetting_order_by = ', '.join(ordering)
@@ -402,10 +405,12 @@ class SQLCompiler(compiler.SQLCompiler):
                     # in ORDER BY. Extract column reference (without ASC/DESC)
                     # and skip duplicates.
                     col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.endswith((' ASC', ' DESC')) else o_sql
-                    col_ref_upper = col_ref.upper()
-                    if col_ref_upper in seen_columns:
+                    # Extract just the column name (after last dot) to handle both
+                    # [col] and [table].[col] referring to the same column
+                    col_name = col_ref.rsplit('.', 1)[-1].upper()
+                    if col_name in seen_columns:
                         continue
-                    seen_columns.add(col_ref_upper)
+                    seen_columns.add(col_name)
                     ordering.append(o_sql)
                     params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))

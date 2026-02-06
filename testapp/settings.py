@@ -319,6 +319,10 @@ if VERSION >= (5, 1):
 # These are good candidates for community contributions - see GitHub issues
 if VERSION >= (5, 2):
     EXCLUDED_TESTS.extend([
+        # Composite PK tuple lookup tests - SQL Server doesn't support (col1, col2) IN syntax
+        # This uses pk__in with composite PK which generates unsupported tuple lookup SQL
+        'composite_pk.test_filter.CompositePKFilterTests.test_explicit_subquery',
+        
         # Tuple lookup tests - SQL Server doesn't support (col1, col2) IN syntax
         # TODO: Implement tuple lookup handling for SQL Server compatibility
         'foreign_object.test_tuple_lookups.TupleLookupsTests.test_exact',
