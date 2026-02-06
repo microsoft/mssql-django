@@ -303,7 +303,8 @@ class SQLCompiler(compiler.SQLCompiler):
                     if do_offset_emulation:
                         if order_by:
                             ordering = []
-                            seen_columns = set()
+                            seen_full = set()  # Full column refs (qualified or unqualified)
+                            seen_unqualified = set()  # Just column names from unqualified refs
                             for expr, (o_sql, o_params, _) in order_by:
                                 # value_expression in OVER clause cannot refer to
                                 # expressions or aliases in the select list. See:
@@ -314,15 +315,21 @@ class SQLCompiler(compiler.SQLCompiler):
                                     o_sql, _ = src.as_sql(self, self.connection)
                                     odir = 'DESC' if expr.descending else 'ASC'
                                     o_sql = '%s %s' % (o_sql, odir)
-                                # SQL Server doesn't allow duplicate columns in ORDER BY
-                                # Extract column reference (strip ASC/DESC)
+                                # SQL Server doesn't allow duplicate columns in ORDER BY.
+                                # Handle the case where [col] and [table].[col] refer to
+                                # the same column (common with composite PK ordering).
                                 col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.endswith((' ASC', ' DESC')) else o_sql
-                                # Extract just the column name (after last dot) to handle both
-                                # [col] and [table].[col] referring to the same column
-                                col_name = col_ref.rsplit('.', 1)[-1].upper()
-                                if col_name in seen_columns:
+                                col_ref_upper = col_ref.upper()
+                                is_qualified = '.' in col_ref
+                                col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                                # Skip if exact duplicate or if qualified ref matches earlier unqualified ref
+                                if col_ref_upper in seen_full:
                                     continue
-                                seen_columns.add(col_name)
+                                if is_qualified and col_name in seen_unqualified:
+                                    continue
+                                seen_full.add(col_ref_upper)
+                                if not is_qualified:
+                                    seen_unqualified.add(col_name)
                                 ordering.append(o_sql)
                                 params.extend(o_params)
                             offsetting_order_by = ', '.join(ordering)
@@ -393,7 +400,8 @@ class SQLCompiler(compiler.SQLCompiler):
 
             if order_by:
                 ordering = []
-                seen_columns = set()
+                seen_full = set()  # Full column refs (qualified or unqualified)
+                seen_unqualified = set()  # Just column names from unqualified refs
                 for expr, (o_sql, o_params, _) in order_by:
                     if expr:
                         src = next(iter(expr.get_source_expressions()))
@@ -402,15 +410,20 @@ class SQLCompiler(compiler.SQLCompiler):
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
                     # SQL Server doesn't allow the same column to appear twice
-                    # in ORDER BY. Extract column reference (without ASC/DESC)
-                    # and skip duplicates.
+                    # in ORDER BY. Handle the case where [col] and [table].[col]
+                    # refer to the same column (common with composite PK ordering).
                     col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.endswith((' ASC', ' DESC')) else o_sql
-                    # Extract just the column name (after last dot) to handle both
-                    # [col] and [table].[col] referring to the same column
-                    col_name = col_ref.rsplit('.', 1)[-1].upper()
-                    if col_name in seen_columns:
+                    col_ref_upper = col_ref.upper()
+                    is_qualified = '.' in col_ref
+                    col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                    # Skip if exact duplicate or if qualified ref matches earlier unqualified ref
+                    if col_ref_upper in seen_full:
                         continue
-                    seen_columns.add(col_name)
+                    if is_qualified and col_name in seen_unqualified:
+                        continue
+                    seen_full.add(col_ref_upper)
+                    if not is_qualified:
+                        seen_unqualified.add(col_name)
                     ordering.append(o_sql)
                     params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))
