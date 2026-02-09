@@ -25,6 +25,19 @@ def get_schema_name():
     return getattr(settings, 'SCHEMA_TO_INSPECT', 'SCHEMA_NAME()')
 
 
+def get_table_name_with_schema(table_name: str) -> tuple[str, str]:
+    # This takes into account that doing
+    # db_table = '[schema].[table_name]'
+    # is supported
+    table_name = table_name.replace('[', '').replace(']', '')
+
+    if '.' in table_name:
+        schema_name, table_name = table_name.split('.', 1)
+        return schema_name, table_name
+
+    return getattr(settings, 'SCHEMA_TO_INSPECT', 'dbo'), table_name
+
+
 class DatabaseIntrospection(BaseDatabaseIntrospection):
     # Map type codes to Django Field types.
     data_types_reverse = {
@@ -77,8 +90,10 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns a list of table and view names in the current database.
         """
+
         if VERSION >= (4, 2) and self.connection.features.supports_comments:
             sql = """SELECT
+                        TABLE_SCHEMA,
                         TABLE_NAME,
                         TABLE_TYPE,
                         CAST(ep.value AS VARCHAR) AS COMMENT
@@ -86,20 +101,19 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     LEFT JOIN sys.tables t ON t.name = i.TABLE_NAME
                     LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
                     AND ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
-                    WHERE i.TABLE_SCHEMA = %s""" % (
-                get_schema_name())
+                    """
         else:
-            sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s' % (get_schema_name())
+            sql = 'SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES'
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
         if VERSION >= (4, 2) and self.connection.features.supports_comments:
-            return [TableInfo(row[0], types.get(row[1]), row[2])
+            return [TableInfo(f'[{row[0]}].[{row[1]}]' if row[0] != 'dbo' else row[1], types.get(row[2]), row[3])
                     for row in cursor.fetchall()
-                    if row[0] not in self.ignored_tables]
+                    if row[1] not in self.ignored_tables]
         else:
-            return [BaseTableInfo(row[0], types.get(row[1]))
+            return [BaseTableInfo(f'[{row[0]}].[{row[1]}]' if row[0] != 'dbo' else row[1], types.get(row[2]))
                     for row in cursor.fetchall()
-                    if row[0] not in self.ignored_tables]
+                    if row[1] not in self.ignored_tables]
 
     def _is_auto_field(self, cursor, table_name, column_name):
         """
@@ -184,11 +198,13 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         return items
 
     def get_sequences(self, cursor, table_name, table_fields=()):
-        cursor.execute(f"""
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+
+        cursor.execute("""
             SELECT c.name FROM sys.columns c
             INNER JOIN sys.tables t ON c.object_id = t.object_id
-            WHERE t.schema_id = SCHEMA_ID({get_schema_name()}) AND t.name = %s AND c.is_identity = 1""",
-                       [table_name])
+            WHERE t.schema_id = SCHEMA_ID(%s) AND t.name = %s AND c.is_identity = 1""",
+                       [schema_name, table_name])
         # SQL Server allows only one identity column per table
         # https://docs.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
         row = cursor.fetchone()
@@ -199,11 +215,13 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Returns a dictionary of {field_name: (field_name_other_table, other_table)}
         representing all relationships to the given table.
         """
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+
         # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
         # CONSTRAINT_TABLE_USAGE:  http://msdn2.microsoft.com/en-us/library/ms179883.aspx
         # REFERENTIAL_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms179987.aspx
         # TABLE_CONSTRAINTS:       http://msdn2.microsoft.com/en-us/library/ms181757.aspx
-        sql = f"""
+        sql = """
 SELECT e.COLUMN_NAME AS column_name,
   c.TABLE_NAME AS referenced_table_name,
   d.COLUMN_NAME AS referenced_column_name
@@ -216,8 +234,8 @@ INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
   ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME AND c.CONSTRAINT_SCHEMA = d.CONSTRAINT_SCHEMA
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
   ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME AND a.TABLE_SCHEMA = e.TABLE_SCHEMA
-WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
-        cursor.execute(sql, (table_name,))
+WHERE a.TABLE_SCHEMA = %s AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
+        cursor.execute(sql, (schema_name, table_name,))
         return dict([[item[0], (item[2], item[1])] for item in cursor.fetchall()])
 
     def get_key_columns(self, cursor, table_name):
@@ -226,14 +244,16 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
         key columns in given table.
         """
         key_columns = []
-        cursor.execute(f"""
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+
+        cursor.execute("""
             SELECT c.name AS column_name, rt.name AS referenced_table_name, rc.name AS referenced_column_name
             FROM sys.foreign_key_columns fk
             INNER JOIN sys.tables t ON t.object_id = fk.parent_object_id
             INNER JOIN sys.columns c ON c.object_id = t.object_id AND c.column_id = fk.parent_column_id
             INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
             INNER JOIN sys.columns rc ON rc.object_id = rt.object_id AND rc.column_id = fk.referenced_column_id
-            WHERE t.schema_id = SCHEMA_ID({get_schema_name()}) AND t.name = %s""", [table_name])
+            WHERE t.schema_id = SCHEMA_ID(%s) AND t.name = %s""", [schema_name, table_name])
         key_columns.extend([tuple(row) for row in cursor.fetchall()])
         return key_columns
 
@@ -254,9 +274,12 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
          * type: The type of the index (btree, hash, etc.)
         """
         constraints = {}
+
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+
         # Loop over the key table, collecting things as constraints
         # This will get PKs, FKs, and uniques, but not CHECK
-        cursor.execute(f"""
+        cursor.execute("""
             SELECT
                 kc.constraint_name,
                 kc.column_name,
@@ -296,12 +319,13 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 kc.table_name = fk.table_name AND
                 kc.column_name = fk.column_name
             WHERE
-                kc.table_schema = {get_schema_name()} AND
+                kc.table_schema = %s AND
                 kc.table_name = %s
             ORDER BY
                 kc.constraint_name ASC,
                 kc.ordinal_position ASC
-        """, [table_name])
+        """, [schema_name, table_name])
+
         for constraint, column, kind, ref_table, ref_column in cursor.fetchall():
             # If we're the first column, make the record
             if constraint not in constraints:
@@ -322,7 +346,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
             # Record the details
             constraints[constraint]['columns'].append(column)
         # Now get CHECK constraint columns
-        cursor.execute(f"""
+        cursor.execute("""
             SELECT kc.constraint_name, kc.column_name
             FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS kc
             JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS c ON
@@ -331,9 +355,9 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 kc.constraint_name = c.constraint_name
             WHERE
                 c.constraint_type = 'CHECK' AND
-                kc.table_schema = {get_schema_name()} AND
+                kc.table_schema = %s AND
                 kc.table_name = %s
-        """, [table_name])
+        """, [schema_name, table_name])
         for constraint, column in cursor.fetchall():
             # If we're the first column, make the record
             if constraint not in constraints:
@@ -375,7 +399,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
             # Record the details
             constraints[constraint]['columns'].append(column)
         # Now get indexes
-        cursor.execute(f"""
+        cursor.execute("""
             SELECT
                 i.name AS index_name,
                 i.is_unique,
@@ -398,12 +422,12 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 ic.object_id = c.object_id AND
                 ic.column_id = c.column_id
             WHERE
-                t.schema_id = SCHEMA_ID({get_schema_name()}) AND
+                t.schema_id = SCHEMA_ID(%s) AND
                 t.name = %s
             ORDER BY
                 i.index_id ASC,
                 ic.index_column_id ASC
-        """, [table_name])
+        """, [schema_name, table_name])
         indexes = {}
         for index, unique, unique_constraint, primary, type_, desc, order, column in cursor.fetchall():
             if index not in indexes:

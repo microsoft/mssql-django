@@ -503,13 +503,13 @@ class DatabaseOperations(BaseDatabaseOperations):
 
         seqs = self._build_sequences(sequences, cursor)
 
-        COLUMNS = "TABLE_NAME, CONSTRAINT_NAME"
+        COLUMNS = "TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME"
         WHERE = "CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')"
         cursor.execute(
             "SELECT {} FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE {}".format(COLUMNS, WHERE))
         fks = cursor.fetchall()
-        sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' %
-                    (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
+        sql_list = ['ALTER TABLE %s.%s NOCHECK CONSTRAINT %s;' %
+                    (self.quote_name(fk[0]), self.quote_name(fk[1]), self.quote_name(fk[2])) for fk in fks]
         sql_list.extend(['%s %s %s;' % (style.SQL_KEYWORD('DELETE'), style.SQL_KEYWORD('FROM'),
                                         style.SQL_FIELD(self.quote_name(table))) for table in tables])
 
@@ -530,8 +530,8 @@ class DatabaseOperations(BaseDatabaseOperations):
                 style.SQL_KEYWORD('NO_INFOMSGS'),
             ) for seq in seqs])
 
-        sql_list.extend(['ALTER TABLE %s CHECK CONSTRAINT %s;' %
-                         (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks])
+        sql_list.extend(['ALTER TABLE %s.%s CHECK CONSTRAINT %s;' %
+                         (self.quote_name(fk[0]), self.quote_name(fk[1]), self.quote_name(fk[2])) for fk in fks])
         return sql_list
 
     def start_transaction_sql(self):

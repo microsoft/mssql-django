@@ -16,6 +16,7 @@ from ..models import (
     TestIndexesRetainedRenamed,
     Choice,
     Question,
+    ChildSchema
 )
 
 connections = ConnectionHandler()
@@ -94,6 +95,7 @@ class TestCorrectIndexes(TestCase):
                 # Models where the table is not managed by Django migrations are irrelevant
                 continue
             model_constraints = get_constraints(table_name=model_cls._meta.db_table)
+
             # Check correct indexes are in place for all fields in model
             for field in model_cls._meta.get_fields():
                 if not hasattr(field, 'column'):
