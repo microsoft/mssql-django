@@ -9,7 +9,7 @@ from ..models import ParentSchema
 class NonDefaultSchemaTests(TestCase):
 
     def __do_flush(self):
-        call_command('flush', verbosity=3, database='default', interactive=False)
+        call_command('flush', verbosity=0, database='default', interactive=False)
 
     def test_flushing_database_with_non_default_schemas(self):
         self.__do_flush()
