@@ -11,28 +11,20 @@ DATABASES = {
     "default": {
         "ENGINE": "mssql",
         "NAME": "default",
-        #"USER": "sa",
-        #"PASSWORD": "MyPassword42",
-        "HOST": "localhost\SQLEXPRESS",
-        #"PORT": "",
-        "OPTIONS": {
-            "driver": "ODBC Driver 17 for SQL Server",
-            "return_rows_bulk_insert": True,
-            "extra_params": "Trusted_Connection=Yes",
-        },
+        "USER": "sa",
+        "PASSWORD": "MyPassword42",
+        "HOST": "localhost",
+        "PORT": "1433",
+        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
     },
     'other': {
         "ENGINE": "mssql",
         "NAME": "other",
-        #"USER": "sa",
-        #"PASSWORD": "MyPassword42",
-        "HOST": "localhost\SQLEXPRESS",
-        #"PORT": "",
-        "OPTIONS": {
-            "driver": "ODBC Driver 17 for SQL Server",
-            "return_rows_bulk_insert": True,
-            "extra_params": "Trusted_Connection=Yes",
-        },
+        "USER": "sa",
+        "PASSWORD": "MyPassword42",
+        "HOST": "localhost",
+        "PORT": "1433",
+        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
     },
 }
 
