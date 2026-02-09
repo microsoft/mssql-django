@@ -90,7 +90,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
     def get_table_list(self, cursor):
         """
         Returns a list of table and view names in the current database.
-        """        
+        """
         if VERSION >= (4, 2) and self.connection.features.supports_comments:
             sql = """SELECT
                         TABLE_SCHEMA,
