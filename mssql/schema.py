@@ -1351,16 +1351,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
           constraints.insert(0, composite_pk_sql)
         
         # Make the table schema
-        sql = ''
         if '.' in model._meta.db_table:
             schema_name, _ = model._meta.db_table.split('.', 1)
 
-            sql += self.sql_create_schema % {
+            sql = self.sql_create_schema % {
                 'schema': schema_name.strip('[').strip(']')
             }
 
+            self.execute(sql, None)
+
         # Make the table
-        sql += self.sql_create_table % {
+        sql = self.sql_create_table % {
             "table": self.quote_name(model._meta.db_table),
             'definition': ', '.join(constraint for constraint in (*column_sqls, *constraints) if constraint),
         }
