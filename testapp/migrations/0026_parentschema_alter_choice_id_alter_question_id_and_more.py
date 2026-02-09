@@ -3,18 +3,6 @@
 import django.db.models.deletion
 from django.db import migrations, models
 
-
-def create_schema(apps, schema_editor): 
-    """
-    This creates the schema in order to make the tests work!
-    """
-    connection = schema_editor.connection
-
-    if connection.vendor == 'microsoft':
-        sql = "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'events') BEGIN EXEC('CREATE SCHEMA [events]') END"
-        cursor = connection.cursor()
-        cursor.execute(sql)
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -22,7 +10,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(create_schema),
         migrations.CreateModel(
             name='ParentSchema',
             fields=[

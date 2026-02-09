@@ -64,6 +64,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                                           "WHERE" \
                                           " t.name = %(table)s AND" \
                                           " c.name = %(column)s"
+    sql_create_schema = (
+        "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = '%(schema)s') BEGIN "
+        "EXEC('CREATE SCHEMA [%(schema)s]') "
+        "END"
+    )
     sql_alter_column_default = "ADD DEFAULT %(default)s FOR %(column)s"
     sql_alter_column_no_default = "DROP CONSTRAINT %(column)s"
     sql_alter_column_not_null = "ALTER COLUMN %(column)s %(type)s NOT NULL"
@@ -1344,8 +1349,18 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
          # If a composite primary key SQL clause was generated, insert it at the beginning of the constraints list
         if composite_pk_sql:
           constraints.insert(0, composite_pk_sql)
+        
+        # Make the table schema
+        sql = ''
+        if '.' in model._meta.db_table:
+            schema_name, _ = model._meta.db_table.split('.', 1)
+
+            sql += self.sql_create_schema % {
+                'schema': schema_name.strip('[').strip(']')
+            }
+
         # Make the table
-        sql = self.sql_create_table % {
+        sql += self.sql_create_table % {
             "table": self.quote_name(model._meta.db_table),
             'definition': ', '.join(constraint for constraint in (*column_sqls, *constraints) if constraint),
         }
