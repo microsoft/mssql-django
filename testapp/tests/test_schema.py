@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 from django.test import TestCase
+from django.db import connections
 from django.core.management import call_command
 
 from ..models import ParentSchema
@@ -28,3 +29,11 @@ class NonDefaultSchemaTests(TestCase):
 
         self.assertEqual(base_parents + 1, created_parents, msg="Could not create parent")
         self.assertEqual(base_parents, flushed_parents, msg="Flush was not successful in restoring state")
+
+    def test_inspectdb(self):
+        connection = connections['default']
+
+        descs = connection.introspection.get_table_description(cursor=connection.cursor(), table_name='[events].[ParentSchema]')
+
+        self.assertEqual(len(descs), 2, msg="Unable to get both columns on table")
+        self.assertEqual( [ desc.name for desc in descs ], ['id', 'name'], msg="Unable to get both columns on table")
