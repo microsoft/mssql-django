@@ -265,3 +265,17 @@ class Book(models.Model):
         db_column="publisher_id_column",
     )
     updated = models.DateTimeField(auto_now=True)
+
+
+class ParentSchema(models.Model):
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = '[events].[ParentSchema]'
+
+class ChildSchema(models.Model):
+    name = models.CharField(max_length=100)
+    parent = models.ForeignKey(ParentSchema, on_delete=models.CASCADE)
+
+    class Meta:
+        db_table = '[events].[ChildSchema]'
