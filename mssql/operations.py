@@ -642,3 +642,53 @@ class DatabaseOperations(BaseDatabaseOperations):
         if isinstance(expression, RawSQL) and expression.conditional:
             return True
         return False
+
+    def adapt_json_value(self, value, encoder):
+        """
+        Transform a Python value to a JSON-serializable format.
+        Added in Django 6.0 to handle JSON encoding.
+        
+        Matches Django's default behavior: use the provided encoder (or None).
+        """
+        import json
+        
+        return json.dumps(value, cls=encoder)
+
+    def compile_json_path(self, key_transforms, include_root=True):
+        """
+        Compile a JSON path from a list of key transforms.
+        This method was moved from django.db.models.fields.json in Django 6.0
+        to connection.ops.compile_json_path().
+        
+        For SQL Server, we use bracket notation with escaped keys for any
+        non-simple key names to properly handle special characters.
+        """
+        import json
+        import re
+        path = ['$'] if include_root else []
+        for key_transform in key_transforms:
+            try:
+                num = int(key_transform)
+                path.append('[%s]' % num)
+            except ValueError:
+                # Use bracket notation for keys with special characters
+                # json.dumps properly escapes quotes and other special chars
+                escaped_key = json.dumps(key_transform)
+                # Check if key is simple (alphanumeric/underscore only)
+                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', key_transform):
+                    path.append('.')
+                    path.append(key_transform)
+                else:
+                    # Use bracket notation: $["key with \"quotes\""]
+                    path.append('[%s]' % escaped_key)
+        return ''.join(path)
+
+    # Django 6.0 renames return_insert_columns to returning_columns
+    # and fetch_returned_insert_rows to fetch_returned_rows
+    # Provide aliases for backwards compatibility
+    if django_version >= (6, 0):
+        def returning_columns(self, fields):
+            return self.return_insert_columns(fields)
+
+        def fetch_returned_rows(self, cursor, returning_params=None):
+            return self.fetch_returned_insert_rows(cursor)

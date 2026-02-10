@@ -25,7 +25,15 @@ if VERSION >= (5, 2):
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
         KeyTransform, KeyTransformIn, KeyTransformExact,
-        HasKeyLookup, compile_json_path)
+        HasKeyLookup)
+    # compile_json_path was moved from django.db.models.fields.json to
+    # connection.ops.compile_json_path() in Django 6.0
+    # We use connection.ops.compile_json_path() which we provide in operations.py
+    if VERSION < (6, 0):
+        from django.db.models.fields.json import compile_json_path
+    else:
+        # For Django 6.0+, we'll use connection.ops.compile_json_path()
+        compile_json_path = None
 
 if VERSION >= (3, 2):
     from django.db.models.functions.math import Random
@@ -315,6 +323,16 @@ def json_HasKeyLookup(self, compiler, connection):
     - SQL Server 2022+: Uses JSON_PATH_EXISTS function
     - Older versions: Uses JSON_VALUE IS NOT NULL
     """
+    # Helper function to compile JSON path
+    def _compile_json_path(key_transforms, include_root=True):
+        # For Django < 6.0, use Django's built-in compile_json_path
+        # For Django 6.0+, use connection.ops.compile_json_path()
+        # This is necessary because compile_json_path was moved in Django 6.0 from
+        # django.db.models.fields.json to connection.ops.compile_json_path()
+        if VERSION >= (6, 0):
+            return connection.ops.compile_json_path(key_transforms, include_root)
+        else:
+            return compile_json_path(key_transforms, include_root)
 
     def _combine_conditions(conditions):
         # Combine multiple conditions using the logical operator if present, otherwise return the first condition
@@ -328,7 +346,7 @@ def json_HasKeyLookup(self, compiler, connection):
     if isinstance(self.lhs, KeyTransform):
         # If lhs is a KeyTransform, preprocess to get SQL and JSON path
         lhs, _, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
-        lhs_json_path = compile_json_path(lhs_key_transforms)
+        lhs_json_path = _compile_json_path(lhs_key_transforms)
         lhs_params = []
     else:
         # Otherwise, process lhs normally and set default JSON path
@@ -356,15 +374,19 @@ def json_HasKeyLookup(self, compiler, connection):
         if VERSION >= (4, 1):
             # For Django 4.1+, split out the final key and build the JSON path accordingly
             *rhs_key_transforms, final_key = rhs_key_transforms
-            rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
-            rhs_json_path += self.compile_json_path_final_key(final_key)
+            rhs_json_path = _compile_json_path(rhs_key_transforms, include_root=False)
+            # Django 6.0+ changed signature to include connection parameter
+            if VERSION >= (6, 0):
+                rhs_json_path += self.compile_json_path_final_key(connection, final_key)
+            else:
+                rhs_json_path += self.compile_json_path_final_key(final_key)
             rhs_params.append(lhs_json_path + rhs_json_path)
         else:
             # For older Django, just compile the JSON path
             rhs_params.append(
                 '%s%s' % (
                     lhs_json_path,
-                    compile_json_path(rhs_key_transforms, include_root=False)
+                    _compile_json_path(rhs_key_transforms, include_root=False)
                 )
             )
 
