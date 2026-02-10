@@ -21,12 +21,12 @@ SQL_TIMESTAMP_WITH_TIMEZONE = -155
 FieldInfo = namedtuple("FieldInfo", BaseFieldInfo._fields + ("comment",))
 TableInfo = namedtuple("TableInfo", BaseTableInfo._fields + ("comment",))
 
-def get_schema_name() -> str | None:
+def get_schema_name():
     if hasattr(settings, 'SCHEMA_TO_INSPECT'):
         return getattr(settings, 'SCHEMA_TO_INSPECT')
     return None
 
-def get_table_name_with_schema(table_name: str) -> tuple[str, str]:
+def get_table_name_with_schema(table_name):
     # This takes into account that doing
     # db_table = '[schema].[table_name]'
     # is supported
@@ -105,7 +105,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         else:
             sql = 'SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES'
 
-        schema: str | None = get_schema_name()
+        schema = get_schema_name()
         if schema:
             sql += f" WHERE TABLE_SCHEMA = {schema}"
 
