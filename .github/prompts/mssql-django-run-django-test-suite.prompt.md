@@ -81,9 +81,9 @@ DATABASES = {
 }
 ```
 
-### 6. Clone Django Repository
+### 6. Django Repository
 
-The test script clones Django automatically, but you can do it manually:
+The `test.sh` script expects a pre-existing Django clone in the `django/` directory. It uses `git fetch`, not `git clone`:
 
 ```bash
 cd /workspaces/mssql-django
@@ -100,7 +100,7 @@ bash test.sh 2>&1 | tee test_output.log
 ```
 
 This will:
-1. Checkout the Django version matching your installed Django
+1. Fetch tags and checkout the Django version matching your installed Django
 2. Install Django's test requirements
 3. Run ~100+ test modules against SQL Server
 4. Generate coverage report

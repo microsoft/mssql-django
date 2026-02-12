@@ -20,8 +20,8 @@ python manage.py test --noinput
 
 | Test Type | Tests | Time | Guide |
 |-----------|-------|------|-------|
-| mssql-django unit tests | ~61 | ~22s | [run-mssql-django-tests.prompt.md](run-mssql-django-tests.prompt.md) |
-| Django full test suite | ~6200 | ~45min | [run-django-test-suite.prompt.md](run-django-test-suite.prompt.md) |
+| mssql-django unit tests | ~42 | ~22s | [mssql-django-run-unit-tests.prompt.md](mssql-django-run-unit-tests.prompt.md) |
+| Django full test suite | ~6200 | ~45min | [mssql-django-run-django-test-suite.prompt.md](mssql-django-run-django-test-suite.prompt.md) |
 
 ## Project Structure
 
@@ -40,7 +40,7 @@ mssql-django/
 │   ├── runners.py           # Custom test runner
 │   ├── models.py            # Test models
 │   └── tests/               # mssql-django unit tests
-├── django/                   # Django source (cloned for full test suite)
+├── django/                   # NOT in repo — cloned at runtime by test.sh
 ├── test.sh                   # Script to run Django's full test suite
 ├── tox.ini                   # Test matrix configuration
 └── azure-pipelines.yml       # CI configuration
@@ -50,8 +50,8 @@ mssql-django/
 
 ### System Requirements
 
-- Python 3.10+ (3.12+ recommended)
-- SQL Server 2016+ or Azure SQL Database
+- Python 3.8+ (3.12+ recommended; supports up to 3.14)
+- SQL Server 2017, 2019, 2022, 2025 or Azure SQL DB / Managed Instance
 - ODBC Driver 17 or 18 for SQL Server
 
 ### Python Dependencies
@@ -61,7 +61,7 @@ mssql-django/
 pip install -e ".[test]"
 
 # Core dependencies (installed automatically)
-# - Django >= 3.2
+# - Django >= 3.2, < 6.1
 # - pyodbc >= 3.0
 # - pytz
 ```
@@ -137,6 +137,8 @@ Key limitations that affect the backend implementation:
 | No native boolean | Uses BIT type | Automatic conversion |
 | Identifier quoting | Must use `[]` not `""` | operations.py quote_name() |
 | ORDER BY duplicates | Same column can't appear twice | compiler.py deduplicates |
+| ~2100 parameter limit | SQL Server max params per query | Temp table splitting in functions.py |
+| No boolean in SELECT | `supports_boolean_expr_in_select_clause = False` | CASE WHEN wrapping |
 
 ## Debugging
 
@@ -160,8 +162,8 @@ print(connection.queries)  # Shows executed queries with timing
 
 - **CI Platform:** Azure DevOps
 - **Config:** `azure-pipelines.yml`
-- **Test Matrix:** `tox.ini` (Python 3.10-3.13 × Django 4.2-5.2)
-- **SQL Server:** Windows hosted agents with SQL Server 2019
+- **Test Matrix:** `tox.ini` (Python 3.8-3.14 × Django 3.2-6.0)
+- **SQL Server:** Windows hosted agents with SQL Server 2019+
 
 ## Contributing
 

@@ -1,6 +1,6 @@
 # Running mssql-django Unit Tests
 
-This guide covers running the mssql-django package's own unit tests (61 tests).
+This guide covers running the mssql-django package's own unit tests (42 tests across 11 test files).
 
 ## Prerequisites
 
@@ -66,7 +66,7 @@ The `[test]` extra installs `unittest-xml-reporting` which provides the `xmlrunn
 python manage.py test --noinput
 ```
 
-Expected output: `Ran 61 tests in ~22s - OK`
+Expected output: `Ran 42 tests in ~22s - OK`
 
 ### Run specific test module
 

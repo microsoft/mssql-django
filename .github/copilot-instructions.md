@@ -7,52 +7,74 @@ mssql-django is a Django database backend for Microsoft SQL Server. It enables D
 ## Repository Structure
 
 ```
-mssql/                  # Core backend implementation
-├── base.py            # Database connection and cursor handling
-├── compiler.py        # SQL query compilation (most complex file)
+mssql/                  # Core backend implementation (~4400 lines)
+├── schema.py          # Schema modifications, _alter_field (~1585 lines, largest file)
+├── base.py            # DatabaseWrapper, connection/cursor handling (~736 lines)
+├── compiler.py        # SQL query compilation, pagination, ORDER BY (~697 lines)
+├── operations.py      # SQL Server-specific operations (~694 lines)
+├── functions.py       # SQL function overrides via as_microsoft pattern (~673 lines)
 ├── features.py        # SQL Server capability flags
-├── operations.py      # SQL Server-specific operations
-├── schema.py          # Schema modification operations
 ├── introspection.py   # Database introspection
 ├── creation.py        # Test database creation/destruction
-├── functions.py       # SQL function overrides
-└── client.py          # Command-line client support
+├── client.py          # Command-line client support
+└── management/
+    └── commands/
+        └── install_regex_clr.py  # CLR assembly for REGEXP_LIKE support
 
 testapp/               # Unit tests for the backend
-├── tests/             # 61 unit tests
+├── tests/             # 42 unit tests across 11 test files
 ├── settings.py        # Test configuration with EXCLUDED_TESTS
 └── models.py          # Test models
 
-django/                # Django source (submodule for full test suite)
-└── tests/             # Django's test suite
+django/                # NOT in repo — cloned at runtime by test.sh for full test suite
 ```
 
 ## Key Technical Context
 
 ### SQL Server Limitations
-When working on this codebase, be aware of these SQL Server limitations that require workarounds:
 
-1. **No tuple/row comparisons**: `WHERE (a, b) IN ((1, 2), (3, 4))` is not supported
-2. **ORDER BY uniqueness**: Same column cannot appear twice in ORDER BY clause
-3. **No LIMIT/OFFSET natively**: Requires `TOP` or `OFFSET...FETCH` emulation
-4. **No boolean type**: Uses `BIT` (0/1) instead
-5. **String concatenation**: Uses `+` instead of `||`
-6. **RAND() in ORDER BY**: Doesn't randomize; must use `NEWID()`
-7. **Identifier quoting**: Uses `[brackets]` instead of `"quotes"`
+| Limitation | Description | Where handled |
+|------------|-------------|---------------|
+| No tuple/row comparisons | `WHERE (a, b) IN (...)` not supported | Tests excluded |
+| ORDER BY uniqueness | Same column can't appear twice | `compiler.py` deduplication |
+| No LIMIT/OFFSET natively | Requires `TOP` or `OFFSET...FETCH` | `compiler.py` emulation |
+| No boolean in SELECT | `supports_boolean_expr_in_select_clause = False` | CASE WHEN wrapping |
+| No subqueries in GROUP BY | `supports_subqueries_in_group_by = False` | `features.py` flag |
+| String concatenation | Uses `+` instead of `\|\|` | `compiler.py` |
+| RAND() in ORDER BY | Doesn't randomize | Replaced with `NEWID()` in `compiler.py` |
+| Identifier quoting | Uses `[brackets]` not `"quotes"` | `operations.py` `quote_name()` |
+| ~2100 parameter limit | SQL Server max parameters per query | Temp table splitting in `functions.py` |
 
 ### Critical Files
 
-**mssql/compiler.py** - The most complex file. Handles:
+**mssql/schema.py** (~1585 lines) - The **largest** file. Its `_alter_field()` method (~647 lines) handles cascading constraint drop/recreate logic for schema migrations.
+
+**mssql/compiler.py** (~697 lines) - Handles:
 - SQL query generation with SQL Server syntax
 - OFFSET/LIMIT pagination emulation  
 - ORDER BY deduplication for composite primary keys
 - ROW_NUMBER() window function for offset queries
 
-**testapp/settings.py** - Contains `EXCLUDED_TESTS` list for Django tests that cannot pass due to SQL Server limitations (not bugs).
+**mssql/functions.py** (~673 lines) - Uses the `as_microsoft` monkey-patching pattern (see Coding Patterns below). Also handles parameter limit splitting via temp tables for large IN clauses.
 
 **mssql/features.py** - Declares what SQL Server supports/doesn't support. Check here first when a test fails to see if it's a known limitation.
 
+**testapp/settings.py** - Contains `EXCLUDED_TESTS` list for Django tests that cannot pass due to SQL Server limitations (not bugs). Includes version-gated exclusions (e.g., ~75 tests excluded for Django 6.0).
+
 ## Coding Patterns
+
+### The `as_microsoft` Pattern
+The primary extension mechanism. Functions in `functions.py` define custom SQL generation and are monkey-patched onto Django expression classes:
+```python
+def sqlserver_round(self, compiler, connection, **extra_context):
+    # Custom SQL Server ROUND implementation
+    return self.as_sql(compiler, connection, template='ROUND(%(expressions)s, %(extra)s)', **extra_context)
+
+# Monkey-patch onto Django's class
+Round.as_microsoft = sqlserver_round
+```
+
+This pattern is used for: `Cast`, `Ln`, `Log`, `Mod`, `Round`, `Window`, `Now`, `MD5`, `SHA*`, `OrderBy`, `Lookup`, `Random`, and more.
 
 ### SQL Generation
 When modifying SQL generation in compiler.py:
@@ -74,20 +96,12 @@ EXCLUDED_TESTS = [
 ]
 ```
 
-### Database Connections
-```python
-# Test database configuration
-DATABASES = {
-    "default": {
-        "ENGINE": "mssql",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server"},
-    }
-}
-```
+### Regex Support
+`python manage.py install_regex_clr <database>` installs a CLR assembly enabling `REGEXP_LIKE` support for regex-based Django tests.
 
 ## Testing
 
-### Run mssql-django unit tests (61 tests)
+### Run mssql-django unit tests (42 tests)
 ```bash
 python manage.py test testapp.tests
 ```
@@ -102,12 +116,13 @@ cd django && python tests/runtests.py --settings=testapp.settings <module>
 - `ordering` - ORDER BY functionality
 - `queries` - General query tests
 - `aggregation` - Aggregate functions
+- `schema` - Schema migration tests
 
 ## Version Compatibility
 
-- **Django**: 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2
-- **Python**: 3.8+
-- **SQL Server**: 2017, 2019, 2022
+- **Django**: 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0
+- **Python**: 3.8 – 3.14
+- **SQL Server**: 2017, 2019, 2022, 2025; Azure SQL DB / Managed Instance
 - **ODBC Driver**: 17 or 18 for SQL Server
 
 ## Common Issues
@@ -129,4 +144,5 @@ echo "yes" | python tests/runtests.py --settings=testapp.settings <module>
 1. Run affected Django test modules, not just unit tests
 2. Check if failures are bugs or SQL Server limitations
 3. Add appropriate test exclusions with comments explaining why
-4. Keep compiler.py changes focused - it's complex and sensitive
+4. Keep compiler.py and schema.py changes focused - they are complex and sensitive
+5. When adding SQL Server function overrides, use the `as_microsoft` pattern in `functions.py`
