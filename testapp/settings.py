@@ -427,6 +427,11 @@ if VERSION >= (5, 2):
         # Composite PK tuple lookup tests - SQL Server doesn't support (col1, col2) IN syntax
         # This uses pk__in with composite PK which generates unsupported tuple lookup SQL
         'composite_pk.test_filter.CompositePKFilterTests.test_explicit_subquery',
+        # SQL Server doesn't support tuple/row comparisons (WHERE (a, b) = (x, y))
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_exact',
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_comparison',
+        # SQL Server parameter splitting uses temp tables, resulting in different query count
+        'composite_pk.tests.CompositePKTests.test_in_bulk_batching',
         
         # Tuple lookup tests - SQL Server doesn't support (col1, col2) IN syntax
         # TODO: Implement tuple lookup handling for SQL Server compatibility

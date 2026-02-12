@@ -22,6 +22,15 @@ if django.VERSION >= (3, 1):
         compile_json_path = None
 if django.VERSION >= (4, 2):
     from django.core.exceptions import EmptyResultSet, FullResultSet
+# ColPairs was introduced in Django 5.2 for composite primary key support.
+# When an OrderBy wraps a ColPairs, Django's OrderBy.as_sql() joins all
+# columns into a single comma-separated SQL string. We expand these at
+# the expression level in get_order_by() so each ORDER BY item is always
+# a single column expression.
+try:
+    from django.db.models.expressions import ColPairs
+except ImportError:
+    ColPairs = None
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -223,6 +232,32 @@ compiler.cursor_iter = _cursor_iter
 
 class SQLCompiler(compiler.SQLCompiler):
 
+    def get_order_by(self):
+        """
+        Expand ColPairs-based OrderBy expressions into individual per-column
+        OrderBy entries before SQL compilation.
+
+        Django 5.2+ composite PKs produce OrderBy(ColPairs(...)) which
+        compiles to a single comma-separated SQL string. SQL Server doesn't
+        allow duplicate columns in ORDER BY (error 169), and expanding at
+        the expression level lets us deduplicate individual columns cleanly
+        without parsing SQL strings.
+        """
+        result = super().get_order_by()
+        if ColPairs is None:
+            return result
+        expanded = []
+        for resolved, (sql, params, is_ref) in result:
+            if isinstance(getattr(resolved, 'expression', None), ColPairs):
+                for col in resolved.expression.get_cols():
+                    order = resolved.copy()
+                    order.set_source_expressions([col])
+                    col_sql, col_params = self.compile(order)
+                    expanded.append((order, (col_sql, col_params, is_ref)))
+            else:
+                expanded.append((resolved, (sql, params, is_ref)))
+        return expanded
+
     def as_sql(self, with_limits=True, with_col_aliases=False):
         """
         Create the SQL for this query. Return the SQL string and list of
@@ -326,25 +361,24 @@ class SQLCompiler(compiler.SQLCompiler):
                                     odir = 'DESC' if expr.descending else 'ASC'
                                     o_sql = '%s %s' % (o_sql, odir)
                                 # SQL Server doesn't allow duplicate columns in ORDER BY.
+                                # ColPairs are already expanded in get_order_by(), so each
+                                # o_sql is a single column/expression.
                                 # Handle the case where [col] and [table].[col] refer to
-                                # the same column (common with composite PK ordering).
-                                # Also handle composite PK which may emit multiple comma-separated
-                                # columns in a single o_sql (e.g., "[t].[a] DESC, [t].[b] DESC").
-                                parts = [p.strip() for p in o_sql.split(',')]
-                                for part in parts:
-                                    col_ref = part.rsplit(' ', 1)[0] if part.endswith((' ASC', ' DESC')) else part
-                                    col_ref_upper = col_ref.upper()
-                                    is_qualified = '.' in col_ref
-                                    col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
-                                    # Skip if exact duplicate or if qualified ref matches earlier unqualified ref
-                                    if col_ref_upper in seen_full:
-                                        continue
-                                    if is_qualified and col_name in seen_unqualified:
-                                        continue
-                                    seen_full.add(col_ref_upper)
-                                    if not is_qualified:
-                                        seen_unqualified.add(col_name)
-                                    ordering.append(part)
+                                # the same column.
+                                col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.rstrip().endswith(('ASC', 'DESC')) else o_sql
+                                col_ref_upper = col_ref.upper()
+                                # Only treat as a qualified column ref if it looks like
+                                # [table].[col], not a function call containing dots.
+                                is_qualified = '.' in col_ref and '(' not in col_ref
+                                col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                                if col_ref_upper in seen_full:
+                                    continue
+                                if is_qualified and col_name in seen_unqualified:
+                                    continue
+                                seen_full.add(col_ref_upper)
+                                if not is_qualified:
+                                    seen_unqualified.add(col_name)
+                                ordering.append(o_sql)
                                 params.extend(o_params)
                             offsetting_order_by = ', '.join(ordering)
                             order_by = []
@@ -424,29 +458,23 @@ class SQLCompiler(compiler.SQLCompiler):
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
                     # SQL Server doesn't allow the same column to appear twice
-                    # in ORDER BY. Handle the case where [col] and [table].[col]
-                    # refer to the same column (common with composite PK ordering).
-                    # Also handle composite PK which may emit multiple comma-separated
-                    # columns in a single o_sql (e.g., "[t].[a] DESC, [t].[b] DESC").
-                    parts = [p.strip() for p in o_sql.split(',')]
-                    deduped_parts = []
-                    for part in parts:
-                        col_ref = part.rsplit(' ', 1)[0] if part.endswith((' ASC', ' DESC')) else part
-                        col_ref_upper = col_ref.upper()
-                        is_qualified = '.' in col_ref
-                        col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
-                        # Skip if exact duplicate or if qualified ref matches earlier unqualified ref
-                        if col_ref_upper in seen_full:
-                            continue
-                        if is_qualified and col_name in seen_unqualified:
-                            continue
-                        seen_full.add(col_ref_upper)
-                        if not is_qualified:
-                            seen_unqualified.add(col_name)
-                        deduped_parts.append(part)
-                    if deduped_parts:
-                        ordering.append(', '.join(deduped_parts))
-                        params.extend(o_params)
+                    # in ORDER BY. ColPairs are already expanded in
+                    # get_order_by(), so each o_sql is a single expression.
+                    # Handle the case where [col] and [table].[col] refer to
+                    # the same column.
+                    col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.rstrip().endswith(('ASC', 'DESC')) else o_sql
+                    col_ref_upper = col_ref.upper()
+                    is_qualified = '.' in col_ref and '(' not in col_ref
+                    col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                    if col_ref_upper in seen_full:
+                        continue
+                    if is_qualified and col_name in seen_unqualified:
+                        continue
+                    seen_full.add(col_ref_upper)
+                    if not is_qualified:
+                        seen_unqualified.add(col_name)
+                    ordering.append(o_sql)
+                    params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))
 
                 # For subqueres with an ORDER BY clause, SQL Server also
