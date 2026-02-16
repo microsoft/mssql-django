@@ -45,7 +45,7 @@ setup(
     'Release Notes': 'https://github.com/microsoft/mssql-django/releases',
     },
     license='BSD',
-    packages=find_packages(),
+    packages=find_packages(exclude=['testapp', 'testapp.*']),
     install_requires=[
         'django>=3.2,<6.1',
         'pyodbc>=3.0',
