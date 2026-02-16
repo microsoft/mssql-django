@@ -13,7 +13,6 @@ pip install \
     pytz \
     coverage \
     unittest-xml-reporting \
-    django-debug-toolbar \
     tox
 
 # Clone Django source for running Django's own test suite (test.sh)
@@ -35,7 +34,7 @@ alias migrate='python manage.py migrate'
 alias makemigrations='python manage.py makemigrations'
 alias shell='python manage.py shell'
 alias dbshell='python manage.py dbshell'
-alias sqlcmd='sqlcmd -S db -U sa -P MyPassword42 -C'
+alias sqlcmd='sqlcmd -S db -U sa -P "${MSSQL_PASSWORD:-MyPassword42}" -C'
 EOF
 
 # Ensure aliases are sourced in both shells

@@ -21,10 +21,18 @@ case "${1:-}" in
         echo "==> Running Django test module: ${MODULE}..."
         cd django
         DJANGO_VERSION="$(python -m django --version)"
-        git fetch --depth=1 origin +refs/tags/*:refs/tags/* 2>/dev/null || true
-        git checkout "${DJANGO_VERSION}" 2>/dev/null || true
+        # Ensure checkout matches installed Django version
+        CURRENT_REF="$(git describe --tags --exact-match 2>/dev/null || echo 'unknown')"
+        if [ "${CURRENT_REF}" != "${DJANGO_VERSION}" ]; then
+            echo "==> Switching Django checkout from ${CURRENT_REF} to ${DJANGO_VERSION}..."
+            git fetch --depth=1 origin +refs/tags/*:refs/tags/* 2>/dev/null || true
+            git checkout "${DJANGO_VERSION}" 2>/dev/null || true
+        fi
         pip install -q -r tests/requirements/py3.txt 2>/dev/null || true
         coverage run tests/runtests.py --settings=testapp.settings --noinput "${MODULE}"
+        coverage report --include='*mssql*' --omit='*virtualenvs*'
+        coverage xml --include='*mssql*' --omit='*virtualenvs*' -o coverage.xml
+        echo "Coverage report written to coverage.xml"
         ;;
     --coverage)
         echo "==> Running mssql-django tests with coverage..."

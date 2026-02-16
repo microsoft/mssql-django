@@ -12,6 +12,7 @@ SLEEP_INTERVAL=2
 echo "Waiting for SQL Server at ${HOST}:${PORT}..."
 
 for i in $(seq 1 "$MAX_RETRIES"); do
+    # -C trusts the server certificate (bypasses TLS validation for local dev)
     if sqlcmd -S "${HOST},${PORT}" -U "${USER}" -P "${PASSWORD}" -C \
               -Q "SELECT 1" -b -o /dev/null 2>/dev/null; then
         echo "SQL Server is ready! (attempt ${i}/${MAX_RETRIES})"
