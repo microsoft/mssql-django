@@ -10,21 +10,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATABASES = {
     "default": {
         "ENGINE": "mssql",
-        "NAME": "default",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
-        "HOST": "localhost",
-        "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
+        "NAME": os.environ.get("MSSQL_DB_NAME", "default"),
+        "USER": os.environ.get("MSSQL_USER", "sa"),
+        "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
+        "HOST": os.environ.get("MSSQL_HOST", "localhost"),
+        "PORT": os.environ.get("MSSQL_PORT", "1433"),
+        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
     },
     'other': {
         "ENGINE": "mssql",
-        "NAME": "other",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
-        "HOST": "localhost",
-        "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
+        "NAME": os.environ.get("MSSQL_DB_NAME_OTHER", "other"),
+        "USER": os.environ.get("MSSQL_USER", "sa"),
+        "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
+        "HOST": os.environ.get("MSSQL_HOST", "localhost"),
+        "PORT": os.environ.get("MSSQL_PORT", "1433"),
+        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
     },
 }
 
