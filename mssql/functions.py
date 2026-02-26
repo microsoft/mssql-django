@@ -2,18 +2,19 @@
 # Licensed under the BSD license.
 
 import json
+import itertools
 
 from django import VERSION
 from django.core import validators
 from django.db import NotSupportedError, connections, transaction
-from django.db.models import BooleanField, CheckConstraint, Value
-from django.db.models.expressions import Case, Exists, OrderBy, When, Window
+from django.db.models import BooleanField, CheckConstraint, Q, Value
+from django.db.models.expressions import Case, ColPairs, Exists, OrderBy, Subquery, When, Window
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.datetime import Now
 from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round, Degrees, Radians, Power
 from django.db.models.functions.text import Replace
-from django.db.models.lookups import In, Lookup
+from django.db.models.lookups import Exact, In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
 # import value and JSONArray for Django 5.2+
@@ -229,6 +230,52 @@ def mssql_split_parameter_list_as_sql(self, compiler, connection):
     in_clause = lhs + ' IN ' + '(SELECT params from #Temp_params)'
 
     return in_clause, ()
+
+
+def _tuple_lookup_rhs_query(rhs):
+    if isinstance(rhs, Query):
+        return rhs
+    if isinstance(rhs, Subquery):
+        return rhs.query
+    return None
+
+
+def _tuple_lookup_exists_sql(lhs, rhs_query, compiler, connection):
+    rhs_exprs = itertools.chain.from_iterable(
+        (
+            select_expr
+            if isinstance((select_expr := select[0]), ColPairs)
+            else [select_expr]
+        )
+        for select in rhs_query.get_compiler(connection=connection).get_select()[0]
+    )
+    query = rhs_query.clone()
+    query.add_q(Q(*[Exact(col, val) for col, val in zip(lhs, rhs_exprs)]))
+    return compiler.compile(Exists(query))
+
+
+if VERSION >= (5, 2, 4):
+    from django.db.models.fields.tuple_lookups import TupleExact, TupleIn
+
+    tuple_exact_get_fallback_sql = TupleExact.get_fallback_sql
+    tuple_in_get_fallback_sql = TupleIn.get_fallback_sql
+
+    def sqlserver_tuple_exact_get_fallback_sql(self, compiler, connection):
+        if connection.vendor == 'microsoft':
+            rhs_query = _tuple_lookup_rhs_query(self.rhs)
+            if rhs_query is not None:
+                return _tuple_lookup_exists_sql(self.lhs, rhs_query, compiler, connection)
+        return tuple_exact_get_fallback_sql(self, compiler, connection)
+
+    def sqlserver_tuple_in_get_fallback_sql(self, compiler, connection):
+        if connection.vendor == 'microsoft':
+            rhs_query = _tuple_lookup_rhs_query(self.rhs)
+            if rhs_query is not None:
+                return _tuple_lookup_exists_sql(self.lhs, rhs_query, compiler, connection)
+        return tuple_in_get_fallback_sql(self, compiler, connection)
+
+    TupleExact.get_fallback_sql = sqlserver_tuple_exact_get_fallback_sql
+    TupleIn.get_fallback_sql = sqlserver_tuple_in_get_fallback_sql
 
 
 def unquote_json_rhs(rhs_params):
