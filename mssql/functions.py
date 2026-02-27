@@ -259,10 +259,29 @@ def _tuple_lookup_exists_sql(lhs, rhs_query, compiler, connection):
 
 
 if VERSION >= (5, 2, 4):
-    from django.db.models.fields.tuple_lookups import TupleExact, TupleIn
+    from django.db.models.fields.tuple_lookups import (
+        TupleExact,
+        TupleGreaterThan,
+        TupleGreaterThanOrEqual,
+        TupleIn,
+        TupleLessThan,
+        TupleLessThanOrEqual,
+    )
 
     tuple_exact_get_fallback_sql = TupleExact.get_fallback_sql
     tuple_in_get_fallback_sql = TupleIn.get_fallback_sql
+    tuple_gt_get_fallback_sql = TupleGreaterThan.get_fallback_sql
+    tuple_gte_get_fallback_sql = TupleGreaterThanOrEqual.get_fallback_sql
+    tuple_lt_get_fallback_sql = TupleLessThan.get_fallback_sql
+    tuple_lte_get_fallback_sql = TupleLessThanOrEqual.get_fallback_sql
+
+    def _sqlserver_tuple_comparison_get_fallback_sql(self, compiler, connection, original):
+        if connection.vendor == 'microsoft' and _tuple_lookup_rhs_query(self.rhs) is not None:
+            lookup = self.lookup_name
+            raise NotSupportedError(
+                f'"{lookup}" cannot be used to target composite fields through subqueries on this backend'
+            )
+        return original(self, compiler, connection)
 
     def sqlserver_tuple_exact_get_fallback_sql(self, compiler, connection):
         if connection.vendor == 'microsoft':
@@ -278,8 +297,32 @@ if VERSION >= (5, 2, 4):
                 return _tuple_lookup_exists_sql(self.lhs, rhs_query, compiler, connection)
         return tuple_in_get_fallback_sql(self, compiler, connection)
 
+    def sqlserver_tuple_gt_get_fallback_sql(self, compiler, connection):
+        return _sqlserver_tuple_comparison_get_fallback_sql(
+            self, compiler, connection, tuple_gt_get_fallback_sql
+        )
+
+    def sqlserver_tuple_gte_get_fallback_sql(self, compiler, connection):
+        return _sqlserver_tuple_comparison_get_fallback_sql(
+            self, compiler, connection, tuple_gte_get_fallback_sql
+        )
+
+    def sqlserver_tuple_lt_get_fallback_sql(self, compiler, connection):
+        return _sqlserver_tuple_comparison_get_fallback_sql(
+            self, compiler, connection, tuple_lt_get_fallback_sql
+        )
+
+    def sqlserver_tuple_lte_get_fallback_sql(self, compiler, connection):
+        return _sqlserver_tuple_comparison_get_fallback_sql(
+            self, compiler, connection, tuple_lte_get_fallback_sql
+        )
+
     TupleExact.get_fallback_sql = sqlserver_tuple_exact_get_fallback_sql
     TupleIn.get_fallback_sql = sqlserver_tuple_in_get_fallback_sql
+    TupleGreaterThan.get_fallback_sql = sqlserver_tuple_gt_get_fallback_sql
+    TupleGreaterThanOrEqual.get_fallback_sql = sqlserver_tuple_gte_get_fallback_sql
+    TupleLessThan.get_fallback_sql = sqlserver_tuple_lt_get_fallback_sql
+    TupleLessThanOrEqual.get_fallback_sql = sqlserver_tuple_lte_get_fallback_sql
 
 
 def unquote_json_rhs(rhs_params):
