@@ -17,9 +17,9 @@ from django.db.models.functions.text import Replace
 from django.db.models.lookups import Exact, In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
-try:
+if VERSION >= (5, 2):
     from django.db.models.expressions import ColPairs
-except ImportError:
+else:
     ColPairs = None
 # import value and JSONArray for Django 5.2+
 if VERSION >= (5, 2):
