@@ -420,45 +420,17 @@ if VERSION >= (6, 0):
         'model_fields.test_jsonfield.TestQuerying.test_usage_in_subquery',
     ])
 
-# Django 5.2 specific exclusions - tuple lookups not supported in SQL Server
+# Django 5.2 specific exclusions
 # These are good candidates for community contributions - see GitHub issues
 if VERSION >= (5, 2):
     EXCLUDED_TESTS.extend([
-        # Composite PK tuple lookup tests - SQL Server doesn't support (col1, col2) IN syntax
-        # This uses pk__in with composite PK which generates unsupported tuple lookup SQL
-        'composite_pk.test_filter.CompositePKFilterTests.test_explicit_subquery',
-        # SQL Server doesn't support tuple/row comparisons (WHERE (a, b) = (x, y))
-        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_exact',
-        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_comparison',
         # SQL Server parameter splitting uses temp tables, resulting in different query count
         'composite_pk.tests.CompositePKTests.test_in_bulk_batching',
-        
-        # Tuple lookup tests - SQL Server doesn't support (col1, col2) IN syntax
-        # TODO: Implement tuple lookup handling for SQL Server compatibility
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_exact',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gt',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gte',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_in',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lt',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lte',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
-        'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
         
         # inspectdb tests that expect specific table structures in inspectdb_special/pascal schemas
         'inspectdb.tests.InspectDBTestCase.test_custom_normalize_table_name',
         'inspectdb.tests.InspectDBTestCase.test_special_column_name_introspection', 
         'inspectdb.tests.InspectDBTestCase.test_table_name_introspection',
-        
-        # Multi-column foreign key tests with tuple lookups - also affected by SQL Server limitations
-        # TODO: Fix tuple lookup generation for multi-column FKs 
-        'foreign_object.tests.MultiColumnFKTests.test_double_nested_query',
-        'foreign_object.tests.MultiColumnFKTests.test_forward_in_lookup_filters_correctly',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_forward',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_hidden_forward',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_reverse',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_forward_works',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_reverse_works',
-        'foreign_object.tests.MultiColumnFKTests.test_reverse_query_returns_correct_result',
         
         # JSONField special character handling - SQL Server specific syntax issues
         # TODO: Fix JSONField key escaping for special characters
@@ -487,6 +459,34 @@ if VERSION >= (5, 2):
         # TODO: Fix JSONField update with CASE WHEN handling
         'expressions.tests.BasicExpressionsTests.test_update_jsonfield_case_when_key_is_null',
         
+    ])
+
+if VERSION >= (5, 2) and VERSION < (5, 2, 4):
+    EXCLUDED_TESTS.extend([
+        # Composite PK tuple subquery fallback fix landed in Django 5.2.4.
+        'composite_pk.test_filter.CompositePKFilterTests.test_explicit_subquery',
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_exact',
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_comparison',
+
+        # Tuple lookup tests kept excluded for Django <5.2.4.
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_exact',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gt',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gte',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_in',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lt',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lte',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
+        'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
+
+        # Multi-column foreign key tuple-lookup tests kept excluded for Django <5.2.4.
+        'foreign_object.tests.MultiColumnFKTests.test_double_nested_query',
+        'foreign_object.tests.MultiColumnFKTests.test_forward_in_lookup_filters_correctly',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_forward',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_hidden_forward',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_reverse',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_forward_works',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_reverse_works',
+        'foreign_object.tests.MultiColumnFKTests.test_reverse_query_returns_correct_result',
     ])
 
 REGEX_TESTS = [

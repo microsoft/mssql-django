@@ -8,7 +8,7 @@ Tests for:
 """
 
 from django import VERSION
-from django.db import connection, models
+from django.db import NotSupportedError, connection, models
 from django.test import TestCase, TransactionTestCase
 
 from ..models import Author, Post
@@ -135,6 +135,7 @@ class BulkUpdateValidationTests(TestCase):
 # Django 5.2+ specific tests for composite PK
 if VERSION >= (5, 2):
     from django.db.models import CompositePrimaryKey
+    from django.db.models import OuterRef, Subquery
     from django.db.models.fields.composite import CompositePrimaryKey as CompositePrimaryKeyField
 
     class CompositePKValidationTests(TestCase):
@@ -282,3 +283,73 @@ if VERSION >= (5, 2):
                 self.TenantUser.objects.bulk_update(users, ['user_id'])
             
             self.assertIn('primary key', str(cm.exception).lower())
+
+    if VERSION >= (5, 2, 4):
+        class CompositePKTupleSubqueryLookupTests(TransactionTestCase):
+            @classmethod
+            def setUpClass(cls):
+                super().setUpClass()
+                with connection.cursor() as cursor:
+                    cursor.execute('''
+                        IF OBJECT_ID('testapp_tuplelookup_user', 'U') IS NOT NULL
+                            DROP TABLE testapp_tuplelookup_user
+                    ''')
+                    cursor.execute('''
+                        CREATE TABLE testapp_tuplelookup_user (
+                            tenant_id INT NOT NULL,
+                            user_id INT NOT NULL,
+                            name NVARCHAR(100) NOT NULL,
+                            PRIMARY KEY (tenant_id, user_id)
+                        )
+                    ''')
+
+            @classmethod
+            def tearDownClass(cls):
+                with connection.cursor() as cursor:
+                    cursor.execute('''
+                        IF OBJECT_ID('testapp_tuplelookup_user', 'U') IS NOT NULL
+                            DROP TABLE testapp_tuplelookup_user
+                    ''')
+                super().tearDownClass()
+
+            def setUp(self):
+                class TupleLookupUser(models.Model):
+                    pk = CompositePrimaryKey('tenant_id', 'user_id')
+                    tenant_id = models.IntegerField()
+                    user_id = models.IntegerField()
+                    name = models.CharField(max_length=100)
+
+                    class Meta:
+                        app_label = 'testapp'
+                        db_table = 'testapp_tuplelookup_user'
+                        managed = False
+
+                self.TupleLookupUser = TupleLookupUser
+
+                with connection.cursor() as cursor:
+                    cursor.execute('DELETE FROM testapp_tuplelookup_user')
+                    cursor.execute('''
+                        INSERT INTO testapp_tuplelookup_user (tenant_id, user_id, name)
+                        VALUES (1, 1, 'Alice'),
+                               (1, 2, 'Bob'),
+                               (2, 1, 'Charlie')
+                    ''')
+
+            def test_pk_in_subquery_uses_tuple_fallback(self):
+                subquery = Subquery(
+                    self.TupleLookupUser.objects.filter(tenant_id=1).values('pk')
+                )
+                queryset = self.TupleLookupUser.objects.filter(pk__in=subquery).order_by('tenant_id', 'user_id')
+                self.assertEqual(list(queryset.values_list('pk', flat=True)), [(1, 1), (1, 2)])
+
+            def test_pk_exact_subquery_uses_tuple_fallback(self):
+                queryset_rhs = self.TupleLookupUser.objects.filter(pk=OuterRef('pk')).values('pk')[:1]
+                self.assertEqual(self.TupleLookupUser.objects.filter(pk=queryset_rhs).count(), 3)
+
+            def test_pk_comparison_subquery_not_supported(self):
+                queryset_rhs = self.TupleLookupUser.objects.filter(pk=OuterRef('pk')).values('pk')[:1]
+                with self.assertRaisesMessage(
+                    NotSupportedError,
+                    '"gt" cannot be used to target composite fields through subqueries on this backend',
+                ):
+                    self.TupleLookupUser.objects.filter(pk__gt=queryset_rhs).count()

@@ -68,8 +68,10 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     # CompositePrimaryKey support is only available in Django 5.2 and later
     supports_composite_primary_keys = django_version >= (5, 2)
     if django_version >= (5, 2) and isinstance(CompositePrimaryKey, type):
-       # Set fallback tupple lookup support
-       supports_tuple_lookups = False
+        # SQL Server doesn't support native tuple lookups.
+        supports_tuple_lookups = False
+        if django_version >= (5, 2, 4):
+            supports_tuple_comparison_against_subquery = False
     @cached_property
     def has_zoneinfo_database(self):
         with self.connection.cursor() as cursor:
