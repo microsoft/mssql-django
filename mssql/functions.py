@@ -8,7 +8,7 @@ from django import VERSION
 from django.core import validators
 from django.db import NotSupportedError, connections, transaction
 from django.db.models import BooleanField, CheckConstraint, Q, Value
-from django.db.models.expressions import Case, ColPairs, Exists, OrderBy, Subquery, When, Window
+from django.db.models.expressions import Case, Exists, OrderBy, Subquery, When, Window
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.datetime import Now
@@ -17,6 +17,10 @@ from django.db.models.functions.text import Replace
 from django.db.models.lookups import Exact, In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
+try:
+    from django.db.models.expressions import ColPairs
+except ImportError:
+    ColPairs = None
 # import value and JSONArray for Django 5.2+
 if VERSION >= (5, 2):
     from django.db.models import Value
@@ -244,7 +248,7 @@ def _tuple_lookup_exists_sql(lhs, rhs_query, compiler, connection):
     rhs_exprs = itertools.chain.from_iterable(
         (
             select_expr
-            if isinstance((select_expr := select[0]), ColPairs)
+            if ColPairs is not None and isinstance((select_expr := select[0]), ColPairs)
             else [select_expr]
         )
         for select in rhs_query.get_compiler(connection=connection).get_select()[0]

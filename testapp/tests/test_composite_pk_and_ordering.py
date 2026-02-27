@@ -343,17 +343,13 @@ if VERSION >= (5, 2):
                 self.assertEqual(list(queryset.values_list('pk', flat=True)), [(1, 1), (1, 2)])
 
             def test_pk_exact_subquery_uses_tuple_fallback(self):
-                subquery = Subquery(
-                    self.TupleLookupUser.objects.filter(pk=OuterRef('pk')).values('pk')[:1]
-                )
-                self.assertEqual(self.TupleLookupUser.objects.filter(pk=subquery).count(), 3)
+                queryset_rhs = self.TupleLookupUser.objects.filter(pk=OuterRef('pk')).values('pk')[:1]
+                self.assertEqual(self.TupleLookupUser.objects.filter(pk=queryset_rhs).count(), 3)
 
             def test_pk_comparison_subquery_not_supported(self):
-                subquery = Subquery(
-                    self.TupleLookupUser.objects.filter(pk=OuterRef('pk')).values('pk')[:1]
-                )
+                queryset_rhs = self.TupleLookupUser.objects.filter(pk=OuterRef('pk')).values('pk')[:1]
                 with self.assertRaisesMessage(
                     NotSupportedError,
                     '"gt" cannot be used to target composite fields through subqueries on this backend',
                 ):
-                    self.TupleLookupUser.objects.filter(pk__gt=subquery).count()
+                    self.TupleLookupUser.objects.filter(pk__gt=queryset_rhs).count()
