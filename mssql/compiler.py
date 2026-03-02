@@ -22,6 +22,15 @@ if django.VERSION >= (3, 1):
         compile_json_path = None
 if django.VERSION >= (4, 2):
     from django.core.exceptions import EmptyResultSet, FullResultSet
+# ColPairs was introduced in Django 5.2 for composite primary key support.
+# When an OrderBy wraps a ColPairs, Django's OrderBy.as_sql() joins all
+# columns into a single comma-separated SQL string. We expand these at
+# the expression level in get_order_by() so each ORDER BY item is always
+# a single column expression.
+try:
+    from django.db.models.expressions import ColPairs
+except ImportError:
+    ColPairs = None
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -223,6 +232,32 @@ compiler.cursor_iter = _cursor_iter
 
 class SQLCompiler(compiler.SQLCompiler):
 
+    def get_order_by(self):
+        """
+        Expand ColPairs-based OrderBy expressions into individual per-column
+        OrderBy entries before SQL compilation.
+
+        Django 5.2+ composite PKs produce OrderBy(ColPairs(...)) which
+        compiles to a single comma-separated SQL string. SQL Server doesn't
+        allow duplicate columns in ORDER BY (error 169), and expanding at
+        the expression level lets us deduplicate individual columns cleanly
+        without parsing SQL strings.
+        """
+        result = super().get_order_by()
+        if ColPairs is None:
+            return result
+        expanded = []
+        for resolved, (sql, params, is_ref) in result:
+            if isinstance(getattr(resolved, 'expression', None), ColPairs):
+                for col in resolved.expression.get_cols():
+                    order = resolved.copy()
+                    order.set_source_expressions([col])
+                    col_sql, col_params = self.compile(order)
+                    expanded.append((order, (col_sql, col_params, is_ref)))
+            else:
+                expanded.append((resolved, (sql, params, is_ref)))
+        return expanded
+
     def as_sql(self, with_limits=True, with_col_aliases=False):
         """
         Create the SQL for this query. Return the SQL string and list of
@@ -313,6 +348,8 @@ class SQLCompiler(compiler.SQLCompiler):
                     if do_offset_emulation:
                         if order_by:
                             ordering = []
+                            seen_full = set()  # Full column refs (qualified or unqualified)
+                            seen_unqualified = set()  # Just column names from unqualified refs
                             for expr, (o_sql, o_params, _) in order_by:
                                 # value_expression in OVER clause cannot refer to
                                 # expressions or aliases in the select list. See:
@@ -323,6 +360,24 @@ class SQLCompiler(compiler.SQLCompiler):
                                     o_sql, _ = src.as_sql(self, self.connection)
                                     odir = 'DESC' if expr.descending else 'ASC'
                                     o_sql = '%s %s' % (o_sql, odir)
+                                # SQL Server doesn't allow duplicate columns in ORDER BY.
+                                # ColPairs are already expanded in get_order_by(), so each
+                                # o_sql is a single column/expression.
+                                # Handle the case where [col] and [table].[col] refer to
+                                # the same column.
+                                col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.rstrip().endswith(('ASC', 'DESC')) else o_sql
+                                col_ref_upper = col_ref.upper()
+                                # Only treat as a qualified column ref if it looks like
+                                # [table].[col], not a function call containing dots.
+                                is_qualified = '.' in col_ref and '(' not in col_ref
+                                col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                                if col_ref_upper in seen_full:
+                                    continue
+                                if is_qualified and col_name in seen_unqualified:
+                                    continue
+                                seen_full.add(col_ref_upper)
+                                if not is_qualified:
+                                    seen_unqualified.add(col_name)
                                 ordering.append(o_sql)
                                 params.extend(o_params)
                             offsetting_order_by = ', '.join(ordering)
@@ -393,6 +448,8 @@ class SQLCompiler(compiler.SQLCompiler):
 
             if order_by:
                 ordering = []
+                seen_full = set()  # Full column refs (qualified or unqualified)
+                seen_unqualified = set()  # Just column names from unqualified refs
                 for expr, (o_sql, o_params, _) in order_by:
                     if expr:
                         src = next(iter(expr.get_source_expressions()))
@@ -400,6 +457,22 @@ class SQLCompiler(compiler.SQLCompiler):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
+                    # SQL Server doesn't allow the same column to appear twice
+                    # in ORDER BY. ColPairs are already expanded in
+                    # get_order_by(), so each o_sql is a single expression.
+                    # Handle the case where [col] and [table].[col] refer to
+                    # the same column.
+                    col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.rstrip().endswith(('ASC', 'DESC')) else o_sql
+                    col_ref_upper = col_ref.upper()
+                    is_qualified = '.' in col_ref and '(' not in col_ref
+                    col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                    if col_ref_upper in seen_full:
+                        continue
+                    if is_qualified and col_name in seen_unqualified:
+                        continue
+                    seen_full.add(col_ref_upper)
+                    if not is_qualified:
+                        seen_unqualified.add(col_name)
                     ordering.append(o_sql)
                     params.extend(o_params)
                 result.append('ORDER BY %s' % ', '.join(ordering))
