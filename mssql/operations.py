@@ -543,6 +543,8 @@ class DatabaseOperations(BaseDatabaseOperations):
     def subtract_temporals(self, internal_type, lhs, rhs):
         lhs_sql, lhs_params = lhs
         rhs_sql, rhs_params = rhs
+        lhs_params = tuple(lhs_params)
+        rhs_params = tuple(rhs_params)
         if internal_type == 'DateField':
             sql = "CAST(DATEDIFF(day, %(rhs)s, %(lhs)s) AS bigint) * 86400 * 1000000"
             params = rhs_params + lhs_params
@@ -651,7 +653,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         Matches Django's default behavior: use the provided encoder (or None).
         """
         import json
-        
+
         return json.dumps(value, cls=encoder)
 
     def compile_json_path(self, key_transforms, include_root=True):
@@ -671,17 +673,13 @@ class DatabaseOperations(BaseDatabaseOperations):
                 num = int(key_transform)
                 path.append('[%s]' % num)
             except ValueError:
-                # Use bracket notation for keys with special characters
-                # json.dumps properly escapes quotes and other special chars
-                escaped_key = json.dumps(key_transform)
-                # Check if key is simple (alphanumeric/underscore only)
                 if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', key_transform):
                     path.append('.')
                     path.append(key_transform)
                 else:
-                    # Use bracket notation: $["key with \"quotes\""]
-                    path.append('[%s]' % escaped_key)
-        return ''.join(path)
+                    escaped_key = json.dumps(key_transform, ensure_ascii=True)[1:-1]
+                    path.append('."%s"' % escaped_key)
+        return ''.join(path).replace("'", "''")
 
     # Django 6.0 renames return_insert_columns to returning_columns
     # and fetch_returned_insert_rows to fetch_returned_rows

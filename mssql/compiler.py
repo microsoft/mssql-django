@@ -2,6 +2,7 @@
 # Licensed under the BSD license.
 
 import types
+import re
 from itertools import chain
 
 import django
@@ -31,6 +32,33 @@ try:
     from django.db.models.expressions import ColPairs
 except ImportError:
     ColPairs = None
+
+
+_ORDER_BY_CONSTANT_CAST_RE = re.compile(
+    r'^CAST\(%s AS [^)]+\)(?:\s+(?:ASC|DESC))?$',
+    re.IGNORECASE,
+)
+_ORDER_BY_CONSTANT_SQL_RE = re.compile(
+    r'^CAST\((-?\d+(?:\.\d+)?) AS [^)]+\)(?:\s+(?:ASC|DESC))?$',
+    re.IGNORECASE,
+)
+
+
+def _inline_safe_order_by_constant(o_sql, o_params):
+    if len(o_params) != 1 or not _ORDER_BY_CONSTANT_CAST_RE.match(o_sql.strip()):
+        return o_sql, o_params
+    value = o_params[0]
+    if isinstance(value, bool):
+        literal = '1' if value else '0'
+    elif isinstance(value, (int, float)):
+        literal = str(value)
+    else:
+        return o_sql, o_params
+    return o_sql.replace('%s', literal, 1), []
+
+
+def _is_constant_ordering_sql(o_sql):
+    return bool(_ORDER_BY_CONSTANT_SQL_RE.match(o_sql.strip()))
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -432,7 +460,10 @@ class SQLCompiler(compiler.SQLCompiler):
                 if grouping:
                     if distinct_fields:
                         raise NotImplementedError('annotate() + distinct(fields) is not implemented.')
-                    order_by = order_by or self.connection.ops.force_no_ordering()
+                    if self.query.default_ordering and not self.query.order_by:
+                        order_by = self.connection.ops.force_no_ordering()
+                    else:
+                        order_by = order_by or self.connection.ops.force_no_ordering()
                     result.append('GROUP BY %s' % ', '.join(grouping))
 
                 if having:
@@ -457,6 +488,9 @@ class SQLCompiler(compiler.SQLCompiler):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
+                    o_sql, o_params = _inline_safe_order_by_constant(o_sql, o_params)
+                    if _is_constant_ordering_sql(o_sql):
+                        continue
                     # SQL Server doesn't allow the same column to appear twice
                     # in ORDER BY. ColPairs are already expanded in
                     # get_order_by(), so each o_sql is a single expression.
@@ -475,14 +509,17 @@ class SQLCompiler(compiler.SQLCompiler):
                         seen_unqualified.add(col_name)
                     ordering.append(o_sql)
                     params.extend(o_params)
-                result.append('ORDER BY %s' % ', '.join(ordering))
+                if ordering:
+                    result.append('ORDER BY %s' % ', '.join(ordering))
+                else:
+                    order_by = []
 
                 # For subqueres with an ORDER BY clause, SQL Server also
                 # requires a TOP or OFFSET clause which is not generated for
                 # Django 2.x.  See https://github.com/microsoft/mssql-django/issues/12
                 # Add OFFSET for all Django versions.
                 # https://github.com/microsoft/mssql-django/issues/109
-                if not (do_offset or do_limit) and supports_offset_clause:
+                if ordering and not (do_offset or do_limit) and supports_offset_clause:
                     result.append("OFFSET 0 ROWS")
 
             # SQL Server requires the backend-specific emulation (2008 or earlier)

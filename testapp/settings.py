@@ -324,34 +324,15 @@ if VERSION >= (5, 1):
 # Django 6.0 specific exclusions
 if VERSION >= (6, 0):
     EXCLUDED_TESTS.extend([
-        # ORDER BY with GROUP BY - SQL Server limitation with order_with_respect_to bulk_create
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_allows_duplicate_order_values',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_mixed_scenario',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_multiple_parents',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_respects_mixed_manual_order',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_with_empty_parent',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_with_existing_children',
-        # ORDER BY with CASE WHEN constant value - SQL Server limitation
-        'ordering.tests.OrderingTests.test_order_by_case_when_constant_value',
-        
-        # Parameter type handling - Django 6.0 changed params from list to tuple in some places
-        'aggregation.tests.AggregateTestCase.test_order_by_aggregate_transform',
-        'expressions.tests.FTimeDeltaTests.test_date_subtraction',
-        'expressions.tests.FTimeDeltaTests.test_datetime_subtraction',
-        'expressions.tests.FTimeDeltaTests.test_time_subtraction',
-        
         # JSONField - UUID serialization and negative array index handling needed
         'model_fields.test_jsonfield.TestQuerying.test_deep_negative_lookup_array',
         'model_fields.test_jsonfield.TestQuerying.test_deep_negative_lookup_mixed',
         'model_fields.test_jsonfield.TestQuerying.test_deep_values',
-        'model_fields.test_jsonfield.TestQuerying.test_exact',
-        'model_fields.test_jsonfield.TestQuerying.test_exact_complex',
         'model_fields.test_jsonfield.TestQuerying.test_expression_wrapper_key_transform',
         'model_fields.test_jsonfield.TestQuerying.test_has_any_keys',
         'model_fields.test_jsonfield.TestQuerying.test_has_key',
         'model_fields.test_jsonfield.TestQuerying.test_has_keys',
         'model_fields.test_jsonfield.TestQuerying.test_icontains',
-        'model_fields.test_jsonfield.TestQuerying.test_isnull',
         'model_fields.test_jsonfield.TestQuerying.test_join_key_transform_annotation_expression',
         'model_fields.test_jsonfield.TestQuerying.test_key_contains',
         'model_fields.test_jsonfield.TestQuerying.test_key_endswith',
@@ -363,23 +344,18 @@ if VERSION >= (6, 0):
         'model_fields.test_jsonfield.TestQuerying.test_key_startswith',
         'model_fields.test_jsonfield.TestQuerying.test_key_transform',
         'model_fields.test_jsonfield.TestQuerying.test_key_transform_annotation_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_key_transform_expression',
         'model_fields.test_jsonfield.TestQuerying.test_key_transform_raw_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_key_values',
         'model_fields.test_jsonfield.TestQuerying.test_lookup_exclude',
         'model_fields.test_jsonfield.TestQuerying.test_lookup_exclude_nonexistent_key',
         'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_annotation_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_expression',
         'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_on_subquery',
         'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_raw_expression',
         'model_fields.test_jsonfield.TestQuerying.test_none_key_exclude',
-        'model_fields.test_jsonfield.TestQuerying.test_obj_subquery_lookup',
         'model_fields.test_jsonfield.TestQuerying.test_order_grouping_custom_decoder',
         'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_list_lookup',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_list_negative_lookup',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_lookup_obj_target',
-        'model_fields.test_jsonfield.TestQuerying.test_shallow_obj_lookup',
         
         # SQL Server limitations (permanent exclusions)
         # STRING_AGG with DISTINCT - SQL Server syntax differs
@@ -416,8 +392,6 @@ if VERSION >= (6, 0):
         'schema.tests.SchemaTests.test_m2m_create_through_inherited',
         'schema.tests.SchemaTests.test_m2m_custom',
         'schema.tests.SchemaTests.test_m2m_inherited',
-        # JSON subquery test - transaction error cascading from earlier issues
-        'model_fields.test_jsonfield.TestQuerying.test_usage_in_subquery',
     ])
 
 # Django 5.2 specific exclusions
@@ -431,11 +405,6 @@ if VERSION >= (5, 2):
         'inspectdb.tests.InspectDBTestCase.test_custom_normalize_table_name',
         'inspectdb.tests.InspectDBTestCase.test_special_column_name_introspection', 
         'inspectdb.tests.InspectDBTestCase.test_table_name_introspection',
-        
-        # JSONField special character handling - SQL Server specific syntax issues
-        # TODO: Fix JSONField key escaping for special characters
-        'model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars',
-        'model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars_double_quotes',
         
         # JSONField bulk update with null handling
         # TODO: Fix bulk update SQL generation for JSONField null values
