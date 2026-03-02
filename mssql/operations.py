@@ -75,6 +75,15 @@ class DatabaseOperations(BaseDatabaseOperations):
         if objs and not hasattr(objs[0], '_meta'):
             return max_query_params // fields_len
 
+        if objs and hasattr(objs[0], '_meta'):
+            obj_model = objs[0].__class__
+            field_models = {
+                field.model for field in fields
+                if hasattr(field, 'model') and field.model is not None
+            }
+            if field_models and any(field_model is not obj_model for field_model in field_models):
+                return max_query_params // fields_len
+
         # inserts are capped at 1000 rows regardless of number of query params.
         # bulk_update CASE...WHEN...THEN statement sometimes takes 2 parameters per field
         return min(max_insert_rows, max_query_params // fields_len // 2)

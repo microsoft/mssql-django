@@ -478,13 +478,16 @@ class SQLCompiler(compiler.SQLCompiler):
                     if self._is_constant_order_by_expression(expr):
                         continue
                     json_key_transform_ordering = False
+                    uses_ref_alias = False
                     if expr:
+                        unresolved_src = self._resolve_order_by_source_expression(expr, dereference_ref=False)
+                        uses_ref_alias = isinstance(unresolved_src, Ref)
                         src = self._resolve_order_by_source_expression(expr)
                         if isinstance(src, Random):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
-                        elif isinstance(src, json_KeyTransform):
+                        elif isinstance(src, json_KeyTransform) and not uses_ref_alias:
                             json_key_transform_ordering = True
                     if json_key_transform_ordering:
                         direction = 'DESC' if getattr(expr, 'descending', False) else 'ASC'
@@ -601,12 +604,18 @@ class SQLCompiler(compiler.SQLCompiler):
         return self._filter_subquery_and_constant_expressions(expressions)
 
     def _is_constant_expression(self, expression):
+        if expression is None:
+            return False
         if isinstance(expression, Value):
             return True
+        if not hasattr(expression, 'get_source_expressions'):
+            return False
         sub_exprs = expression.get_source_expressions()
         if not sub_exprs:
             return False
         for each in sub_exprs:
+            if each is None:
+                return False
             if not self._is_constant_expression(each):
                 return False
         return True
