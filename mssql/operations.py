@@ -80,7 +80,7 @@ class DatabaseOperations(BaseDatabaseOperations):
                 # Django 4.0's deletion collector passes a single string field
                 # name and should avoid the additional /2 reduction used by
                 # bulk INSERT/UPDATE paths.
-                if django_version < (4, 1) and fields_len == 1:
+                if django_version < (4, 2) and fields_len == 1:
                     return max_query_params // fields_len
                 # Keep model string-field paths aligned with field-object
                 # behavior so explicit/max batch-size calculations match
