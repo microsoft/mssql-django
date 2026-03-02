@@ -742,46 +742,53 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         result = ['INSERT INTO %s' % qn(opts.db_table)]
 
         if self.query.fields:
-            from django.db.models.expressions import DatabaseDefault
-
             fields = list(self.query.fields)
             supports_default_keyword_in_bulk_insert = (
                 self.connection.features.supports_default_keyword_in_bulk_insert
             )
             result.append('(%s)' % ', '.join(qn(f.column) for f in fields))
             values_format = 'VALUES (%s)'
-            value_cols = []
-            for field in list(fields):
-                field_prepare = partial(self.prepare_value, field)
-                field_pre_save = partial(self.pre_save_val, field)
-                field_values = [
-                    field_prepare(field_pre_save(obj)) for obj in self.query.objs
+
+            if django.VERSION < (6, 0):
+                value_rows = [
+                    [self.prepare_value(field, self.pre_save_val(field, obj)) for field in fields]
+                    for obj in self.query.objs
                 ]
+            else:
+                from django.db.models.expressions import DatabaseDefault
 
-                if not field.has_db_default():
+                value_cols = []
+                for field in list(fields):
+                    field_prepare = partial(self.prepare_value, field)
+                    field_pre_save = partial(self.pre_save_val, field)
+                    field_values = [
+                        field_prepare(field_pre_save(obj)) for obj in self.query.objs
+                    ]
+
+                    if not field.has_db_default():
+                        value_cols.append(field_values)
+                        continue
+
+                    if len(fields) > 1 and all(
+                        isinstance(value, DatabaseDefault) for value in field_values
+                    ):
+                        fields.remove(field)
+                        continue
+
+                    if supports_default_keyword_in_bulk_insert:
+                        value_cols.append(field_values)
+                        continue
+
+                    prepared_db_default = field_prepare(field.db_default)
+                    field_values = [
+                        prepared_db_default
+                        if isinstance(value, DatabaseDefault)
+                        else value
+                        for value in field_values
+                    ]
                     value_cols.append(field_values)
-                    continue
-
-                if len(fields) > 1 and all(
-                    isinstance(value, DatabaseDefault) for value in field_values
-                ):
-                    fields.remove(field)
-                    continue
-
-                if supports_default_keyword_in_bulk_insert:
-                    value_cols.append(field_values)
-                    continue
-
-                prepared_db_default = field_prepare(field.db_default)
-                field_values = [
-                    prepared_db_default
-                    if isinstance(value, DatabaseDefault)
-                    else value
-                    for value in field_values
-                ]
-                value_cols.append(field_values)
-            value_rows = list(zip(*value_cols))
-            result[-1] = '(%s)' % ', '.join(qn(f.column) for f in fields)
+                value_rows = list(zip(*value_cols))
+                result[-1] = '(%s)' % ', '.join(qn(f.column) for f in fields)
         else:
             values_format = '%s VALUES'
             # An empty object.
