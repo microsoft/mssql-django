@@ -2,6 +2,7 @@
 # Licensed under the BSD license.
 
 import types
+from functools import partial
 from itertools import chain
 
 import django
@@ -476,12 +477,38 @@ class SQLCompiler(compiler.SQLCompiler):
                 for expr, (o_sql, o_params, _) in order_by:
                     if self._is_constant_order_by_expression(expr):
                         continue
+                    json_key_transform_ordering = False
                     if expr:
                         src = self._resolve_order_by_source_expression(expr)
                         if isinstance(src, Random):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
+                        elif isinstance(src, json_KeyTransform):
+                            json_key_transform_ordering = True
+                    if json_key_transform_ordering:
+                        direction = 'DESC' if getattr(expr, 'descending', False) else 'ASC'
+                        stripped_o_sql = o_sql.strip()
+                        if stripped_o_sql.upper().endswith(' DESC'):
+                            base_o_sql = stripped_o_sql[:-5]
+                        elif stripped_o_sql.upper().endswith(' ASC'):
+                            base_o_sql = stripped_o_sql[:-4]
+                        else:
+                            base_o_sql = stripped_o_sql
+                        if base_o_sql.isdigit():
+                            json_key_transform_ordering = False
+                        else:
+                            ordering.append(
+                                'TRY_CONVERT(float, %s) %s, %s %s' % (
+                                    base_o_sql,
+                                    direction,
+                                    base_o_sql,
+                                    direction,
+                                )
+                            )
+                            params.extend(o_params)
+                            params.extend(o_params)
+                            continue
                     # SQL Server doesn't allow the same column to appear twice
                     # in ORDER BY. ColPairs are already expanded in
                     # get_order_by(), so each o_sql is a single expression.
@@ -715,13 +742,46 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         result = ['INSERT INTO %s' % qn(opts.db_table)]
 
         if self.query.fields:
-            fields = self.query.fields
+            from django.db.models.expressions import DatabaseDefault
+
+            fields = list(self.query.fields)
+            supports_default_keyword_in_bulk_insert = (
+                self.connection.features.supports_default_keyword_in_bulk_insert
+            )
             result.append('(%s)' % ', '.join(qn(f.column) for f in fields))
             values_format = 'VALUES (%s)'
-            value_rows = [
-                [self.prepare_value(field, self.pre_save_val(field, obj)) for field in fields]
-                for obj in self.query.objs
-            ]
+            value_cols = []
+            for field in list(fields):
+                field_prepare = partial(self.prepare_value, field)
+                field_pre_save = partial(self.pre_save_val, field)
+                field_values = [
+                    field_prepare(field_pre_save(obj)) for obj in self.query.objs
+                ]
+
+                if not field.has_db_default():
+                    value_cols.append(field_values)
+                    continue
+
+                if len(fields) > 1 and all(
+                    isinstance(value, DatabaseDefault) for value in field_values
+                ):
+                    fields.remove(field)
+                    continue
+
+                if supports_default_keyword_in_bulk_insert:
+                    value_cols.append(field_values)
+                    continue
+
+                prepared_db_default = field_prepare(field.db_default)
+                field_values = [
+                    prepared_db_default
+                    if isinstance(value, DatabaseDefault)
+                    else value
+                    for value in field_values
+                ]
+                value_cols.append(field_values)
+            value_rows = list(zip(*value_cols))
+            result[-1] = '(%s)' % ', '.join(qn(f.column) for f in fields)
         else:
             values_format = '%s VALUES'
             # An empty object.

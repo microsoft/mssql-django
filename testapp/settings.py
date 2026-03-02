@@ -199,7 +199,6 @@ EXCLUDED_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_none_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
     'model_fields.test_jsonfield.TestQuerying.test_key_escape',
-    'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
     'expressions_window.tests.WindowFunctionTests.test_key_transform',
 
     # Django 3.2
@@ -329,52 +328,16 @@ if VERSION >= (6, 0):
         # ordering metadata can fully cover this path.
         'ordering.tests.OrderingTests.test_order_by_case_when_constant_value',
 
-        # JSONField - UUID serialization and negative array index handling needed
-        'model_fields.test_jsonfield.TestQuerying.test_deep_negative_lookup_array',
-        'model_fields.test_jsonfield.TestQuerying.test_deep_negative_lookup_mixed',
-        'model_fields.test_jsonfield.TestQuerying.test_deep_values',
-        'model_fields.test_jsonfield.TestQuerying.test_expression_wrapper_key_transform',
-        'model_fields.test_jsonfield.TestQuerying.test_join_key_transform_annotation_expression',
-        
-        
-        'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
-        'model_fields.test_jsonfield.TestQuerying.test_shallow_list_lookup',
-        'model_fields.test_jsonfield.TestQuerying.test_shallow_list_negative_lookup',
-        
-        
         # SQL Server limitations (permanent exclusions)
         # STRING_AGG with DISTINCT - SQL Server syntax differs
         'aggregation.tests.AggregateTestCase.test_distinct_on_stringagg',
         # REGEXP_LIKE function not available in SQL Server
         'expressions.tests.BasicExpressionsTests.test_lookups_subquery',
         
-        # Migration tests with schema differences
-        'migrations.test_commands.MakeMigrationsTests.test_makemigrations_check_no_changes',
-        'migrations.test_commands.MakeMigrationsTests.test_makemigrations_model_rename_interactive',
-        'migrations.test_commands.MakeMigrationsTests.test_makemigrations_no_changes',
-        'schema.tests.SchemaTests.test_remove_constraints_capital_letters',
         # Query count differences due to SQL Server parameter limits
-        'lookup.tests.LookupTests.test_in_bulk_lots_of_ids',
         'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
-        # Bulk create output column count
-        'bulk_create.tests.BulkCreateTests.test_db_default_field_excluded',
-        # DEFAULT_AUTO_FIELD behavior - testapp models use explicit AutoField
-        'model_options.test_default_pk.TestDefaultPK.test_default_value_of_default_auto_field_setting',
-        # Introspection returns IntegerField for AutoField-generated columns
-        'introspection.tests.IntrospectionTests.test_get_table_description_types',
-        # Schema tests expect BigIntegerField (from BigAutoField) but get IntegerField
-        'schema.tests.SchemaTests.test_alter_fk',
-        'schema.tests.SchemaTests.test_alter_fk_to_o2o',
-        'schema.tests.SchemaTests.test_alter_o2o_to_fk',
-        'schema.tests.SchemaTests.test_m2m',
-        'schema.tests.SchemaTests.test_m2m_create',
-        'schema.tests.SchemaTests.test_m2m_create_custom',
-        'schema.tests.SchemaTests.test_m2m_create_inherited',
-        'schema.tests.SchemaTests.test_m2m_create_through',
-        'schema.tests.SchemaTests.test_m2m_create_through_custom',
-        'schema.tests.SchemaTests.test_m2m_create_through_inherited',
-        'schema.tests.SchemaTests.test_m2m_custom',
-        'schema.tests.SchemaTests.test_m2m_inherited',
+
+
     ])
 
 # Django 5.2 specific exclusions

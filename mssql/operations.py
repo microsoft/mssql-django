@@ -7,6 +7,7 @@ import warnings
 import sys
 
 from django.conf import settings
+from django.db import NotSupportedError
 from django.db.backends.base.operations import BaseDatabaseOperations
 from django.db.models.expressions import Exists, ExpressionWrapper, RawSQL
 from django.db.models.sql.where import WhereNode
@@ -70,6 +71,10 @@ class DatabaseOperations(BaseDatabaseOperations):
         # query parameters for the `sp_executesql` call. This should only take
         # up 2 parameters but I've had this error when sending 2098 parameters.
         max_query_params = 2050
+
+        if objs and not hasattr(objs[0], '_meta'):
+            return max_query_params // fields_len
+
         # inserts are capped at 1000 rows regardless of number of query params.
         # bulk_update CASE...WHEN...THEN statement sometimes takes 2 parameters per field
         return min(max_insert_rows, max_query_params // fields_len // 2)
@@ -671,6 +676,14 @@ class DatabaseOperations(BaseDatabaseOperations):
         for key_transform in key_transforms:
             try:
                 num = int(key_transform)
+                if (
+                    num < 0
+                    and not self.connection.features.supports_json_negative_indexing
+                ):
+                    raise NotSupportedError(
+                        "Using negative JSON array indices is not supported on this "
+                        "database backend. (SQL Server)"
+                    )
                 path.append('[%s]' % num)
             except ValueError:
                 if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', key_transform):
