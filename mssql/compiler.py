@@ -33,28 +33,6 @@ except ImportError:
     ColPairs = None
 
 
-def _is_parameterized_constant_cast_ordering_sql(o_sql, o_params):
-    if len(o_params) != 1:
-        return False
-    stripped = o_sql.strip()
-    upper = stripped.upper()
-    if stripped.count('%s') != 1:
-        return False
-    if not upper.startswith('CAST(%S AS '):
-        return False
-    if '[' in stripped:
-        return False
-    close_index = upper.rfind(')')
-    if close_index == -1:
-        return False
-    suffix = upper[close_index + 1:].strip()
-    return suffix in ('', 'ASC', 'DESC')
-
-
-def _is_parameterized_ordering_without_column_refs(o_sql, o_params):
-    return bool(o_params) and '[' not in o_sql
-
-
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
 
@@ -391,10 +369,6 @@ class SQLCompiler(compiler.SQLCompiler):
                             seen_full = set()  # Full column refs (qualified or unqualified)
                             seen_unqualified = set()  # Just column names from unqualified refs
                             for expr, (o_sql, o_params, _) in order_by:
-                                if _is_parameterized_ordering_without_column_refs(o_sql, o_params):
-                                    continue
-                                if expr is None and _is_parameterized_constant_cast_ordering_sql(o_sql, o_params):
-                                    continue
                                 if self._is_constant_order_by_expression(expr):
                                     continue
                                 # value_expression in OVER clause cannot refer to
@@ -500,10 +474,6 @@ class SQLCompiler(compiler.SQLCompiler):
                 seen_full = set()  # Full column refs (qualified or unqualified)
                 seen_unqualified = set()  # Just column names from unqualified refs
                 for expr, (o_sql, o_params, _) in order_by:
-                    if _is_parameterized_ordering_without_column_refs(o_sql, o_params):
-                        continue
-                    if expr is None and _is_parameterized_constant_cast_ordering_sql(o_sql, o_params):
-                        continue
                     if self._is_constant_order_by_expression(expr):
                         continue
                     if expr:

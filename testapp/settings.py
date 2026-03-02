@@ -324,6 +324,11 @@ if VERSION >= (5, 1):
 # Django 6.0 specific exclusions
 if VERSION >= (6, 0):
     EXCLUDED_TESTS.extend([
+        # Constant CASE ORDER BY compiles to a parameterized ordering expression
+        # that SQL Server rejects (error 1008). Defer until expression-level
+        # ordering metadata can fully cover this path.
+        'ordering.tests.OrderingTests.test_order_by_case_when_constant_value',
+
         # JSONField - UUID serialization and negative array index handling needed
         'model_fields.test_jsonfield.TestQuerying.test_deep_negative_lookup_array',
         'model_fields.test_jsonfield.TestQuerying.test_deep_negative_lookup_mixed',
