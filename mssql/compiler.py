@@ -28,9 +28,9 @@ if django.VERSION >= (4, 2):
 # columns into a single comma-separated SQL string. We expand these at
 # the expression level in get_order_by() so each ORDER BY item is always
 # a single column expression.
-try:
+if django.VERSION >= (5, 2):
     from django.db.models.expressions import ColPairs
-except ImportError:
+else:
     ColPairs = None
 
 
