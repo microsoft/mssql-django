@@ -199,7 +199,6 @@ EXCLUDED_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_none_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
     'model_fields.test_jsonfield.TestQuerying.test_key_escape',
-    'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
     'expressions_window.tests.WindowFunctionTests.test_key_transform',
 
     # Django 3.2
@@ -375,7 +374,6 @@ if VERSION >= (6, 0):
         'model_fields.test_jsonfield.TestQuerying.test_none_key_exclude',
         'model_fields.test_jsonfield.TestQuerying.test_obj_subquery_lookup',
         'model_fields.test_jsonfield.TestQuerying.test_order_grouping_custom_decoder',
-        'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_list_lookup',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_list_negative_lookup',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_lookup_obj_target',
@@ -387,35 +385,10 @@ if VERSION >= (6, 0):
         # REGEXP_LIKE function not available in SQL Server
         'expressions.tests.BasicExpressionsTests.test_lookups_subquery',
         
-        # JSON path escaping test - bracket notation difference
-        'model_fields.test_jsonfield.TestQuerying.test_key_sql_injection_escape',
         # Migration tests with schema differences
-        'migrations.test_commands.MakeMigrationsTests.test_makemigrations_check_no_changes',
-        'migrations.test_commands.MakeMigrationsTests.test_makemigrations_model_rename_interactive',
-        'migrations.test_commands.MakeMigrationsTests.test_makemigrations_no_changes',
-        'schema.tests.SchemaTests.test_remove_constraints_capital_letters',
         # Query count differences due to SQL Server parameter limits
         'lookup.tests.LookupTests.test_in_bulk_lots_of_ids',
         'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
-        # DEFAULT_AUTO_FIELD behavior - testapp models use explicit AutoField
-        'model_options.test_default_pk.TestDefaultPK.test_default_value_of_default_auto_field_setting',
-        # Introspection returns IntegerField for AutoField-generated columns
-        'introspection.tests.IntrospectionTests.test_get_table_description_types',
-        # Schema tests expect BigIntegerField (from BigAutoField) but get IntegerField
-        'schema.tests.SchemaTests.test_alter_fk',
-        'schema.tests.SchemaTests.test_alter_fk_to_o2o',
-        'schema.tests.SchemaTests.test_alter_o2o_to_fk',
-        'schema.tests.SchemaTests.test_m2m',
-        'schema.tests.SchemaTests.test_m2m_create',
-        'schema.tests.SchemaTests.test_m2m_create_custom',
-        'schema.tests.SchemaTests.test_m2m_create_inherited',
-        'schema.tests.SchemaTests.test_m2m_create_through',
-        'schema.tests.SchemaTests.test_m2m_create_through_custom',
-        'schema.tests.SchemaTests.test_m2m_create_through_inherited',
-        'schema.tests.SchemaTests.test_m2m_custom',
-        'schema.tests.SchemaTests.test_m2m_inherited',
-        # JSON subquery test - transaction error cascading from earlier issues
-        'model_fields.test_jsonfield.TestQuerying.test_usage_in_subquery',
     ])
 
 # Django 5.2 specific exclusions

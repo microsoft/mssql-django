@@ -452,12 +452,42 @@ class SQLCompiler(compiler.SQLCompiler):
                 seen_full = set()  # Full column refs (qualified or unqualified)
                 seen_unqualified = set()  # Just column names from unqualified refs
                 for expr, (o_sql, o_params, _) in order_by:
+                    json_key_transform_ordering = False
+                    uses_ref_alias = False
                     if expr:
                         src = next(iter(expr.get_source_expressions()))
+                        uses_ref_alias = isinstance(src, Ref)
+                        if isinstance(src, Ref):
+                            src = next(iter(src.get_source_expressions()))
                         if isinstance(src, Random):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
+                        elif isinstance(src, json_KeyTransform) and not uses_ref_alias:
+                            json_key_transform_ordering = True
+                    if json_key_transform_ordering:
+                        direction = 'DESC' if getattr(expr, 'descending', False) else 'ASC'
+                        stripped_o_sql = o_sql.strip()
+                        if stripped_o_sql.upper().endswith(' DESC'):
+                            base_o_sql = stripped_o_sql[:-5]
+                        elif stripped_o_sql.upper().endswith(' ASC'):
+                            base_o_sql = stripped_o_sql[:-4]
+                        else:
+                            base_o_sql = stripped_o_sql
+                        if base_o_sql.isdigit():
+                            json_key_transform_ordering = False
+                        else:
+                            ordering.append(
+                                'TRY_CONVERT(float, %s) %s, %s %s' % (
+                                    base_o_sql,
+                                    direction,
+                                    base_o_sql,
+                                    direction,
+                                )
+                            )
+                            params.extend(o_params)
+                            params.extend(o_params)
+                            continue
                     # SQL Server doesn't allow the same column to appear twice
                     # in ORDER BY. ColPairs are already expanded in
                     # get_order_by(), so each o_sql is a single expression.
