@@ -77,7 +77,15 @@ class DatabaseOperations(BaseDatabaseOperations):
 
         if objs and hasattr(objs[0], '_meta'):
             if all(isinstance(field, str) for field in fields):
-                return max_query_params // fields_len
+                # Django 4.0's collector can pass string field names for
+                # relationship traversals where SQL Server should avoid the
+                # additional /2 reduction used by bulk INSERT/UPDATE paths.
+                if django_version < (4, 1):
+                    return max_query_params // fields_len
+                # Django 4.1+ model insert/update paths should match field-
+                # object behavior to keep explicit/max batch-size calculations
+                # aligned with actual execution.
+                return min(max_insert_rows, max_query_params // fields_len // 2)
 
             obj_model = objs[0].__class__
             field_models = {

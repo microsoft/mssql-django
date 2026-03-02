@@ -248,6 +248,10 @@ class SQLCompiler(compiler.SQLCompiler):
         return source
 
     def _is_constant_order_by_expression(self, expression):
+        if django.VERSION >= (4, 2):
+            unresolved = self._resolve_order_by_source_expression(expression, dereference_ref=False)
+            if isinstance(unresolved, Ref):
+                return False
         source = self._resolve_order_by_source_expression(expression)
         return source is not None and self._is_constant_expression(source)
 
