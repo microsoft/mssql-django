@@ -335,8 +335,6 @@ if VERSION >= (6, 0):
         'model_fields.test_jsonfield.TestQuerying.test_deep_values',
         'model_fields.test_jsonfield.TestQuerying.test_expression_wrapper_key_transform',
         'model_fields.test_jsonfield.TestQuerying.test_has_any_keys',
-        'model_fields.test_jsonfield.TestQuerying.test_has_key',
-        'model_fields.test_jsonfield.TestQuerying.test_has_keys',
         'model_fields.test_jsonfield.TestQuerying.test_icontains',
         'model_fields.test_jsonfield.TestQuerying.test_join_key_transform_annotation_expression',
         'model_fields.test_jsonfield.TestQuerying.test_key_contains',
@@ -347,7 +345,6 @@ if VERSION >= (6, 0):
         'model_fields.test_jsonfield.TestQuerying.test_key_in',
         'model_fields.test_jsonfield.TestQuerying.test_key_istartswith',
         'model_fields.test_jsonfield.TestQuerying.test_key_startswith',
-        'model_fields.test_jsonfield.TestQuerying.test_key_transform',
         'model_fields.test_jsonfield.TestQuerying.test_key_transform_annotation_expression',
         'model_fields.test_jsonfield.TestQuerying.test_key_transform_raw_expression',
         'model_fields.test_jsonfield.TestQuerying.test_lookup_exclude',
@@ -368,8 +365,6 @@ if VERSION >= (6, 0):
         # REGEXP_LIKE function not available in SQL Server
         'expressions.tests.BasicExpressionsTests.test_lookups_subquery',
         
-        # JSON path escaping test - bracket notation difference
-        'model_fields.test_jsonfield.TestQuerying.test_key_sql_injection_escape',
         # Migration tests with schema differences
         'migrations.test_commands.MakeMigrationsTests.test_makemigrations_check_no_changes',
         'migrations.test_commands.MakeMigrationsTests.test_makemigrations_model_rename_interactive',
