@@ -76,6 +76,9 @@ class DatabaseOperations(BaseDatabaseOperations):
             return max_query_params // fields_len
 
         if objs and hasattr(objs[0], '_meta'):
+            if all(isinstance(field, str) for field in fields):
+                return max_query_params // fields_len
+
             obj_model = objs[0].__class__
             field_models = {
                 field.model for field in fields
