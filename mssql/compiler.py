@@ -2,7 +2,6 @@
 # Licensed under the BSD license.
 
 import types
-import re
 from itertools import chain
 
 import django
@@ -33,32 +32,6 @@ try:
 except ImportError:
     ColPairs = None
 
-
-_ORDER_BY_CONSTANT_CAST_RE = re.compile(
-    r'^CAST\(%s AS [^)]+\)(?:\s+(?:ASC|DESC))?$',
-    re.IGNORECASE,
-)
-_ORDER_BY_CONSTANT_SQL_RE = re.compile(
-    r'^CAST\((-?\d+(?:\.\d+)?) AS [^)]+\)(?:\s+(?:ASC|DESC))?$',
-    re.IGNORECASE,
-)
-
-
-def _inline_safe_order_by_constant(o_sql, o_params):
-    if len(o_params) != 1 or not _ORDER_BY_CONSTANT_CAST_RE.match(o_sql.strip()):
-        return o_sql, o_params
-    value = o_params[0]
-    if isinstance(value, bool):
-        literal = '1' if value else '0'
-    elif isinstance(value, (int, float)):
-        literal = str(value)
-    else:
-        return o_sql, o_params
-    return o_sql.replace('%s', literal, 1), []
-
-
-def _is_constant_ordering_sql(o_sql):
-    return bool(_ORDER_BY_CONSTANT_SQL_RE.match(o_sql.strip()))
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -260,6 +233,23 @@ compiler.cursor_iter = _cursor_iter
 
 class SQLCompiler(compiler.SQLCompiler):
 
+    def _resolve_order_by_source_expression(self, expression, dereference_ref=True):
+        if expression is None:
+            return None
+        source_expressions = expression.get_source_expressions()
+        if not source_expressions:
+            return None
+        source = source_expressions[0]
+        if dereference_ref and isinstance(source, Ref):
+            ref_source_expressions = source.get_source_expressions()
+            if ref_source_expressions:
+                source = ref_source_expressions[0]
+        return source
+
+    def _is_constant_order_by_expression(self, expression):
+        source = self._resolve_order_by_source_expression(expression)
+        return source is not None and self._is_constant_expression(source)
+
     def get_order_by(self):
         """
         Expand ColPairs-based OrderBy expressions into individual per-column
@@ -379,12 +369,14 @@ class SQLCompiler(compiler.SQLCompiler):
                             seen_full = set()  # Full column refs (qualified or unqualified)
                             seen_unqualified = set()  # Just column names from unqualified refs
                             for expr, (o_sql, o_params, _) in order_by:
+                                if self._is_constant_order_by_expression(expr):
+                                    continue
                                 # value_expression in OVER clause cannot refer to
                                 # expressions or aliases in the select list. See:
                                 # http://msdn.microsoft.com/en-us/library/ms189461.aspx
-                                src = next(iter(expr.get_source_expressions()))
+                                src = self._resolve_order_by_source_expression(expr, dereference_ref=False)
                                 if isinstance(src, Ref):
-                                    src = next(iter(src.get_source_expressions()))
+                                    src = self._resolve_order_by_source_expression(expr)
                                     o_sql, _ = src.as_sql(self, self.connection)
                                     odir = 'DESC' if expr.descending else 'ASC'
                                     o_sql = '%s %s' % (o_sql, odir)
@@ -482,15 +474,14 @@ class SQLCompiler(compiler.SQLCompiler):
                 seen_full = set()  # Full column refs (qualified or unqualified)
                 seen_unqualified = set()  # Just column names from unqualified refs
                 for expr, (o_sql, o_params, _) in order_by:
+                    if self._is_constant_order_by_expression(expr):
+                        continue
                     if expr:
-                        src = next(iter(expr.get_source_expressions()))
+                        src = self._resolve_order_by_source_expression(expr)
                         if isinstance(src, Random):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
-                    o_sql, o_params = _inline_safe_order_by_constant(o_sql, o_params)
-                    if _is_constant_ordering_sql(o_sql):
-                        continue
                     # SQL Server doesn't allow the same column to appear twice
                     # in ORDER BY. ColPairs are already expanded in
                     # get_order_by(), so each o_sql is a single expression.
