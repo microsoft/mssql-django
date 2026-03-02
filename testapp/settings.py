@@ -336,14 +336,11 @@ if VERSION >= (6, 0):
         'model_fields.test_jsonfield.TestQuerying.test_expression_wrapper_key_transform',
         'model_fields.test_jsonfield.TestQuerying.test_join_key_transform_annotation_expression',
         
-        'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_annotation_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_raw_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_none_key_exclude',
-        'model_fields.test_jsonfield.TestQuerying.test_order_grouping_custom_decoder',
+        
         'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_list_lookup',
         'model_fields.test_jsonfield.TestQuerying.test_shallow_list_negative_lookup',
-        'model_fields.test_jsonfield.TestQuerying.test_shallow_lookup_obj_target',
+        
         
         # SQL Server limitations (permanent exclusions)
         # STRING_AGG with DISTINCT - SQL Server syntax differs
