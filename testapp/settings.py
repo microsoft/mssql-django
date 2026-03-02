@@ -397,8 +397,6 @@ if VERSION >= (6, 0):
         # Query count differences due to SQL Server parameter limits
         'lookup.tests.LookupTests.test_in_bulk_lots_of_ids',
         'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
-        # Bulk create output column count
-        'bulk_create.tests.BulkCreateTests.test_db_default_field_excluded',
         # DEFAULT_AUTO_FIELD behavior - testapp models use explicit AutoField
         'model_options.test_default_pk.TestDefaultPK.test_default_value_of_default_auto_field_setting',
         # Introspection returns IntegerField for AutoField-generated columns
