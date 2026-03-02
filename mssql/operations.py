@@ -77,9 +77,11 @@ class DatabaseOperations(BaseDatabaseOperations):
 
         if objs and hasattr(objs[0], '_meta'):
             if all(isinstance(field, str) for field in fields):
-                # Django 4.0's deletion collector passes a single string field
-                # name and should avoid the additional /2 reduction used by
-                # bulk INSERT/UPDATE paths.
+                # In Django < 4.2, deletion collector batching calls this with
+                # a single string field name (from Collector.get_del_batches()).
+                # Treat that shape as delete batching, not insert/update
+                # batching, so we don't apply the extra /2 reduction that would
+                # split large cascade deletes into one additional query.
                 if django_version < (4, 2) and fields_len == 1:
                     return max_query_params // fields_len
                 # Keep model string-field paths aligned with field-object
