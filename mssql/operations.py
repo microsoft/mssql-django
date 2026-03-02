@@ -7,6 +7,7 @@ import warnings
 import sys
 
 from django.conf import settings
+from django.db import NotSupportedError
 from django.db.backends.base.operations import BaseDatabaseOperations
 from django.db.models.expressions import Exists, ExpressionWrapper, RawSQL
 from django.db.models.sql.where import WhereNode
@@ -651,7 +652,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         Matches Django's default behavior: use the provided encoder (or None).
         """
         import json
-        
+
         return json.dumps(value, cls=encoder)
 
     def compile_json_path(self, key_transforms, include_root=True):
@@ -669,19 +670,24 @@ class DatabaseOperations(BaseDatabaseOperations):
         for key_transform in key_transforms:
             try:
                 num = int(key_transform)
+                if (
+                    num < 0
+                    and not self.connection.features.supports_json_negative_indexing
+                ):
+                    raise NotSupportedError(
+                        "Using negative JSON array indices is not supported on this "
+                        "database backend. (SQL Server)"
+                    )
                 path.append('[%s]' % num)
             except ValueError:
-                # Use bracket notation for keys with special characters
-                # json.dumps properly escapes quotes and other special chars
-                escaped_key = json.dumps(key_transform)
                 # Check if key is simple (alphanumeric/underscore only)
                 if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', key_transform):
                     path.append('.')
                     path.append(key_transform)
                 else:
-                    # Use bracket notation: $["key with \"quotes\""]
-                    path.append('[%s]' % escaped_key)
-        return ''.join(path)
+                    escaped_key = json.dumps(key_transform, ensure_ascii=True)[1:-1]
+                    path.append('."%s"' % escaped_key)
+        return ''.join(path).replace("'", "''")
 
     # Django 6.0 renames return_insert_columns to returning_columns
     # and fetch_returned_insert_rows to fetch_returned_rows

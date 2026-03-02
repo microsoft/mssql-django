@@ -61,9 +61,9 @@ def _as_sql_greatest(self, compiler, connection):
 
 def _as_sql_json_keytransform(self, compiler, connection):
     lhs, params, key_transforms = self.preprocess_lhs(compiler, connection)
-    # For Django < 6.0, use Django's built-in compile_json_path
-    # For Django 6.0+, use connection.ops.compile_json_path()
-    if django.VERSION >= (6, 0):
+    # Always prefer backend compilation when available so SQL Server-specific
+    # escaping rules are applied consistently across Django versions.
+    if hasattr(connection.ops, 'compile_json_path'):
         json_path = connection.ops.compile_json_path(key_transforms)
     else:
         json_path = compile_json_path(key_transforms)

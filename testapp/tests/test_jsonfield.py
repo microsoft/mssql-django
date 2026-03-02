@@ -4,6 +4,7 @@
 from unittest import skipUnless
 
 from django import VERSION
+from django.db import NotSupportedError, connections
 from django.test import TestCase
 
 if VERSION >= (3, 1):
@@ -69,3 +70,17 @@ class TestJSONField(TestCase):
             JSONModel.objects.using('sqlite').filter(value__a='b'),
             [json_obj],
         )
+
+    def test_compile_json_path_special_chars(self):
+        path = connections['default'].ops.compile_json_path([
+            'owner',
+            'role name',
+            'a"b',
+            "o'reilly",
+        ])
+        self.assertEqual(path, "$.owner.\"role name\".\"a\\\"b\".\"o''reilly\"")
+
+    def test_compile_json_path_negative_index_not_supported(self):
+        with self.assertRaises(NotSupportedError):
+            connections['default'].ops.compile_json_path(['items', '-1'])
+
