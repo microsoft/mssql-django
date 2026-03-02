@@ -334,13 +334,8 @@ if VERSION >= (6, 0):
         'model_fields.test_jsonfield.TestQuerying.test_deep_negative_lookup_mixed',
         'model_fields.test_jsonfield.TestQuerying.test_deep_values',
         'model_fields.test_jsonfield.TestQuerying.test_expression_wrapper_key_transform',
-        'model_fields.test_jsonfield.TestQuerying.test_icontains',
         'model_fields.test_jsonfield.TestQuerying.test_join_key_transform_annotation_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_key_contains',
-        'model_fields.test_jsonfield.TestQuerying.test_key_icontains',
         
-        'model_fields.test_jsonfield.TestQuerying.test_lookup_exclude',
-        'model_fields.test_jsonfield.TestQuerying.test_lookup_exclude_nonexistent_key',
         'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_annotation_expression',
         'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_raw_expression',
         'model_fields.test_jsonfield.TestQuerying.test_none_key_exclude',
