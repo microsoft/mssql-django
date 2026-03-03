@@ -162,11 +162,26 @@ echo "yes" | python tests/runtests.py --settings=testapp.settings <module>
 - If a failure is outside the scope of your PR, ask whether to fix it or exclude it — don't leave it failing silently.
 - Always run the specific Django test modules affected by your change (e.g. `ordering`, `db_functions`, `composite_pk`) in addition to the unit tests (`python manage.py test testapp.tests`).
 
-## Prompt References
+## PR Self-Check Template (Django/SQL Backend Changes)
 
-Use prompt files via slash-style workspace paths:
+### Checklist
+1. **Contract change declared**
+    - If a helper behavior changes (e.g., path builder), write one explicit rule: who returns raw values, who does SQL escaping/normalization, and where.
+2. **All call sites audited**
+    - grep every consumer of changed helper/symbol and verify each follows the new contract exactly once.
+3. **Integration test proof**
+    - Add at least one end-to-end ORM regression test for changed behavior, or run and document a concrete end-to-end upstream Django test that directly exercises the changed path.
+4. **Doc/comments synced**
+    - Update docstrings/comments to match implementation (no stale wording).
+5. **Exclusion hygiene**
+    - Remove only exclusions proven green in normal settings.
+    - For any kept exclusion, add a one-line reason.
+6. **Version matrix evidence**
+    - Run targeted tests + HOT guard on executable lanes; report PASS/FAIL/BLOCKED explicitly.
 
-- `/.github/prompts/mssql-django-pr-self-check-gate.prompt.md` - Gated PR self-check workflow and merge gate criteria.
-- `/.github/prompts/mssql-django-dev-environment-setup.prompt.md` - Development environment setup.
-- `/.github/prompts/mssql-django-run-unit-tests.prompt.md` - mssql-django unit test workflow.
-- `/.github/prompts/mssql-django-run-django-test-suite.prompt.md` - Upstream Django suite workflow.
+### Merge Gate (must all be true)
+- No unresolved contract ambiguity.
+- No double-escaping / double-transform pattern in call sites.
+- At least one integration regression proof for each behavior change.
+- Targeted tests green + HOT guard green (or BLOCKED with environment reason).
+- PR description includes root cause, fix scope, and exclusions touched.
