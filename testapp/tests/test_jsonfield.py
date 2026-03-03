@@ -52,10 +52,10 @@ class TestJSONField(TestCase):
         },
     }
 
-    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     @skipUnless(
         _check_jsonfield_supported_sqlite(),
-        "JSONField not support by SQLite on this platform and Python version",
+        "JSONField not supported by SQLite on this platform and Python version",
     )
     def test_keytransformexact_not_overriding(self):
         # Issue https://github.com/microsoft/mssql-django/issues/82
@@ -84,7 +84,7 @@ class TestJSONField(TestCase):
         with self.assertRaises(NotSupportedError):
             connections['default'].ops.compile_json_path(['items', '-1'])
 
-    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_has_key_lookup_with_single_quote_key(self):
         obj = JSONModel.objects.create(value={"o'reilly": 1, "safe": True})
 
@@ -93,7 +93,7 @@ class TestJSONField(TestCase):
             [obj],
         )
 
-    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_exact_complex_value_lookup(self):
         obj = JSONModel.objects.create(
             value={
@@ -114,7 +114,7 @@ class TestJSONField(TestCase):
             [obj],
         )
 
-    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_key_transform_exact_lookup(self):
         obj = JSONModel.objects.create(value={"message": "alpha-beta", "other": "x"})
 
@@ -123,7 +123,7 @@ class TestJSONField(TestCase):
             [obj],
         )
 
-    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_ordering_by_numeric_json_key_ascending(self):
         # Regression coverage for compiler ORDER BY rewrite:
         # JSON key transforms should sort numerically (not lexicographically)
@@ -139,7 +139,7 @@ class TestJSONField(TestCase):
         queryset = JSONModel.objects.filter(value__name__isnull=False).order_by("value__ord")
         self.assertSequenceEqual(queryset, [rows[4], rows[2], rows[3], rows[1], rows[0]])
 
-    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_ordering_by_numeric_json_key_descending(self):
         # Descending path exercises the same rewrite branch with DESC handling.
         rows = [
@@ -151,7 +151,7 @@ class TestJSONField(TestCase):
         queryset = JSONModel.objects.filter(value__name__isnull=False).order_by("-value__ord")
         self.assertSequenceEqual(queryset, [rows[2], rows[0], rows[1]])
 
-    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_ordering_by_non_numeric_json_key_fallback(self):
         # Mixed non-numeric content should still be deterministic and should not
         # fail conversion: backend falls back to text ordering as secondary key.
