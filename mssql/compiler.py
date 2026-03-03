@@ -480,32 +480,74 @@ class SQLCompiler(compiler.SQLCompiler):
                 seen_full = set()  # Full column refs (qualified or unqualified)
                 seen_unqualified = set()  # Just column names from unqualified refs
                 for expr, (o_sql, o_params, _) in order_by:
+                    json_key_transform_ordering = False
+                    uses_ref_alias = False
+                    # Build one or more ORDER BY items for this expression,
+                    # then run all of them through the shared de-duplication
+                    # logic below.
+                    normalized_order_items = None
                     if self._is_constant_order_by_expression(expr):
                         continue
                     if expr:
+                        unresolved_src = self._resolve_order_by_source_expression(
+                            expr,
+                            dereference_ref=False,
+                        )
+                        uses_ref_alias = isinstance(unresolved_src, Ref)
                         src = self._resolve_order_by_source_expression(expr)
                         if isinstance(src, Random):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
+                        elif isinstance(src, json_KeyTransform) and not uses_ref_alias:
+                            json_key_transform_ordering = True
+                    if json_key_transform_ordering:
+                        direction = 'DESC' if getattr(expr, 'descending', False) else 'ASC'
+                        stripped_o_sql = o_sql.strip()
+                        if stripped_o_sql.upper().endswith(' DESC'):
+                            base_o_sql = stripped_o_sql[:-5]
+                        elif stripped_o_sql.upper().endswith(' ASC'):
+                            base_o_sql = stripped_o_sql[:-4]
+                        else:
+                            base_o_sql = stripped_o_sql
+                        if base_o_sql.isdigit():
+                            json_key_transform_ordering = False
+                        else:
+                            # For JSON numeric ordering, use a numeric-first
+                            # key and then a textual fallback key. Both keys
+                            # must still go through the standard dedupe path.
+                            normalized_order_items = [
+                                ('TRY_CONVERT(float, %s) %s' % (base_o_sql, direction), o_params),
+                                ('%s %s' % (base_o_sql, direction), o_params),
+                            ]
+                    if normalized_order_items is None:
+                        # Default path: keep original ORDER BY SQL as-is.
+                        normalized_order_items = [(o_sql, o_params)]
                     # SQL Server doesn't allow the same column to appear twice
                     # in ORDER BY. ColPairs are already expanded in
                     # get_order_by(), so each o_sql is a single expression.
                     # Handle the case where [col] and [table].[col] refer to
                     # the same column.
-                    col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.rstrip().endswith(('ASC', 'DESC')) else o_sql
-                    col_ref_upper = col_ref.upper()
-                    is_qualified = '.' in col_ref and '(' not in col_ref
-                    col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
-                    if col_ref_upper in seen_full:
-                        continue
-                    if is_qualified and col_name in seen_unqualified:
-                        continue
-                    seen_full.add(col_ref_upper)
-                    if not is_qualified:
-                        seen_unqualified.add(col_name)
-                    ordering.append(o_sql)
-                    params.extend(o_params)
+                    for normalized_sql, normalized_params in normalized_order_items:
+                        # Normalize sort direction suffix so dedupe compares
+                        # on the expression body, not ASC/DESC text noise.
+                        col_ref = (
+                            normalized_sql.rsplit(' ', 1)[0]
+                            if normalized_sql.rstrip().endswith(('ASC', 'DESC'))
+                            else normalized_sql
+                        )
+                        col_ref_upper = col_ref.upper()
+                        is_qualified = '.' in col_ref and '(' not in col_ref
+                        col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                        if col_ref_upper in seen_full:
+                            continue
+                        if is_qualified and col_name in seen_unqualified:
+                            continue
+                        seen_full.add(col_ref_upper)
+                        if not is_qualified:
+                            seen_unqualified.add(col_name)
+                        ordering.append(normalized_sql)
+                        params.extend(normalized_params)
                 if ordering:
                     result.append('ORDER BY %s' % ', '.join(ordering))
                 else:
