@@ -93,3 +93,33 @@ class TestJSONField(TestCase):
             [obj],
         )
 
+    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    def test_exact_complex_value_lookup(self):
+        obj = JSONModel.objects.create(
+            value={
+                "name": "example",
+                "flags": {"active": True, "count": 2},
+                "items": [1, "two", {"deep": "value"}],
+            }
+        )
+
+        self.assertSequenceEqual(
+            JSONModel.objects.filter(
+                value={
+                    "name": "example",
+                    "flags": {"active": True, "count": 2},
+                    "items": [1, "two", {"deep": "value"}],
+                }
+            ),
+            [obj],
+        )
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    def test_key_transform_exact_lookup(self):
+        obj = JSONModel.objects.create(value={"message": "alpha-beta", "other": "x"})
+
+        self.assertSequenceEqual(
+            JSONModel.objects.filter(value__message="alpha-beta"),
+            [obj],
+        )
+
