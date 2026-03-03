@@ -43,6 +43,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_ignore_conflicts = False
     supports_index_on_text_field = False
     supports_json_field_contains = False
+    supports_json_negative_indexing = False
     supports_order_by_nulls_modifier = False
     supports_over_clause = True
     supports_paramstyle_pyformat = False

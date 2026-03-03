@@ -424,7 +424,7 @@ def json_HasKeyLookup(self, compiler, connection):
         # For Django < 6.0, use Django's built-in compile_json_path
         # For Django 6.0+, use connection.ops.compile_json_path()
         # This is necessary because compile_json_path was moved in Django 6.0 from
-        # django.db.models.fields.json to connection.ops.compile_json_path()
+        # django.db.models.fields.json to connection.ops.compile_json_path().
         if VERSION >= (6, 0):
             return connection.ops.compile_json_path(key_transforms, include_root)
         else:
@@ -495,7 +495,6 @@ def json_HasKeyLookup(self, compiler, connection):
             cast_sql, cast_params = self.lhs.as_sql(compiler, connection)
 
             for path in rhs_params:
-                # Escape single quotes in the path for SQL
                 path_escaped = path.replace("'", "''")
                 # Build the JSON_PATH_EXISTS condition
                 conditions.append(f"JSON_PATH_EXISTS({cast_sql}, '{path_escaped}') > 0")
@@ -504,7 +503,6 @@ def json_HasKeyLookup(self, compiler, connection):
             return _combine_conditions(conditions), params
         else:
             for path in rhs_params:
-                # Escape single quotes in the path for SQL
                 path_escaped = path.replace("'", "''")
                 # Build the JSON_PATH_EXISTS condition using lhs
                 conditions.append("JSON_PATH_EXISTS(%s, '%s') > 0" % (lhs, path_escaped))
@@ -523,7 +521,6 @@ def json_HasKeyLookup(self, compiler, connection):
         else:
             conditions = []
             for path in rhs_params:
-                # Escape single quotes in the path for SQL
                 path_escaped = path.replace("'", "''")
                 # Build the JSON_VALUE IS NOT NULL condition
                 conditions.append("JSON_VALUE(%s, '%s') IS NOT NULL" % (lhs, path_escaped))
