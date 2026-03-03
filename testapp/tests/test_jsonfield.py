@@ -123,3 +123,44 @@ class TestJSONField(TestCase):
             [obj],
         )
 
+    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    def test_ordering_by_numeric_json_key_ascending(self):
+        # Regression coverage for compiler ORDER BY rewrite:
+        # JSON key transforms should sort numerically (not lexicographically)
+        # when numeric-like payloads are present.
+        rows = [
+            JSONModel.objects.create(value={"ord": 93, "name": "bar"}),
+            JSONModel.objects.create(value={"ord": 22.1, "name": "foo"}),
+            JSONModel.objects.create(value={"ord": -1, "name": "baz"}),
+            JSONModel.objects.create(value={"ord": 21.931902, "name": "spam"}),
+            JSONModel.objects.create(value={"ord": -100291029, "name": "eggs"}),
+        ]
+
+        queryset = JSONModel.objects.filter(value__name__isnull=False).order_by("value__ord")
+        self.assertSequenceEqual(queryset, [rows[4], rows[2], rows[3], rows[1], rows[0]])
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    def test_ordering_by_numeric_json_key_descending(self):
+        # Descending path exercises the same rewrite branch with DESC handling.
+        rows = [
+            JSONModel.objects.create(value={"ord": 5, "name": "a"}),
+            JSONModel.objects.create(value={"ord": -2.5, "name": "b"}),
+            JSONModel.objects.create(value={"ord": 11, "name": "c"}),
+        ]
+
+        queryset = JSONModel.objects.filter(value__name__isnull=False).order_by("-value__ord")
+        self.assertSequenceEqual(queryset, [rows[2], rows[0], rows[1]])
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    def test_ordering_by_non_numeric_json_key_fallback(self):
+        # Mixed non-numeric content should still be deterministic and should not
+        # fail conversion: backend falls back to text ordering as secondary key.
+        rows = [
+            JSONModel.objects.create(value={"ord": "b", "name": "first"}),
+            JSONModel.objects.create(value={"ord": "a", "name": "second"}),
+            JSONModel.objects.create(value={"ord": "c", "name": "third"}),
+        ]
+
+        queryset = JSONModel.objects.filter(value__name__isnull=False).order_by("value__ord")
+        self.assertSequenceEqual(queryset, [rows[1], rows[0], rows[2]])
+

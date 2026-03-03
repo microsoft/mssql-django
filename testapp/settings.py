@@ -333,8 +333,8 @@ if VERSION >= (6, 0):
         'expressions.tests.FTimeDeltaTests.test_datetime_subtraction',
         'expressions.tests.FTimeDeltaTests.test_time_subtraction',
 
-        # JSONField ordering-by-transform still needs dedicated ORDER BY handling.
-        'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
+        # NOTE: ordering-by-transform is now covered by backend/compiler fixes
+        # and local regression tests; keep it unexcluded.
         
         # SQL Server limitations (permanent exclusions)
         # STRING_AGG with DISTINCT - SQL Server syntax differs
