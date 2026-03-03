@@ -118,13 +118,15 @@ def sqlserver_mod(self, compiler, connection):
     # Compile the left-hand side (lhs) expression to SQL and parameters.
     lhs_sql, lhs_params = compiler.compile(expr[0])
     # Compile the right-hand side (rhs) expression to SQL and parameters.
-    rhs_sql, rhs_params = compiler.compile(expr[1])   
+    rhs_sql, rhs_params = compiler.compile(expr[1])
+    lhs_params = tuple(lhs_params)
+    rhs_params = tuple(rhs_params)
     # Build the SQL template for modulo using ABS, FLOOR, and SIGN functions.
     template = '(ABS(%s) - FLOOR(ABS(%s) / ABS(%s)) * ABS(%s)) * SIGN(%s) * SIGN(%s)'  
     # Substitute the compiled SQL expressions into the template.
     sql = template % (lhs_sql, lhs_sql, rhs_sql, rhs_sql, lhs_sql, rhs_sql)   
     # Combine all parameters in the correct order for the SQL statement.
-    params = lhs_params + lhs_params + rhs_params + rhs_params + lhs_params + rhs_params    
+    params = lhs_params + lhs_params + rhs_params + rhs_params + lhs_params + rhs_params
     try:
         # return sql,params
         return sql, params

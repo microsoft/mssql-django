@@ -71,6 +71,29 @@ class DatabaseOperations(BaseDatabaseOperations):
         # query parameters for the `sp_executesql` call. This should only take
         # up 2 parameters but I've had this error when sending 2098 parameters.
         max_query_params = 2050
+
+        if objs and not hasattr(objs[0], '_meta'):
+            return max_query_params // fields_len
+
+        if objs and hasattr(objs[0], '_meta'):
+            if all(isinstance(field, str) for field in fields):
+                # Deletion collector batching calls this with a single string
+                # field name (from Collector.get_del_batches()). Treat that
+                # shape as delete batching, not insert/update batching, so we
+                # don't apply the extra /2 reduction that can split large
+                # cascade deletes into one additional query.
+                if fields_len == 1:
+                    return max_query_params // fields_len
+                return min(max_insert_rows, max_query_params // fields_len // 2)
+
+            obj_model = objs[0].__class__
+            field_models = {
+                field.model for field in fields
+                if hasattr(field, 'model') and field.model is not None
+            }
+            if field_models and any(field_model is not obj_model for field_model in field_models):
+                return max_query_params // fields_len
+
         # inserts are capped at 1000 rows regardless of number of query params.
         # bulk_update CASE...WHEN...THEN statement sometimes takes 2 parameters per field
         return min(max_insert_rows, max_query_params // fields_len // 2)
@@ -544,6 +567,8 @@ class DatabaseOperations(BaseDatabaseOperations):
     def subtract_temporals(self, internal_type, lhs, rhs):
         lhs_sql, lhs_params = lhs
         rhs_sql, rhs_params = rhs
+        lhs_params = tuple(lhs_params)
+        rhs_params = tuple(rhs_params)
         if internal_type == 'DateField':
             sql = "CAST(DATEDIFF(day, %(rhs)s, %(lhs)s) AS bigint) * 86400 * 1000000"
             params = rhs_params + lhs_params

@@ -233,6 +233,27 @@ compiler.cursor_iter = _cursor_iter
 
 class SQLCompiler(compiler.SQLCompiler):
 
+    def _resolve_order_by_source_expression(self, expression, dereference_ref=True):
+        if expression is None:
+            return None
+        source_expressions = expression.get_source_expressions()
+        if not source_expressions:
+            return None
+        source = source_expressions[0]
+        if dereference_ref and isinstance(source, Ref):
+            ref_source_expressions = source.get_source_expressions()
+            if ref_source_expressions:
+                source = ref_source_expressions[0]
+        return source
+
+    def _is_constant_order_by_expression(self, expression):
+        if django.VERSION >= (4, 2):
+            unresolved = self._resolve_order_by_source_expression(expression, dereference_ref=False)
+            if isinstance(unresolved, Ref):
+                return False
+        source = self._resolve_order_by_source_expression(expression)
+        return source is not None and self._is_constant_expression(source)
+
     def get_order_by(self):
         """
         Expand ColPairs-based OrderBy expressions into individual per-column
@@ -352,12 +373,14 @@ class SQLCompiler(compiler.SQLCompiler):
                             seen_full = set()  # Full column refs (qualified or unqualified)
                             seen_unqualified = set()  # Just column names from unqualified refs
                             for expr, (o_sql, o_params, _) in order_by:
+                                if self._is_constant_order_by_expression(expr):
+                                    continue
                                 # value_expression in OVER clause cannot refer to
                                 # expressions or aliases in the select list. See:
                                 # http://msdn.microsoft.com/en-us/library/ms189461.aspx
-                                src = next(iter(expr.get_source_expressions()))
+                                src = self._resolve_order_by_source_expression(expr, dereference_ref=False)
                                 if isinstance(src, Ref):
-                                    src = next(iter(src.get_source_expressions()))
+                                    src = self._resolve_order_by_source_expression(expr)
                                     o_sql, _ = src.as_sql(self, self.connection)
                                     odir = 'DESC' if expr.descending else 'ASC'
                                     o_sql = '%s %s' % (o_sql, odir)
@@ -381,7 +404,8 @@ class SQLCompiler(compiler.SQLCompiler):
                                     seen_unqualified.add(col_name)
                                 ordering.append(o_sql)
                                 params.extend(o_params)
-                            offsetting_order_by = ', '.join(ordering)
+                            if ordering:
+                                offsetting_order_by = ', '.join(ordering)
                             order_by = []
                         out_cols.append('ROW_NUMBER() OVER (ORDER BY %s) AS [rn]' % offsetting_order_by)
                     elif not order_by:
@@ -433,7 +457,10 @@ class SQLCompiler(compiler.SQLCompiler):
                 if grouping:
                     if distinct_fields:
                         raise NotImplementedError('annotate() + distinct(fields) is not implemented.')
-                    order_by = order_by or self.connection.ops.force_no_ordering()
+                    if self.query.default_ordering and not self.query.order_by:
+                        order_by = self.connection.ops.force_no_ordering()
+                    else:
+                        order_by = order_by or self.connection.ops.force_no_ordering()
                     result.append('GROUP BY %s' % ', '.join(grouping))
 
                 if having:
@@ -452,8 +479,10 @@ class SQLCompiler(compiler.SQLCompiler):
                 seen_full = set()  # Full column refs (qualified or unqualified)
                 seen_unqualified = set()  # Just column names from unqualified refs
                 for expr, (o_sql, o_params, _) in order_by:
+                    if self._is_constant_order_by_expression(expr):
+                        continue
                     if expr:
-                        src = next(iter(expr.get_source_expressions()))
+                        src = self._resolve_order_by_source_expression(expr)
                         if isinstance(src, Random):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
@@ -476,14 +505,26 @@ class SQLCompiler(compiler.SQLCompiler):
                         seen_unqualified.add(col_name)
                     ordering.append(o_sql)
                     params.extend(o_params)
-                result.append('ORDER BY %s' % ', '.join(ordering))
+                if ordering:
+                    result.append('ORDER BY %s' % ', '.join(ordering))
+                else:
+                    order_by = []
+                    if do_offset and supports_offset_clause:
+                        meta = self.query.get_meta()
+                        qn = self.quote_name_unless_alias
+                        result.append(
+                            'ORDER BY %s.%s ASC' % (
+                                qn(meta.db_table),
+                                qn(meta.pk.db_column or meta.pk.column),
+                            )
+                        )
 
                 # For subqueres with an ORDER BY clause, SQL Server also
                 # requires a TOP or OFFSET clause which is not generated for
                 # Django 2.x.  See https://github.com/microsoft/mssql-django/issues/12
                 # Add OFFSET for all Django versions.
                 # https://github.com/microsoft/mssql-django/issues/109
-                if not (do_offset or do_limit) and supports_offset_clause:
+                if ordering and not (do_offset or do_limit) and supports_offset_clause:
                     result.append("OFFSET 0 ROWS")
 
             # SQL Server requires the backend-specific emulation (2008 or earlier)
@@ -547,12 +588,18 @@ class SQLCompiler(compiler.SQLCompiler):
         return self._filter_subquery_and_constant_expressions(expressions)
 
     def _is_constant_expression(self, expression):
+        if expression is None:
+            return False
         if isinstance(expression, Value):
             return True
+        if not hasattr(expression, 'get_source_expressions'):
+            return False
         sub_exprs = expression.get_source_expressions()
         if not sub_exprs:
             return False
         for each in sub_exprs:
+            if each is None:
+                return False
             if not self._is_constant_expression(each):
                 return False
         return True

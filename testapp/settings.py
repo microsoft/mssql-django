@@ -324,14 +324,8 @@ if VERSION >= (5, 1):
 # Django 6.0 specific exclusions
 if VERSION >= (6, 0):
     EXCLUDED_TESTS.extend([
-        # ORDER BY with GROUP BY - SQL Server limitation with order_with_respect_to bulk_create
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_allows_duplicate_order_values',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_mixed_scenario',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_multiple_parents',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_respects_mixed_manual_order',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_with_empty_parent',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_with_existing_children',
-        # ORDER BY with CASE WHEN constant value - SQL Server limitation
+        # Constant CASE ORDER BY compiles to a parameterized ordering expression
+        # that SQL Server rejects (error 1008).
         'ordering.tests.OrderingTests.test_order_by_case_when_constant_value',
         
         # Parameter type handling - Django 6.0 changed params from list to tuple in some places
@@ -356,8 +350,7 @@ if VERSION >= (6, 0):
         'migrations.test_commands.MakeMigrationsTests.test_makemigrations_model_rename_interactive',
         'migrations.test_commands.MakeMigrationsTests.test_makemigrations_no_changes',
         'schema.tests.SchemaTests.test_remove_constraints_capital_letters',
-        # Query count differences due to SQL Server parameter limits
-        'lookup.tests.LookupTests.test_in_bulk_lots_of_ids',
+        # Constraint validation (single-query path) query count still under investigation
         'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
         # Bulk create output column count
         'bulk_create.tests.BulkCreateTests.test_db_default_field_excluded',
