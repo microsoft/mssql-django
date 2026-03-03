@@ -661,13 +661,23 @@ class DatabaseOperations(BaseDatabaseOperations):
         This method was moved from django.db.models.fields.json in Django 6.0
         to connection.ops.compile_json_path().
 
-                Contract:
-                - This helper returns a raw JSON path.
-                - Callers that embed it inside SQL string literals must apply SQL quote
-                    escaping exactly once at the SQL generation layer.
+        Contract:
+        - This helper returns a raw JSON path string
+            (for example: $.a[0]."complex key").
+        - Callers that embed it inside SQL string literals must apply SQL
+            string-literal escaping exactly once at SQL generation time.
+        - Non-simple key text in the returned path is already JSON-escaped and
+            must not be JSON-escaped again.
 
-        For SQL Server, we use bracket notation with escaped keys for any
-        non-simple key names to properly handle special characters.
+        SQL Server JSON path shape:
+        - Include root '$' when include_root is True.
+        - Emit array indices as bracket notation: [0], [1], ...
+        - Emit simple object keys (^[a-zA-Z_][a-zA-Z0-9_]*$) as dot notation:
+            .key_name
+        - Emit all other object keys as quoted dot notation with JSON-escaped
+            key text: ."complex key", ."key.with\"quotes\""
+
+        This function does not perform SQL identifier quoting.
         """
         import json
         import re
