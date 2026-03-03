@@ -482,6 +482,9 @@ class SQLCompiler(compiler.SQLCompiler):
                 for expr, (o_sql, o_params, _) in order_by:
                     json_key_transform_ordering = False
                     uses_ref_alias = False
+                    # Build one or more ORDER BY items for this expression,
+                    # then run all of them through the shared de-duplication
+                    # logic below.
                     normalized_order_items = None
                     if self._is_constant_order_by_expression(expr):
                         continue
@@ -510,11 +513,15 @@ class SQLCompiler(compiler.SQLCompiler):
                         if base_o_sql.isdigit():
                             json_key_transform_ordering = False
                         else:
+                            # For JSON numeric ordering, use a numeric-first
+                            # key and then a textual fallback key. Both keys
+                            # must still go through the standard dedupe path.
                             normalized_order_items = [
                                 ('TRY_CONVERT(float, %s) %s' % (base_o_sql, direction), o_params),
                                 ('%s %s' % (base_o_sql, direction), o_params),
                             ]
                     if normalized_order_items is None:
+                        # Default path: keep original ORDER BY SQL as-is.
                         normalized_order_items = [(o_sql, o_params)]
                     # SQL Server doesn't allow the same column to appear twice
                     # in ORDER BY. ColPairs are already expanded in
@@ -522,6 +529,8 @@ class SQLCompiler(compiler.SQLCompiler):
                     # Handle the case where [col] and [table].[col] refer to
                     # the same column.
                     for normalized_sql, normalized_params in normalized_order_items:
+                        # Normalize sort direction suffix so dedupe compares
+                        # on the expression body, not ASC/DESC text noise.
                         col_ref = (
                             normalized_sql.rsplit(' ', 1)[0]
                             if normalized_sql.rstrip().endswith(('ASC', 'DESC'))
