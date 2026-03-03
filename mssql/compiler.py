@@ -2,6 +2,7 @@
 # Licensed under the BSD license.
 
 import types
+from functools import partial
 from itertools import chain
 
 import django
@@ -22,6 +23,15 @@ if django.VERSION >= (3, 1):
         compile_json_path = None
 if django.VERSION >= (4, 2):
     from django.core.exceptions import EmptyResultSet, FullResultSet
+# ColPairs was introduced in Django 5.2 for composite primary key support.
+# When an OrderBy wraps a ColPairs, Django's OrderBy.as_sql() joins all
+# columns into a single comma-separated SQL string. We expand these at
+# the expression level in get_order_by() so each ORDER BY item is always
+# a single column expression.
+if django.VERSION >= (5, 2):
+    from django.db.models.expressions import ColPairs
+else:
+    ColPairs = None
 
 def _as_sql_agv(self, compiler, connection):
     return self.as_sql(compiler, connection, template='%(function)s(CONVERT(float, %(field)s))')
@@ -52,12 +62,13 @@ def _as_sql_greatest(self, compiler, connection):
 
 def _as_sql_json_keytransform(self, compiler, connection):
     lhs, params, key_transforms = self.preprocess_lhs(compiler, connection)
-    # For Django < 6.0, use Django's built-in compile_json_path
-    # For Django 6.0+, use connection.ops.compile_json_path()
-    if django.VERSION >= (6, 0):
+    # Always prefer backend compilation when available so SQL Server-specific
+    # escaping rules are applied consistently across Django versions.
+    if hasattr(connection.ops, 'compile_json_path'):
         json_path = connection.ops.compile_json_path(key_transforms)
     else:
         json_path = compile_json_path(key_transforms)
+    json_path = json_path.replace("'", "''")
     return (
         "COALESCE(JSON_QUERY(%s, '%s'), JSON_VALUE(%s, '%s'))" %
         ((lhs, json_path) * 2)
@@ -223,6 +234,53 @@ compiler.cursor_iter = _cursor_iter
 
 class SQLCompiler(compiler.SQLCompiler):
 
+    def _resolve_order_by_source_expression(self, expression, dereference_ref=True):
+        if expression is None:
+            return None
+        source_expressions = expression.get_source_expressions()
+        if not source_expressions:
+            return None
+        source = source_expressions[0]
+        if dereference_ref and isinstance(source, Ref):
+            ref_source_expressions = source.get_source_expressions()
+            if ref_source_expressions:
+                source = ref_source_expressions[0]
+        return source
+
+    def _is_constant_order_by_expression(self, expression):
+        if django.VERSION >= (4, 2):
+            unresolved = self._resolve_order_by_source_expression(expression, dereference_ref=False)
+            if isinstance(unresolved, Ref):
+                return False
+        source = self._resolve_order_by_source_expression(expression)
+        return source is not None and self._is_constant_expression(source)
+
+    def get_order_by(self):
+        """
+        Expand ColPairs-based OrderBy expressions into individual per-column
+        OrderBy entries before SQL compilation.
+
+        Django 5.2+ composite PKs produce OrderBy(ColPairs(...)) which
+        compiles to a single comma-separated SQL string. SQL Server doesn't
+        allow duplicate columns in ORDER BY (error 169), and expanding at
+        the expression level lets us deduplicate individual columns cleanly
+        without parsing SQL strings.
+        """
+        result = super().get_order_by()
+        if ColPairs is None:
+            return result
+        expanded = []
+        for resolved, (sql, params, is_ref) in result:
+            if isinstance(getattr(resolved, 'expression', None), ColPairs):
+                for col in resolved.expression.get_cols():
+                    order = resolved.copy()
+                    order.set_source_expressions([col])
+                    col_sql, col_params = self.compile(order)
+                    expanded.append((order, (col_sql, col_params, is_ref)))
+            else:
+                expanded.append((resolved, (sql, params, is_ref)))
+        return expanded
+
     def as_sql(self, with_limits=True, with_col_aliases=False):
         """
         Create the SQL for this query. Return the SQL string and list of
@@ -313,19 +371,42 @@ class SQLCompiler(compiler.SQLCompiler):
                     if do_offset_emulation:
                         if order_by:
                             ordering = []
+                            seen_full = set()  # Full column refs (qualified or unqualified)
+                            seen_unqualified = set()  # Just column names from unqualified refs
                             for expr, (o_sql, o_params, _) in order_by:
+                                if self._is_constant_order_by_expression(expr):
+                                    continue
                                 # value_expression in OVER clause cannot refer to
                                 # expressions or aliases in the select list. See:
                                 # http://msdn.microsoft.com/en-us/library/ms189461.aspx
-                                src = next(iter(expr.get_source_expressions()))
+                                src = self._resolve_order_by_source_expression(expr, dereference_ref=False)
                                 if isinstance(src, Ref):
-                                    src = next(iter(src.get_source_expressions()))
+                                    src = self._resolve_order_by_source_expression(expr)
                                     o_sql, _ = src.as_sql(self, self.connection)
                                     odir = 'DESC' if expr.descending else 'ASC'
                                     o_sql = '%s %s' % (o_sql, odir)
+                                # SQL Server doesn't allow duplicate columns in ORDER BY.
+                                # ColPairs are already expanded in get_order_by(), so each
+                                # o_sql is a single column/expression.
+                                # Handle the case where [col] and [table].[col] refer to
+                                # the same column.
+                                col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.rstrip().endswith(('ASC', 'DESC')) else o_sql
+                                col_ref_upper = col_ref.upper()
+                                # Only treat as a qualified column ref if it looks like
+                                # [table].[col], not a function call containing dots.
+                                is_qualified = '.' in col_ref and '(' not in col_ref
+                                col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                                if col_ref_upper in seen_full:
+                                    continue
+                                if is_qualified and col_name in seen_unqualified:
+                                    continue
+                                seen_full.add(col_ref_upper)
+                                if not is_qualified:
+                                    seen_unqualified.add(col_name)
                                 ordering.append(o_sql)
                                 params.extend(o_params)
-                            offsetting_order_by = ', '.join(ordering)
+                            if ordering:
+                                offsetting_order_by = ', '.join(ordering)
                             order_by = []
                         out_cols.append('ROW_NUMBER() OVER (ORDER BY %s) AS [rn]' % offsetting_order_by)
                     elif not order_by:
@@ -377,7 +458,10 @@ class SQLCompiler(compiler.SQLCompiler):
                 if grouping:
                     if distinct_fields:
                         raise NotImplementedError('annotate() + distinct(fields) is not implemented.')
-                    order_by = order_by or self.connection.ops.force_no_ordering()
+                    if self.query.default_ordering and not self.query.order_by:
+                        order_by = self.connection.ops.force_no_ordering()
+                    else:
+                        order_by = order_by or self.connection.ops.force_no_ordering()
                     result.append('GROUP BY %s' % ', '.join(grouping))
 
                 if having:
@@ -393,23 +477,55 @@ class SQLCompiler(compiler.SQLCompiler):
 
             if order_by:
                 ordering = []
+                seen_full = set()  # Full column refs (qualified or unqualified)
+                seen_unqualified = set()  # Just column names from unqualified refs
                 for expr, (o_sql, o_params, _) in order_by:
+                    if self._is_constant_order_by_expression(expr):
+                        continue
                     if expr:
-                        src = next(iter(expr.get_source_expressions()))
+                        src = self._resolve_order_by_source_expression(expr)
                         if isinstance(src, Random):
                             # ORDER BY RAND() doesn't return rows in random order
                             # replace it with NEWID()
                             o_sql = o_sql.replace('RAND()', 'NEWID()')
+                    # SQL Server doesn't allow the same column to appear twice
+                    # in ORDER BY. ColPairs are already expanded in
+                    # get_order_by(), so each o_sql is a single expression.
+                    # Handle the case where [col] and [table].[col] refer to
+                    # the same column.
+                    col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.rstrip().endswith(('ASC', 'DESC')) else o_sql
+                    col_ref_upper = col_ref.upper()
+                    is_qualified = '.' in col_ref and '(' not in col_ref
+                    col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                    if col_ref_upper in seen_full:
+                        continue
+                    if is_qualified and col_name in seen_unqualified:
+                        continue
+                    seen_full.add(col_ref_upper)
+                    if not is_qualified:
+                        seen_unqualified.add(col_name)
                     ordering.append(o_sql)
                     params.extend(o_params)
-                result.append('ORDER BY %s' % ', '.join(ordering))
+                if ordering:
+                    result.append('ORDER BY %s' % ', '.join(ordering))
+                else:
+                    order_by = []
+                    if do_offset and supports_offset_clause:
+                        meta = self.query.get_meta()
+                        qn = self.quote_name_unless_alias
+                        result.append(
+                            'ORDER BY %s.%s ASC' % (
+                                qn(meta.db_table),
+                                qn(meta.pk.db_column or meta.pk.column),
+                            )
+                        )
 
                 # For subqueres with an ORDER BY clause, SQL Server also
                 # requires a TOP or OFFSET clause which is not generated for
                 # Django 2.x.  See https://github.com/microsoft/mssql-django/issues/12
                 # Add OFFSET for all Django versions.
                 # https://github.com/microsoft/mssql-django/issues/109
-                if not (do_offset or do_limit) and supports_offset_clause:
+                if ordering and not (do_offset or do_limit) and supports_offset_clause:
                     result.append("OFFSET 0 ROWS")
 
             # SQL Server requires the backend-specific emulation (2008 or earlier)
@@ -473,12 +589,18 @@ class SQLCompiler(compiler.SQLCompiler):
         return self._filter_subquery_and_constant_expressions(expressions)
 
     def _is_constant_expression(self, expression):
+        if expression is None:
+            return False
         if isinstance(expression, Value):
             return True
+        if not hasattr(expression, 'get_source_expressions'):
+            return False
         sub_exprs = expression.get_source_expressions()
         if not sub_exprs:
             return False
         for each in sub_exprs:
+            if each is None:
+                return False
             if not self._is_constant_expression(each):
                 return False
         return True
@@ -614,13 +736,53 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         result = ['INSERT INTO %s' % qn(opts.db_table)]
 
         if self.query.fields:
-            fields = self.query.fields
+            fields = list(self.query.fields)
+            supports_default_keyword_in_bulk_insert = (
+                self.connection.features.supports_default_keyword_in_bulk_insert
+            )
             result.append('(%s)' % ', '.join(qn(f.column) for f in fields))
             values_format = 'VALUES (%s)'
-            value_rows = [
-                [self.prepare_value(field, self.pre_save_val(field, obj)) for field in fields]
-                for obj in self.query.objs
-            ]
+
+            if django.VERSION < (6, 0):
+                value_rows = [
+                    [self.prepare_value(field, self.pre_save_val(field, obj)) for field in fields]
+                    for obj in self.query.objs
+                ]
+            else:
+                from django.db.models.expressions import DatabaseDefault
+
+                value_cols = []
+                for field in list(fields):
+                    field_prepare = partial(self.prepare_value, field)
+                    field_pre_save = partial(self.pre_save_val, field)
+                    field_values = [
+                        field_prepare(field_pre_save(obj)) for obj in self.query.objs
+                    ]
+
+                    if not field.has_db_default():
+                        value_cols.append(field_values)
+                        continue
+
+                    if len(fields) > 1 and all(
+                        isinstance(value, DatabaseDefault) for value in field_values
+                    ):
+                        fields.remove(field)
+                        continue
+
+                    if supports_default_keyword_in_bulk_insert:
+                        value_cols.append(field_values)
+                        continue
+
+                    prepared_db_default = field_prepare(field.db_default)
+                    field_values = [
+                        prepared_db_default
+                        if isinstance(value, DatabaseDefault)
+                        else value
+                        for value in field_values
+                    ]
+                    value_cols.append(field_values)
+                value_rows = list(zip(*value_cols))
+                result[-1] = '(%s)' % ', '.join(qn(f.column) for f in fields)
         else:
             values_format = '%s VALUES'
             # An empty object.

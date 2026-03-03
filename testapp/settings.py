@@ -10,21 +10,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATABASES = {
     "default": {
         "ENGINE": "mssql",
-        "NAME": "default",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
-        "HOST": "localhost",
-        "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
+        "NAME": os.environ.get("MSSQL_DB_NAME", "default"),
+        "USER": os.environ.get("MSSQL_USER", "sa"),
+        "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
+        "HOST": os.environ.get("MSSQL_HOST", "localhost"),
+        "PORT": os.environ.get("MSSQL_PORT", "1433"),
+        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
     },
     'other': {
         "ENGINE": "mssql",
-        "NAME": "other",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
-        "HOST": "localhost",
-        "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
+        "NAME": os.environ.get("MSSQL_DB_NAME_OTHER", "other"),
+        "USER": os.environ.get("MSSQL_USER", "sa"),
+        "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
+        "HOST": os.environ.get("MSSQL_HOST", "localhost"),
+        "PORT": os.environ.get("MSSQL_PORT", "1433"),
+        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
     },
 }
 
@@ -324,14 +324,8 @@ if VERSION >= (5, 1):
 # Django 6.0 specific exclusions
 if VERSION >= (6, 0):
     EXCLUDED_TESTS.extend([
-        # ORDER BY with GROUP BY - SQL Server limitation with order_with_respect_to bulk_create
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_allows_duplicate_order_values',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_mixed_scenario',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_multiple_parents',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_respects_mixed_manual_order',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_with_empty_parent',
-        'order_with_respect_to.tests.OrderWithRespectToBaseTests.test_bulk_create_with_existing_children',
-        # ORDER BY with CASE WHEN constant value - SQL Server limitation
+        # Constant CASE ORDER BY compiles to a parameterized ordering expression
+        # that SQL Server rejects (error 1008).
         'ordering.tests.OrderingTests.test_order_by_case_when_constant_value',
         
         # Parameter type handling - Django 6.0 changed params from list to tuple in some places
@@ -340,46 +334,8 @@ if VERSION >= (6, 0):
         'expressions.tests.FTimeDeltaTests.test_datetime_subtraction',
         'expressions.tests.FTimeDeltaTests.test_time_subtraction',
         
-        # JSONField - UUID serialization and negative array index handling needed
-        'model_fields.test_jsonfield.TestQuerying.test_deep_negative_lookup_array',
-        'model_fields.test_jsonfield.TestQuerying.test_deep_negative_lookup_mixed',
-        'model_fields.test_jsonfield.TestQuerying.test_deep_values',
-        'model_fields.test_jsonfield.TestQuerying.test_exact',
-        'model_fields.test_jsonfield.TestQuerying.test_exact_complex',
-        'model_fields.test_jsonfield.TestQuerying.test_expression_wrapper_key_transform',
-        'model_fields.test_jsonfield.TestQuerying.test_has_any_keys',
-        'model_fields.test_jsonfield.TestQuerying.test_has_key',
-        'model_fields.test_jsonfield.TestQuerying.test_has_keys',
-        'model_fields.test_jsonfield.TestQuerying.test_icontains',
-        'model_fields.test_jsonfield.TestQuerying.test_isnull',
-        'model_fields.test_jsonfield.TestQuerying.test_join_key_transform_annotation_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_key_contains',
-        'model_fields.test_jsonfield.TestQuerying.test_key_endswith',
-        'model_fields.test_jsonfield.TestQuerying.test_key_icontains',
-        'model_fields.test_jsonfield.TestQuerying.test_key_iendswith',
-        'model_fields.test_jsonfield.TestQuerying.test_key_iexact',
-        'model_fields.test_jsonfield.TestQuerying.test_key_in',
-        'model_fields.test_jsonfield.TestQuerying.test_key_istartswith',
-        'model_fields.test_jsonfield.TestQuerying.test_key_startswith',
-        'model_fields.test_jsonfield.TestQuerying.test_key_transform',
-        'model_fields.test_jsonfield.TestQuerying.test_key_transform_annotation_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_key_transform_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_key_transform_raw_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_key_values',
-        'model_fields.test_jsonfield.TestQuerying.test_lookup_exclude',
-        'model_fields.test_jsonfield.TestQuerying.test_lookup_exclude_nonexistent_key',
-        'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_annotation_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_on_subquery',
-        'model_fields.test_jsonfield.TestQuerying.test_nested_key_transform_raw_expression',
-        'model_fields.test_jsonfield.TestQuerying.test_none_key_exclude',
-        'model_fields.test_jsonfield.TestQuerying.test_obj_subquery_lookup',
-        'model_fields.test_jsonfield.TestQuerying.test_order_grouping_custom_decoder',
+        # JSONField ordering-by-transform still needs dedicated ORDER BY handling.
         'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
-        'model_fields.test_jsonfield.TestQuerying.test_shallow_list_lookup',
-        'model_fields.test_jsonfield.TestQuerying.test_shallow_list_negative_lookup',
-        'model_fields.test_jsonfield.TestQuerying.test_shallow_lookup_obj_target',
-        'model_fields.test_jsonfield.TestQuerying.test_shallow_obj_lookup',
         
         # SQL Server limitations (permanent exclusions)
         # STRING_AGG with DISTINCT - SQL Server syntax differs
@@ -387,18 +343,15 @@ if VERSION >= (6, 0):
         # REGEXP_LIKE function not available in SQL Server
         'expressions.tests.BasicExpressionsTests.test_lookups_subquery',
         
-        # JSON path escaping test - bracket notation difference
+        # JSON path escaping test keeps backend-specific escaping requirements.
         'model_fields.test_jsonfield.TestQuerying.test_key_sql_injection_escape',
         # Migration tests with schema differences
         'migrations.test_commands.MakeMigrationsTests.test_makemigrations_check_no_changes',
         'migrations.test_commands.MakeMigrationsTests.test_makemigrations_model_rename_interactive',
         'migrations.test_commands.MakeMigrationsTests.test_makemigrations_no_changes',
         'schema.tests.SchemaTests.test_remove_constraints_capital_letters',
-        # Query count differences due to SQL Server parameter limits
-        'lookup.tests.LookupTests.test_in_bulk_lots_of_ids',
+        # Constraint validation (single-query path) query count still under investigation
         'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
-        # Bulk create output column count
-        'bulk_create.tests.BulkCreateTests.test_db_default_field_excluded',
         # DEFAULT_AUTO_FIELD behavior - testapp models use explicit AutoField
         'model_options.test_default_pk.TestDefaultPK.test_default_value_of_default_auto_field_setting',
         # Introspection returns IntegerField for AutoField-generated columns
@@ -420,41 +373,17 @@ if VERSION >= (6, 0):
         'model_fields.test_jsonfield.TestQuerying.test_usage_in_subquery',
     ])
 
-# Django 5.2 specific exclusions - tuple lookups not supported in SQL Server
+# Django 5.2 specific exclusions
 # These are good candidates for community contributions - see GitHub issues
 if VERSION >= (5, 2):
     EXCLUDED_TESTS.extend([
-        # Tuple lookup tests - SQL Server doesn't support (col1, col2) IN syntax
-        # TODO: Implement tuple lookup handling for SQL Server compatibility
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_exact',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gt',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gte',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_in',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lt',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lte',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
-        'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
+        # SQL Server parameter splitting uses temp tables, resulting in different query count
+        'composite_pk.tests.CompositePKTests.test_in_bulk_batching',
         
         # inspectdb tests that expect specific table structures in inspectdb_special/pascal schemas
         'inspectdb.tests.InspectDBTestCase.test_custom_normalize_table_name',
         'inspectdb.tests.InspectDBTestCase.test_special_column_name_introspection', 
         'inspectdb.tests.InspectDBTestCase.test_table_name_introspection',
-        
-        # Multi-column foreign key tests with tuple lookups - also affected by SQL Server limitations
-        # TODO: Fix tuple lookup generation for multi-column FKs 
-        'foreign_object.tests.MultiColumnFKTests.test_double_nested_query',
-        'foreign_object.tests.MultiColumnFKTests.test_forward_in_lookup_filters_correctly',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_forward',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_hidden_forward',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_reverse',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_forward_works',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_reverse_works',
-        'foreign_object.tests.MultiColumnFKTests.test_reverse_query_returns_correct_result',
-        
-        # JSONField special character handling - SQL Server specific syntax issues
-        # TODO: Fix JSONField key escaping for special characters
-        'model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars',
-        'model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars_double_quotes',
         
         # JSONField bulk update with null handling
         # TODO: Fix bulk update SQL generation for JSONField null values
@@ -478,6 +407,34 @@ if VERSION >= (5, 2):
         # TODO: Fix JSONField update with CASE WHEN handling
         'expressions.tests.BasicExpressionsTests.test_update_jsonfield_case_when_key_is_null',
         
+    ])
+
+if VERSION >= (5, 2) and VERSION < (5, 2, 4):
+    EXCLUDED_TESTS.extend([
+        # Composite PK tuple subquery fallback fix landed in Django 5.2.4.
+        'composite_pk.test_filter.CompositePKFilterTests.test_explicit_subquery',
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_exact',
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_comparison',
+
+        # Tuple lookup tests kept excluded for Django <5.2.4.
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_exact',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gt',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gte',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_in',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lt',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lte',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
+        'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
+
+        # Multi-column foreign key tuple-lookup tests kept excluded for Django <5.2.4.
+        'foreign_object.tests.MultiColumnFKTests.test_double_nested_query',
+        'foreign_object.tests.MultiColumnFKTests.test_forward_in_lookup_filters_correctly',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_forward',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_hidden_forward',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_reverse',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_forward_works',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_reverse_works',
+        'foreign_object.tests.MultiColumnFKTests.test_reverse_query_returns_correct_result',
     ])
 
 REGEX_TESTS = [
