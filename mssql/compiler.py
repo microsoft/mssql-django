@@ -482,7 +482,7 @@ class SQLCompiler(compiler.SQLCompiler):
                 for expr, (o_sql, o_params, _) in order_by:
                     json_key_transform_ordering = False
                     uses_ref_alias = False
-                    normalized_order_items = [(o_sql, o_params)]
+                    normalized_order_items = None
                     if self._is_constant_order_by_expression(expr):
                         continue
                     if expr:
@@ -514,6 +514,8 @@ class SQLCompiler(compiler.SQLCompiler):
                                 ('TRY_CONVERT(float, %s) %s' % (base_o_sql, direction), o_params),
                                 ('%s %s' % (base_o_sql, direction), o_params),
                             ]
+                    if normalized_order_items is None:
+                        normalized_order_items = [(o_sql, o_params)]
                     # SQL Server doesn't allow the same column to appear twice
                     # in ORDER BY. ColPairs are already expanded in
                     # get_order_by(), so each o_sql is a single expression.
