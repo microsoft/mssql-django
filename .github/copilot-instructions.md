@@ -169,19 +169,23 @@ echo "yes" | python tests/runtests.py --settings=testapp.settings <module>
     - If a helper behavior changes (e.g., path builder), write one explicit rule: who returns raw values, who does SQL escaping/normalization, and where.
 2. **All call sites audited**
     - grep every consumer of changed helper/symbol and verify each follows the new contract exactly once.
-3. **Integration test proof**
+3. **Fast-path invariants preserved**
+    - If adding a fast-path/special-case branch (e.g., early `continue`/`return`), verify it does not bypass shared safety logic (dedupe, alias handling, parameter ordering, escaping, pagination guards).
+    - Add a regression test that specifically exercises duplicate/equivalent-path behavior for that fast-path.
+4. **Integration test proof**
     - Add at least one end-to-end ORM regression test for changed behavior, or run and document a concrete end-to-end upstream Django test that directly exercises the changed path.
-4. **Doc/comments synced**
+5. **Doc/comments synced**
     - Update docstrings/comments to match implementation (no stale wording).
-5. **Exclusion hygiene**
+6. **Exclusion hygiene**
     - Remove only exclusions proven green in normal settings.
     - For any kept exclusion, add a one-line reason.
-6. **Version matrix evidence**
+7. **Version matrix evidence**
     - Run targeted tests + HOT guard on executable lanes; report PASS/FAIL/BLOCKED explicitly.
 
 ### Merge Gate (must all be true)
 - No unresolved contract ambiguity.
 - No double-escaping / double-transform pattern in call sites.
+- No fast-path branch that bypasses shared invariants (dedupe/safety guards) without explicit handling and regression proof.
 - At least one integration regression proof for each behavior change.
 - Targeted tests green + HOT guard green (or BLOCKED with environment reason).
 - PR description includes root cause, fix scope, and exclusions touched.
