@@ -352,8 +352,6 @@ if VERSION >= (6, 0):
         'schema.tests.SchemaTests.test_remove_constraints_capital_letters',
         # Constraint validation (single-query path) query count still under investigation
         'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
-        # Bulk create output column count
-        'bulk_create.tests.BulkCreateTests.test_db_default_field_excluded',
         # DEFAULT_AUTO_FIELD behavior - testapp models use explicit AutoField
         'model_options.test_default_pk.TestDefaultPK.test_default_value_of_default_auto_field_setting',
         # Introspection returns IntegerField for AutoField-generated columns
