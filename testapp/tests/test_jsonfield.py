@@ -6,6 +6,7 @@ from unittest import skipUnless
 from django import VERSION
 from django.db import NotSupportedError, connections
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 
 if VERSION >= (3, 1):
     from ..models import JSONModel
@@ -163,4 +164,29 @@ class TestJSONField(TestCase):
 
         queryset = JSONModel.objects.filter(value__name__isnull=False).order_by("value__ord")
         self.assertSequenceEqual(queryset, [rows[1], rows[0], rows[2]])
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
+    def test_ordering_by_duplicate_numeric_json_key_deduplicated(self):
+        # Regression for fast-path ordering rewrite + dedupe interaction.
+        # Duplicate order_by entries must not produce duplicate ORDER BY
+        # expressions, otherwise SQL Server can fail with error 169.
+        rows = [
+            JSONModel.objects.create(value={"ord": 3, "name": "c"}),
+            JSONModel.objects.create(value={"ord": 1, "name": "a"}),
+            JSONModel.objects.create(value={"ord": 2, "name": "b"}),
+        ]
+
+        queryset = JSONModel.objects.filter(value__name__isnull=False).order_by(
+            "value__ord", "value__ord"
+        )
+
+        with CaptureQueriesContext(connections['default']) as captured:
+            result = list(queryset)
+
+        self.assertSequenceEqual(result, [rows[1], rows[2], rows[0]])
+
+        # The numeric conversion expression should appear only once even though
+        # the same order clause is requested twice.
+        select_sql = captured[-1]["sql"]
+        self.assertEqual(select_sql.upper().count("TRY_CONVERT(FLOAT"), 1)
 

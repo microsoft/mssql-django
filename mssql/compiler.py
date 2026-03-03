@@ -482,6 +482,7 @@ class SQLCompiler(compiler.SQLCompiler):
                 for expr, (o_sql, o_params, _) in order_by:
                     json_key_transform_ordering = False
                     uses_ref_alias = False
+                    normalized_order_items = [(o_sql, o_params)]
                     if self._is_constant_order_by_expression(expr):
                         continue
                     if expr:
@@ -509,35 +510,33 @@ class SQLCompiler(compiler.SQLCompiler):
                         if base_o_sql.isdigit():
                             json_key_transform_ordering = False
                         else:
-                            ordering.append(
-                                'TRY_CONVERT(float, %s) %s, %s %s' % (
-                                    base_o_sql,
-                                    direction,
-                                    base_o_sql,
-                                    direction,
-                                )
-                            )
-                            params.extend(o_params)
-                            params.extend(o_params)
-                            continue
+                            normalized_order_items = [
+                                ('TRY_CONVERT(float, %s) %s' % (base_o_sql, direction), o_params),
+                                ('%s %s' % (base_o_sql, direction), o_params),
+                            ]
                     # SQL Server doesn't allow the same column to appear twice
                     # in ORDER BY. ColPairs are already expanded in
                     # get_order_by(), so each o_sql is a single expression.
                     # Handle the case where [col] and [table].[col] refer to
                     # the same column.
-                    col_ref = o_sql.rsplit(' ', 1)[0] if o_sql.rstrip().endswith(('ASC', 'DESC')) else o_sql
-                    col_ref_upper = col_ref.upper()
-                    is_qualified = '.' in col_ref and '(' not in col_ref
-                    col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
-                    if col_ref_upper in seen_full:
-                        continue
-                    if is_qualified and col_name in seen_unqualified:
-                        continue
-                    seen_full.add(col_ref_upper)
-                    if not is_qualified:
-                        seen_unqualified.add(col_name)
-                    ordering.append(o_sql)
-                    params.extend(o_params)
+                    for normalized_sql, normalized_params in normalized_order_items:
+                        col_ref = (
+                            normalized_sql.rsplit(' ', 1)[0]
+                            if normalized_sql.rstrip().endswith(('ASC', 'DESC'))
+                            else normalized_sql
+                        )
+                        col_ref_upper = col_ref.upper()
+                        is_qualified = '.' in col_ref and '(' not in col_ref
+                        col_name = col_ref.rsplit('.', 1)[-1].upper() if is_qualified else col_ref_upper
+                        if col_ref_upper in seen_full:
+                            continue
+                        if is_qualified and col_name in seen_unqualified:
+                            continue
+                        seen_full.add(col_ref_upper)
+                        if not is_qualified:
+                            seen_unqualified.add(col_name)
+                        ordering.append(normalized_sql)
+                        params.extend(normalized_params)
                 if ordering:
                     result.append('ORDER BY %s' % ', '.join(ordering))
                 else:
