@@ -350,7 +350,7 @@ if VERSION >= (6, 0):
         'migrations.test_commands.MakeMigrationsTests.test_makemigrations_model_rename_interactive',
         'migrations.test_commands.MakeMigrationsTests.test_makemigrations_no_changes',
         'schema.tests.SchemaTests.test_remove_constraints_capital_letters',
-        # Query count differences still under investigation
+        # Constraint validation (single-query path) query count still under investigation
         'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
         # Bulk create output column count
         'bulk_create.tests.BulkCreateTests.test_db_default_field_excluded',

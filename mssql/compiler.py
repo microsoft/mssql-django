@@ -404,7 +404,8 @@ class SQLCompiler(compiler.SQLCompiler):
                                     seen_unqualified.add(col_name)
                                 ordering.append(o_sql)
                                 params.extend(o_params)
-                            offsetting_order_by = ', '.join(ordering)
+                            if ordering:
+                                offsetting_order_by = ', '.join(ordering)
                             order_by = []
                         out_cols.append('ROW_NUMBER() OVER (ORDER BY %s) AS [rn]' % offsetting_order_by)
                     elif not order_by:
@@ -508,6 +509,15 @@ class SQLCompiler(compiler.SQLCompiler):
                     result.append('ORDER BY %s' % ', '.join(ordering))
                 else:
                     order_by = []
+                    if do_offset and supports_offset_clause:
+                        meta = self.query.get_meta()
+                        qn = self.quote_name_unless_alias
+                        result.append(
+                            'ORDER BY %s.%s ASC' % (
+                                qn(meta.db_table),
+                                qn(meta.pk.db_column or meta.pk.column),
+                            )
+                        )
 
                 # For subqueres with an ORDER BY clause, SQL Server also
                 # requires a TOP or OFFSET clause which is not generated for

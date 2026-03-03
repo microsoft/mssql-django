@@ -116,6 +116,14 @@ class TestOrderingRegressions(TestCase):
             ['alice', 'bob', 'charlie'],
         )
 
+    def test_order_by_case_when_constant_value_with_offset_executes(self):
+        queryset = Author.objects.order_by(Value(1))[1:3]
+        expected = list(Author.objects.order_by('pk').values_list('name', flat=True))[1:3]
+        self.assertEqual(
+            list(queryset.values_list('name', flat=True)),
+            expected,
+        )
+
 
 class TestModuloExpressionRegressions(TestCase):
     def test_modulo_expression_with_value_parameter_executes(self):
