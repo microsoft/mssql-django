@@ -1,4 +1,3 @@
-````prompt
 # mssql-django Gated PR Self-Check
 
 Use this prompt before merging any backend/compiler/schema PR.
@@ -133,5 +132,3 @@ For each touched exclusion:
 - `testapp/runners.py` marks excluded tests as expected-failure (`x`) under normal settings. Do not treat `x` alone as proof of backend failure for exclusion decisions.
 - For exclusion removal decisions, always re-run candidate tests directly under `testapp.settings` and inspect actual pass/fail outcomes.
 - Prefer expression-level/compiler-level fixes over SQL string surgery.
-
-````
