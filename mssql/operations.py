@@ -7,6 +7,7 @@ import warnings
 import sys
 
 from django.conf import settings
+from django.db import NotSupportedError
 from django.db.backends.base.operations import BaseDatabaseOperations
 from django.db.models.expressions import Exists, ExpressionWrapper, RawSQL
 from django.db.models.sql.where import WhereNode
@@ -70,6 +71,29 @@ class DatabaseOperations(BaseDatabaseOperations):
         # query parameters for the `sp_executesql` call. This should only take
         # up 2 parameters but I've had this error when sending 2098 parameters.
         max_query_params = 2050
+
+        if objs and not hasattr(objs[0], '_meta'):
+            return max_query_params // fields_len
+
+        if objs and hasattr(objs[0], '_meta'):
+            if all(isinstance(field, str) for field in fields):
+                # Deletion collector batching calls this with a single string
+                # field name (from Collector.get_del_batches()). Treat that
+                # shape as delete batching, not insert/update batching, so we
+                # don't apply the extra /2 reduction that can split large
+                # cascade deletes into one additional query.
+                if fields_len == 1:
+                    return max_query_params // fields_len
+                return min(max_insert_rows, max_query_params // fields_len // 2)
+
+            obj_model = objs[0].__class__
+            field_models = {
+                field.model for field in fields
+                if hasattr(field, 'model') and field.model is not None
+            }
+            if field_models and any(field_model is not obj_model for field_model in field_models):
+                return max_query_params // fields_len
+
         # inserts are capped at 1000 rows regardless of number of query params.
         # bulk_update CASE...WHEN...THEN statement sometimes takes 2 parameters per field
         return min(max_insert_rows, max_query_params // fields_len // 2)
@@ -543,6 +567,8 @@ class DatabaseOperations(BaseDatabaseOperations):
     def subtract_temporals(self, internal_type, lhs, rhs):
         lhs_sql, lhs_params = lhs
         rhs_sql, rhs_params = rhs
+        lhs_params = tuple(lhs_params)
+        rhs_params = tuple(rhs_params)
         if internal_type == 'DateField':
             sql = "CAST(DATEDIFF(day, %(rhs)s, %(lhs)s) AS bigint) * 86400 * 1000000"
             params = rhs_params + lhs_params
@@ -651,7 +677,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         Matches Django's default behavior: use the provided encoder (or None).
         """
         import json
-        
+
         return json.dumps(value, cls=encoder)
 
     def compile_json_path(self, key_transforms, include_root=True):
@@ -659,9 +685,24 @@ class DatabaseOperations(BaseDatabaseOperations):
         Compile a JSON path from a list of key transforms.
         This method was moved from django.db.models.fields.json in Django 6.0
         to connection.ops.compile_json_path().
-        
-        For SQL Server, we use bracket notation with escaped keys for any
-        non-simple key names to properly handle special characters.
+
+        Contract:
+        - This helper returns a raw JSON path string
+            (for example: $.a[0]."complex key").
+        - Callers that embed it inside SQL string literals must apply SQL
+            string-literal escaping exactly once at SQL generation time.
+        - Non-simple key text in the returned path is already JSON-escaped and
+            must not be JSON-escaped again.
+
+        SQL Server JSON path shape:
+        - Include root '$' when include_root is True.
+        - Emit array indices as bracket notation: [0], [1], ...
+        - Emit simple object keys (^[a-zA-Z_][a-zA-Z0-9_]*$) as dot notation:
+            .key_name
+        - Emit all other object keys as quoted dot notation with JSON-escaped
+            key text: ."complex key", ."key.with\"quotes\""
+
+        This function does not perform SQL identifier quoting.
         """
         import json
         import re
@@ -669,18 +710,23 @@ class DatabaseOperations(BaseDatabaseOperations):
         for key_transform in key_transforms:
             try:
                 num = int(key_transform)
+                if (
+                    num < 0
+                    and not self.connection.features.supports_json_negative_indexing
+                ):
+                    raise NotSupportedError(
+                        "Using negative JSON array indices is not supported on this "
+                        "database backend. (SQL Server)"
+                    )
                 path.append('[%s]' % num)
             except ValueError:
-                # Use bracket notation for keys with special characters
-                # json.dumps properly escapes quotes and other special chars
-                escaped_key = json.dumps(key_transform)
                 # Check if key is simple (alphanumeric/underscore only)
                 if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', key_transform):
                     path.append('.')
                     path.append(key_transform)
                 else:
-                    # Use bracket notation: $["key with \"quotes\""]
-                    path.append('[%s]' % escaped_key)
+                    escaped_key = json.dumps(key_transform, ensure_ascii=True)[1:-1]
+                    path.append('."%s"' % escaped_key)
         return ''.join(path)
 
     # Django 6.0 renames return_insert_columns to returning_columns
