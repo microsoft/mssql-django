@@ -78,9 +78,18 @@ class TestJSONField(TestCase):
             'a"b',
             "o'reilly",
         ])
-        self.assertEqual(path, "$.owner.\"role name\".\"a\\\"b\".\"o''reilly\"")
+        self.assertEqual(path, "$.owner.\"role name\".\"a\\\"b\".\"o'reilly\"")
 
     def test_compile_json_path_negative_index_not_supported(self):
         with self.assertRaises(NotSupportedError):
             connections['default'].ops.compile_json_path(['items', '-1'])
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not support in Django versions < 3.1")
+    def test_has_key_lookup_with_single_quote_key(self):
+        obj = JSONModel.objects.create(value={"o'reilly": 1, "safe": True})
+
+        self.assertSequenceEqual(
+            JSONModel.objects.filter(value__has_key="o'reilly"),
+            [obj],
+        )
 

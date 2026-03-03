@@ -67,6 +67,7 @@ def _as_sql_json_keytransform(self, compiler, connection):
         json_path = connection.ops.compile_json_path(key_transforms)
     else:
         json_path = compile_json_path(key_transforms)
+    json_path = json_path.replace("'", "''")
     return (
         "COALESCE(JSON_QUERY(%s, '%s'), JSON_VALUE(%s, '%s'))" %
         ((lhs, json_path) * 2)
