@@ -1,3 +1,5 @@
+import unittest
+
 import django.db.utils
 from django import VERSION
 from django.db import connections, connection, models
@@ -6,6 +8,7 @@ from django.test import TransactionTestCase, TestCase, skipUnlessDBFeature
 from django.utils import timezone
 
 from ..models import Author, BinaryData
+
 
 class TestTableWithTrigger(TransactionTestCase):
     def test_insert_into_table_with_trigger(self):
@@ -32,6 +35,7 @@ class TestTableWithTrigger(TransactionTestCase):
                 cursor.execute("DROP TRIGGER TestTrigger")
             connection.features_class.can_return_rows_from_bulk_insert = old_return_rows_flag
 
+
 class TestBinaryfieldGroupby(TestCase):
     def test_varbinary(self):
         with connection.cursor() as cursor:
@@ -40,13 +44,34 @@ class TestBinaryfieldGroupby(TestCase):
 
 @skipUnlessDBFeature("supports_expression_defaults")
 class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
+    """Regression tests for Django 6.0 db_default bulk insert alignment.
+
+    Django 6.0 introduced DatabaseDefault sentinel values for fields with
+    db_default. Our SQLInsertCompiler.as_sql() override must correctly:
+      - Exclude a db_default column from the INSERT column list when *every*
+        row uses the database default (letting the server supply the value).
+      - Include the column when at least one row supplies an explicit value
+        (mixing explicit values with DEFAULT keyword or prepared db_default).
+
+    These tests create a raw table with a server-side DEFAULT SYSDATETIME()
+    to exercise both paths end-to-end against SQL Server.
+    """
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
 
+        # This feature is Django 6.0+ only; skip cleanly on older versions.
+        # Note: raise unittest.SkipTest, not cls.skipTest(), because
+        # skipTest() is an instance method and cannot be called from
+        # setUpClass (a classmethod).
         if VERSION < (6, 0):
-            cls.skipTest("db_default bulk insert alignment is Django 6.0+ specific")
+            raise unittest.SkipTest(
+                "db_default bulk insert alignment is Django 6.0+ specific"
+            )
 
+        # Unmanaged model so Django doesn't try to create/drop the table
+        # via migrations — we handle that with raw SQL below.
         class DbDefaultBulkInsertModel(models.Model):
             name = models.CharField(max_length=100)
             created_at = models.DateTimeField(db_default=Now())
@@ -77,6 +102,10 @@ class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
 
     @classmethod
     def tearDownClass(cls):
+        if VERSION < (6, 0):
+            # Table was never created when the test was skipped.
+            super().tearDownClass()
+            return
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -87,17 +116,33 @@ class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
         super().tearDownClass()
 
     def test_db_default_field_excluded_and_included(self):
+        """Verify created_at column presence in INSERT SQL for db_default.
+
+        Case 1 — all rows use the database default:
+          The column should be omitted from the INSERT column list so the
+          server-side DEFAULT kicks in.  The quoted column name appears only
+          in the OUTPUT INSERTED clause (if can_return_rows_from_bulk_insert)
+          or not at all.
+
+        Case 2 — at least one row supplies an explicit value:
+          The column must appear in the INSERT column list (so the explicit
+          value is written) *and* in OUTPUT INSERTED (if applicable).
+        """
         model = self.DbDefaultBulkInsertModel
         created_at_quoted_name = connection.ops.quote_name("created_at")
 
+        # --- Case 1: all rows rely on db_default for created_at ---
         with self.assertNumQueries(1) as ctx:
             model.objects.bulk_create([model(name="foo"), model(name="bar")])
 
+        # created_at should NOT be in the INSERT column list.
+        # It appears once only if OUTPUT INSERTED includes it.
         self.assertEqual(
             ctx[0]["sql"].count(created_at_quoted_name),
             1 if connection.features.can_return_rows_from_bulk_insert else 0,
         )
 
+        # --- Case 2: one row overrides created_at with an explicit value ---
         with self.assertNumQueries(1) as ctx:
             model.objects.bulk_create(
                 [
@@ -106,6 +151,8 @@ class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
                 ]
             )
 
+        # created_at must be in the INSERT column list (1 occurrence)
+        # plus OUTPUT INSERTED (1 more if can_return_rows_from_bulk_insert).
         self.assertEqual(
             ctx[0]["sql"].count(created_at_quoted_name),
             2 if connection.features.can_return_rows_from_bulk_insert else 1,
