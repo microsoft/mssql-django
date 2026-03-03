@@ -7,6 +7,7 @@ import warnings
 import sys
 
 from django.conf import settings
+from django.db import NotSupportedError
 from django.db.backends.base.operations import BaseDatabaseOperations
 from django.db.models.expressions import Exists, ExpressionWrapper, RawSQL
 from django.db.models.sql.where import WhereNode
@@ -651,7 +652,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         Matches Django's default behavior: use the provided encoder (or None).
         """
         import json
-        
+
         return json.dumps(value, cls=encoder)
 
     def compile_json_path(self, key_transforms, include_root=True):
@@ -659,9 +660,24 @@ class DatabaseOperations(BaseDatabaseOperations):
         Compile a JSON path from a list of key transforms.
         This method was moved from django.db.models.fields.json in Django 6.0
         to connection.ops.compile_json_path().
-        
-        For SQL Server, we use bracket notation with escaped keys for any
-        non-simple key names to properly handle special characters.
+
+        Contract:
+        - This helper returns a raw JSON path string
+            (for example: $.a[0]."complex key").
+        - Callers that embed it inside SQL string literals must apply SQL
+            string-literal escaping exactly once at SQL generation time.
+        - Non-simple key text in the returned path is already JSON-escaped and
+            must not be JSON-escaped again.
+
+        SQL Server JSON path shape:
+        - Include root '$' when include_root is True.
+        - Emit array indices as bracket notation: [0], [1], ...
+        - Emit simple object keys (^[a-zA-Z_][a-zA-Z0-9_]*$) as dot notation:
+            .key_name
+        - Emit all other object keys as quoted dot notation with JSON-escaped
+            key text: ."complex key", ."key.with\"quotes\""
+
+        This function does not perform SQL identifier quoting.
         """
         import json
         import re
@@ -669,18 +685,23 @@ class DatabaseOperations(BaseDatabaseOperations):
         for key_transform in key_transforms:
             try:
                 num = int(key_transform)
+                if (
+                    num < 0
+                    and not self.connection.features.supports_json_negative_indexing
+                ):
+                    raise NotSupportedError(
+                        "Using negative JSON array indices is not supported on this "
+                        "database backend. (SQL Server)"
+                    )
                 path.append('[%s]' % num)
             except ValueError:
-                # Use bracket notation for keys with special characters
-                # json.dumps properly escapes quotes and other special chars
-                escaped_key = json.dumps(key_transform)
                 # Check if key is simple (alphanumeric/underscore only)
                 if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', key_transform):
                     path.append('.')
                     path.append(key_transform)
                 else:
-                    # Use bracket notation: $["key with \"quotes\""]
-                    path.append('[%s]' % escaped_key)
+                    escaped_key = json.dumps(key_transform, ensure_ascii=True)[1:-1]
+                    path.append('."%s"' % escaped_key)
         return ''.join(path)
 
     # Django 6.0 renames return_insert_columns to returning_columns
