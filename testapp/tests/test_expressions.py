@@ -11,6 +11,9 @@ from django.test import TestCase, skipUnlessDBFeature
 
 from django.db.models.aggregates import Count, Sum
 
+if VERSION >= (6, 0):
+    from django.db.models import StringAgg
+
 from ..models import Author, Book, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes
 
 
@@ -171,3 +174,20 @@ class TestBulkUpdate(TestCase):
         self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(int_value__isnull=True), objs)
         self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(name__isnull=True), objs)
         self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(date__isnull=True), objs)
+
+
+class TestStringAggOrderingRegression(TestCase):
+    @skipUnless(VERSION >= (6, 0), "StringAgg ordering is Django 6.0+")
+    def test_stringagg_honors_ordering(self):
+        Author.objects.bulk_create([
+            Author(name='Charlie'),
+            Author(name='Alice'),
+            Author(name='Bob'),
+        ])
+        with self.assertNumQueries(1) as ctx:
+            result = Author.objects.aggregate(
+                names=StringAgg('name', delimiter=Value(', '), order_by='name')
+            )
+        self.assertEqual(result['names'], 'Alice, Bob, Charlie')
+        self.assertIn('WITHIN GROUP (', ctx[0]['sql'])
+        self.assertIn('ORDER BY [testapp_author].[name]', ctx[0]['sql'])

@@ -7,6 +7,8 @@ from itertools import chain
 
 import django
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
+if django.VERSION >= (6, 0):
+    from django.db.models.aggregates import StringAgg
 from django.db.models.expressions import Ref, Subquery, Value, Window
 from django.db.models.functions import (
     Chr, ConcatPair, Greatest, Least, Length, LPad, Random, Repeat, RPad, StrIndex, Substr, Trim
@@ -152,6 +154,13 @@ def _as_sql_variance(self, compiler, connection):
     if self.function == 'VAR_POP':
         function = '%sP' % function
     return self.as_sql(compiler, connection, function=function)
+
+
+def _as_sql_stringagg(self, compiler, connection):
+    template = None
+    if self.order_by:
+        template = '%(function)s(%(distinct)s%(expressions)s) WITHIN GROUP (%(order_by)s)%(filter)s'
+    return self.as_sql(compiler, connection, template=template)
 
 def _as_sql_window(self, compiler, connection, template=None):
     # Get the expressions supported by the backend
@@ -703,6 +712,8 @@ class SQLCompiler(compiler.SQLCompiler):
             as_microsoft = _as_sql_trim
         elif isinstance(node, Variance):
             as_microsoft = _as_sql_variance
+        elif django.VERSION >= (6, 0) and isinstance(node, StringAgg):
+            as_microsoft = _as_sql_stringagg
         if django.VERSION >= (3, 1):
             if isinstance(node, json_KeyTransform):
                 as_microsoft = _as_sql_json_keytransform
