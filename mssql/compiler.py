@@ -7,6 +7,7 @@ from itertools import chain
 
 import django
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
+from django.db.models import AutoField
 if django.VERSION >= (6, 0):
     from django.db.models.aggregates import StringAgg
 from django.db.models.expressions import Col, OuterRef, Ref, Subquery, Value, Window
@@ -895,10 +896,58 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                 params += param_rows
                 result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
             else:
-                result.insert(0, 'SET NOCOUNT ON')
-                result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
-                params = [param_rows[0]]
-                result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+                returned_fields = self.get_returned_fields()
+                use_scope_identity = (
+                    len(returned_fields) == 1 and isinstance(returned_fields[0], AutoField)
+                )
+
+                if use_scope_identity:
+                    result.insert(0, 'SET NOCOUNT ON')
+                    if not self.query.fields:
+                        result.append('DEFAULT VALUES;')
+                        params = []
+                    else:
+                        result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
+                        params = [param_rows[0]]
+                    result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+                else:
+                    params = []
+                    table_name = qn(opts.db_table)
+                    tmp_table_name = '#django_returning_insert'
+                    returned_columns = ', '.join(qn(field.column) for field in returned_fields)
+                    select_into_columns = []
+                    for field in returned_fields:
+                        column_sql = qn(field.column)
+                        if isinstance(field, AutoField):
+                            select_into_columns.append(f'CAST({column_sql} AS bigint) AS {column_sql}')
+                        else:
+                            select_into_columns.append(column_sql)
+
+                    r_sql, self.returning_params = self.connection.ops.return_insert_columns(returned_fields)
+                    if r_sql and self.returning_params:
+                        params.append(self.returning_params)
+
+                    insert_sql = result[:]
+                    if r_sql:
+                        insert_sql.append(f'{r_sql} INTO {tmp_table_name}')
+                    if not self.query.fields:
+                        insert_sql.append('DEFAULT VALUES')
+                    else:
+                        insert_sql.append(values_format % ', '.join(placeholder_rows[0]))
+                        params.append(param_rows[0])
+
+                    sql_batch = '; '.join([
+                        'SET NOCOUNT ON',
+                        f"IF OBJECT_ID('tempdb..{tmp_table_name}') IS NOT NULL DROP TABLE {tmp_table_name}",
+                        f"SELECT TOP 0 {', '.join(select_into_columns)} INTO {tmp_table_name} FROM {table_name}",
+                        ' '.join(insert_sql),
+                        f'SELECT {returned_columns} FROM {tmp_table_name}',
+                        f'DROP TABLE {tmp_table_name}',
+                    ])
+                    sql = [(sql_batch, tuple(chain.from_iterable(params)))]
+                    if self.query.fields:
+                        sql = self.fix_auto(sql, opts, fields, qn)
+                    return sql
             sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
         else:
             if can_bulk:
