@@ -9,7 +9,11 @@ import django
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
 if django.VERSION >= (6, 0):
     from django.db.models.aggregates import StringAgg
-from django.db.models.expressions import Ref, Subquery, Value, Window
+from django.db.models.expressions import Col, OuterRef, Ref, Subquery, Value, Window
+if django.VERSION >= (1, 11):
+    from django.db.models.expressions import ResolvedOuterRef
+else:
+    ResolvedOuterRef = ()
 from django.db.models.functions import (
     Chr, ConcatPair, Greatest, Least, Length, LPad, Random, Repeat, RPad, StrIndex, Substr, Trim
 )
@@ -157,10 +161,32 @@ def _as_sql_variance(self, compiler, connection):
 
 
 def _as_sql_stringagg(self, compiler, connection):
+    if self.order_by and _contains_outerref(self.order_by, compiler.query):
+        node = self.copy()
+        node.order_by = None
+        return node.as_sql(compiler, connection)
+
     template = None
     if self.order_by:
         template = '%(function)s(%(distinct)s%(expressions)s) WITHIN GROUP (%(order_by)s)%(filter)s'
     return self.as_sql(compiler, connection, template=template)
+
+
+def _contains_outerref(expression, query=None):
+    if expression is None:
+        return False
+    if isinstance(expression, (OuterRef, ResolvedOuterRef)):
+        return True
+    if isinstance(expression, Col) and query is not None:
+        query_aliases = set(query.alias_map) if getattr(query, 'alias_map', None) else set()
+        if expression.alias not in query_aliases:
+            return True
+
+    source_expressions = getattr(expression, 'get_source_expressions', None)
+    if source_expressions is None:
+        return False
+
+    return any(_contains_outerref(expr, query) for expr in expression.get_source_expressions() if expr is not None)
 
 def _as_sql_window(self, compiler, connection, template=None):
     # Get the expressions supported by the backend
