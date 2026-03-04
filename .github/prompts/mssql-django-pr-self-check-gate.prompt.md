@@ -95,9 +95,9 @@ python manage.py test testapp.tests.test_jsonfield --verbosity 2
 cd django
 PYTHONPATH=/workspaces/mssql-django/django python tests/runtests.py --settings=testapp.settings <module.or.test>
 
-# HOT matrix
-cd /workspaces/mssql-django
-./scripts/run_hot_matrix.sh --mode guard
+# HOT matrix / CI guard
+# Run or verify the HOT matrix / CI guard workflow for this branch in your CI system
+# and record its status (PASS / FAIL / BLOCKED) in the gate summary.
 ```
 
 ## Required Output Format
