@@ -7,6 +7,7 @@ from itertools import chain
 
 import django
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
+from django.db.models import AutoField
 if django.VERSION >= (6, 0):
     from django.db.models.aggregates import StringAgg
 from django.db.models.expressions import Col, OuterRef, Ref, Subquery, Value, Window
@@ -895,10 +896,33 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                 params += param_rows
                 result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
             else:
-                result.insert(0, 'SET NOCOUNT ON')
-                result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
-                params = [param_rows[0]]
-                result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+                returned_fields = self.get_returned_fields()
+                use_scope_identity = (
+                    len(returned_fields) == 1 and isinstance(returned_fields[0], AutoField)
+                )
+
+                if use_scope_identity:
+                    result.insert(0, 'SET NOCOUNT ON')
+                    if not self.query.fields:
+                        result.append('DEFAULT VALUES;')
+                        params = []
+                    else:
+                        result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
+                        params = [param_rows[0]]
+                    result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+                else:
+                    params = []
+                    r_sql, self.returning_params = self.connection.ops.return_insert_columns(returned_fields)
+                    if r_sql:
+                        result.append(r_sql)
+                        params += [self.returning_params]
+                    if not self.query.fields:
+                        result.append('DEFAULT VALUES')
+                    else:
+                        result.append(values_format % ', '.join(placeholder_rows[0]))
+                        params = [param_rows[0]]
+                        if r_sql:
+                            params += [self.returning_params]
             sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
         else:
             if can_bulk:
