@@ -146,3 +146,42 @@ echo "yes" | python tests/runtests.py --settings=testapp.settings <module>
 3. Add appropriate test exclusions with comments explaining why
 4. Keep compiler.py and schema.py changes focused - they are complex and sensitive
 5. When adding SQL Server function overrides, use the `as_microsoft` pattern in `functions.py`
+
+## Development Workflow Rules
+
+### Git Hygiene
+- **Only commit files you intentionally changed.** Untracked files (e.g. `result.xml`, build artifacts) may exist in the workspace but not be in `.gitignore` — do not stage or commit them. Review `git diff` and `git status` before committing.
+- Do not modify `testapp/settings.py` database connection settings (ODBC driver version, passwords) as part of a PR — those are local dev environment changes.
+
+### Fix Quality
+- **Find the root cause, not a workaround.** Don't parse or manipulate compiled SQL strings when Django provides a structured expression API to solve the problem at the right level. Work at the expression/node level (e.g. override `get_order_by()`, use `as_microsoft` pattern) rather than post-hoc string surgery on generated SQL.
+- Follow existing codebase patterns: the `as_microsoft` monkey-patching pattern in `functions.py`, the `_as_microsoft()` dispatch in `compiler.py`, and compiler method overrides are the standard extension points.
+
+### Test Discipline
+- **All tests must be green before submitting.** If a test fails due to a SQL Server limitation (not a bug you introduced), add it to `EXCLUDED_TESTS` in `testapp/settings.py` with a comment explaining why.
+- If a failure is outside the scope of your PR, ask whether to fix it or exclude it — don't leave it failing silently.
+- Always run the specific Django test modules affected by your change (e.g. `ordering`, `db_functions`, `composite_pk`) in addition to the unit tests (`python manage.py test testapp.tests`).
+
+## PR Self-Check Template (Django/SQL Backend Changes)
+
+### Checklist
+1. **Contract change declared**
+    - If a helper behavior changes (e.g., path builder), write one explicit rule: who returns raw values, who does SQL escaping/normalization, and where.
+2. **All call sites audited**
+    - grep every consumer of changed helper/symbol and verify each follows the new contract exactly once.
+3. **Integration test proof**
+    - Add at least one end-to-end ORM regression test for changed behavior, or run and document a concrete end-to-end upstream Django test that directly exercises the changed path.
+4. **Doc/comments synced**
+    - Update docstrings/comments to match implementation (no stale wording).
+5. **Exclusion hygiene**
+    - Remove only exclusions proven green in normal settings.
+    - For any kept exclusion, add a one-line reason.
+6. **Version matrix evidence**
+    - Run targeted tests + HOT guard on executable lanes; report PASS/FAIL/BLOCKED explicitly.
+
+### Merge Gate (must all be true)
+- No unresolved contract ambiguity.
+- No double-escaping / double-transform pattern in call sites.
+- At least one integration regression proof for each behavior change.
+- Targeted tests green + HOT guard green (or BLOCKED with environment reason).
+- PR description includes root cause, fix scope, and exclusions touched.

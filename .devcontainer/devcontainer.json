@@ -1,0 +1,38 @@
+{
+  "name": "mssql-django",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/mssql-django",
+
+  "postCreateCommand": "bash .devcontainer/scripts/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.testing.pytestEnabled": false,
+        "python.testing.unittestEnabled": true,
+        "python.testing.unittestArgs": [
+          "-v", "-s", "-p", "test_*.py", "-t", "."
+        ],
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true
+        }
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "charliermarsh.ruff",
+        "ms-mssql.mssql",
+        "github.copilot"
+      ]
+    }
+  },
+
+  "forwardPorts": [1433],
+
+  "remoteEnv": {
+    "DJANGO_SETTINGS_MODULE": "testapp.settings"
+  }
+}
