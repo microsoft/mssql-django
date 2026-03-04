@@ -120,6 +120,16 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     for row in cursor.fetchall()
                     if row[1] not in self.ignored_tables]
 
+    def identifier_converter(self, name):
+        """
+        Apply a conversion to the identifier for the purposes of comparison.
+
+        The default identifier converter is for case sensitive comparison.
+        """
+        if name.startswith('[dbo].[') and name.endswith(']'):
+            return name.removeprefix('[dbo].[').removesuffix(']')
+        return name
+
     def _is_auto_field(self, cursor, table_name, column_name):
         """
         Checks whether column is Identity

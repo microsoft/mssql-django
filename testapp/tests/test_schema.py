@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.db import connections
 from django.core.management import call_command
 
-from ..models import ParentSchema
+from ..models import ParentSchema, DboSchema
 
 class NonDefaultSchemaTests(TestCase):
 
@@ -37,3 +37,18 @@ class NonDefaultSchemaTests(TestCase):
 
         self.assertEqual(len(descs), 2, msg="Unable to get both columns on table")
         self.assertEqual( [ desc.name for desc in descs ], ['id', 'name'], msg="Unable to get both columns on table")
+    
+    def test_insert_then_flush_default_schema(self):
+        DboSchema.objects.all().delete()
+
+        DboSchema.objects.create(
+            name='Test'
+        )
+
+        num_schema = DboSchema.objects.all().count()
+        self.assertEqual(num_schema, 0, msg="DboSchema model was not inserted to")
+
+        self.__do_flush()
+
+        num_schema = DboSchema.objects.all().count()
+        self.assertEqual(num_schema, 0, msg="DboSchema model was not flushed")

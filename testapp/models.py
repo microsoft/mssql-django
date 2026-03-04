@@ -279,3 +279,9 @@ class ChildSchema(models.Model):
 
     class Meta:
         db_table = '[events].[ChildSchema]'
+
+class DboSchema(models.Model):
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = '[dbo].[DefaultNameTable]'
