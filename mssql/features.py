@@ -45,6 +45,8 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_json_field_contains = False
     supports_json_negative_indexing = False
     supports_order_by_nulls_modifier = False
+    supports_aggregate_order_by_clause = True
+    supports_order_by_in_aggregate = True
     supports_over_clause = True
     supports_paramstyle_pyformat = False
     supports_primitives_in_json_field = False

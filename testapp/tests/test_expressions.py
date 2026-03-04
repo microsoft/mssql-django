@@ -11,7 +11,10 @@ from django.test import TestCase, skipUnlessDBFeature
 
 from django.db.models.aggregates import Count, Sum
 
-from ..models import Author, Book, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes
+if VERSION >= (6, 0):
+    from django.db.models import StringAgg
+
+from ..models import Author, Book, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes, Publisher
 
 
 DJANGO3 = VERSION[0] >= 3
@@ -171,3 +174,43 @@ class TestBulkUpdate(TestCase):
         self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(int_value__isnull=True), objs)
         self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(name__isnull=True), objs)
         self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(date__isnull=True), objs)
+
+
+class TestStringAggOrderingRegression(TestCase):
+    @skipUnless(VERSION >= (6, 0), "StringAgg ordering is Django 6.0+")
+    def test_stringagg_honors_ordering(self):
+        Author.objects.bulk_create([
+            Author(name='Charlie'),
+            Author(name='Alice'),
+            Author(name='Bob'),
+        ])
+        with self.assertNumQueries(1) as ctx:
+            result = Author.objects.aggregate(
+                names=StringAgg('name', delimiter=Value(', '), order_by=F('name'))
+            )
+        self.assertEqual(result['names'], 'Alice, Bob, Charlie')
+        self.assertIn('WITHIN GROUP (', ctx[0]['sql'])
+        self.assertIn('ORDER BY [testapp_author].[name]', ctx[0]['sql'])
+
+    @skipUnless(VERSION >= (6, 0), "StringAgg ordering is Django 6.0+")
+    def test_stringagg_order_by_outerref_does_not_use_within_group(self):
+        publisher_1 = Publisher.objects.create(name='p1')
+        Book.objects.create(name='Alpha', publisher=publisher_1)
+
+        with self.assertNumQueries(1) as ctx:
+            values = list(
+                Publisher.objects.filter(pk=publisher_1.pk).annotate(
+                    names=Subquery(
+                        Book.objects.annotate(
+                            names=StringAgg(
+                                'name',
+                                delimiter=Value(';'),
+                                order_by=OuterRef('pk'),
+                            )
+                        ).values('names')[:1]
+                    )
+                ).values_list('names', flat=True)
+            )
+
+        self.assertEqual(values, ['Alpha'])
+        self.assertNotIn('WITHIN GROUP', ctx[0]['sql'])
