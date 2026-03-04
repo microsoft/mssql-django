@@ -938,6 +938,7 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
 
                     sql_batch = '; '.join([
                         'SET NOCOUNT ON',
+                        f"IF OBJECT_ID('tempdb..{tmp_table_name}') IS NOT NULL DROP TABLE {tmp_table_name}",
                         f"SELECT TOP 0 {', '.join(select_into_columns)} INTO {tmp_table_name} FROM {table_name}",
                         ' '.join(insert_sql),
                         f'SELECT {returned_columns} FROM {tmp_table_name}',
