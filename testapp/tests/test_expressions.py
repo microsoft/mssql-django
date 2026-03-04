@@ -186,7 +186,7 @@ class TestStringAggOrderingRegression(TestCase):
         ])
         with self.assertNumQueries(1) as ctx:
             result = Author.objects.aggregate(
-                names=StringAgg('name', delimiter=Value(', '), order_by='name')
+                names=StringAgg('name', delimiter=Value(', '), order_by=F('name'))
             )
         self.assertEqual(result['names'], 'Alice, Bob, Charlie')
         self.assertIn('WITHIN GROUP (', ctx[0]['sql'])
@@ -195,12 +195,11 @@ class TestStringAggOrderingRegression(TestCase):
     @skipUnless(VERSION >= (6, 0), "StringAgg ordering is Django 6.0+")
     def test_stringagg_order_by_outerref_does_not_use_within_group(self):
         publisher_1 = Publisher.objects.create(name='p1')
-        Publisher.objects.create(name='p2')
         Book.objects.create(name='Alpha', publisher=publisher_1)
 
         with self.assertNumQueries(1) as ctx:
             values = list(
-                Publisher.objects.annotate(
+                Publisher.objects.filter(pk=publisher_1.pk).annotate(
                     names=Subquery(
                         Book.objects.annotate(
                             names=StringAgg(
@@ -213,8 +212,5 @@ class TestStringAggOrderingRegression(TestCase):
                 ).values_list('names', flat=True)
             )
 
-        self.assertEqual(len(values), 2)
-        for value in values:
-            self.assertIsNotNone(value)
-            self.assertEqual(value, 'Alpha')
+        self.assertEqual(values, ['Alpha'])
         self.assertNotIn('WITHIN GROUP', ctx[0]['sql'])

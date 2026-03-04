@@ -10,10 +10,7 @@ from django.db.models.aggregates import Avg, Count, StdDev, Variance
 if django.VERSION >= (6, 0):
     from django.db.models.aggregates import StringAgg
 from django.db.models.expressions import Col, OuterRef, Ref, Subquery, Value, Window
-if django.VERSION >= (1, 11):
-    from django.db.models.expressions import ResolvedOuterRef
-else:
-    ResolvedOuterRef = ()
+from django.db.models.expressions import ResolvedOuterRef
 from django.db.models.functions import (
     Chr, ConcatPair, Greatest, Least, Length, LPad, Random, Repeat, RPad, StrIndex, Substr, Trim
 )
@@ -187,6 +184,7 @@ def _contains_outerref(expression, query=None):
         return False
 
     return any(_contains_outerref(expr, query) for expr in expression.get_source_expressions() if expr is not None)
+
 
 def _as_sql_window(self, compiler, connection, template=None):
     # Get the expressions supported by the backend
