@@ -94,6 +94,45 @@ class TestGroupBy(TestCase):
             output_field=CharField())).values('age').annotate(sum=Sum('id'))
         self.assertEqual(list(annotated_queryset.all()), [])
 
+
+class TestOrderingRegressions(TestCase):
+    def setUp(self):
+        Author.objects.bulk_create([
+            Author(name='alice'),
+            Author(name='bob'),
+            Author(name='charlie'),
+        ])
+
+    def test_order_by_case_when_constant_value_executes(self):
+        queryset = Author.objects.order_by(
+            Case(
+                When(name__isnull=False, then=Value(1)),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
+        )
+        self.assertCountEqual(
+            list(queryset.values_list('name', flat=True)),
+            ['alice', 'bob', 'charlie'],
+        )
+
+    def test_order_by_case_when_constant_value_with_offset_executes(self):
+        queryset = Author.objects.order_by(Value(1))[1:3]
+        expected = list(Author.objects.order_by('pk').values_list('name', flat=True))[1:3]
+        self.assertEqual(
+            list(queryset.values_list('name', flat=True)),
+            expected,
+        )
+
+
+class TestModuloExpressionRegressions(TestCase):
+    def test_modulo_expression_with_value_parameter_executes(self):
+        author = Author.objects.create(name='mod-author')
+        annotated = Author.objects.filter(pk=author.pk).annotate(
+            mod_value=F('pk') % Value(2)
+        ).values_list('mod_value', flat=True)
+        self.assertEqual(list(annotated), [author.pk % 2])
+
 @skipUnless(DJANGO3, "Django 3 specific tests")
 @skipUnlessDBFeature("order_by_nulls_first")
 class TestOrderBy(TestCase):

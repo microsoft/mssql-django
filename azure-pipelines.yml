@@ -154,16 +154,14 @@ jobs:
         displayName: Restart SQL Server
 
       - powershell: |
-          (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassword)' | Set-Content testapp\settings.py
-        displayName: Change PASSWORD in settings.py
-
-      - powershell: |
           python -m pip install --upgrade pip wheel setuptools
           python -m pip install tox
           git clone https://github.com/django/django.git
 
           python -m tox -e $(tox.env)
         displayName: Run tox
+        env:
+          MSSQL_PASSWORD: $(TestAppPassword)
 
   - job: Linux
     pool:
@@ -397,19 +395,11 @@ jobs:
           git clone https://github.com/django/django.git
         displayName: Install Python requirements
 
-      - script: |
-          sed -i 's/MyPassword42/$(TestAppPassword)/g' testapp/settings.py
-        displayName: Change PASSWORD in settings.py
-
-      - script: |
-          # Force Django DB host to IPv4 loopback to avoid IPv6 localhost resolution issues
-          sed -i "s|\"HOST\": \"localhost\"|\"HOST\": \"127.0.0.1\"|g" testapp/settings.py
-          echo "Updated DB HOST to 127.0.0.1"
-          grep -n "\"HOST\"" -n testapp/settings.py
-        displayName: Use IPv4 loopback for DB host
-
       - script: tox -e $(tox.env)
         displayName: Run tox
+        env:
+          MSSQL_PASSWORD: $(TestAppPassword)
+          MSSQL_HOST: 127.0.0.1
 
       - task: PublishCodeCoverageResults@1
         inputs:
