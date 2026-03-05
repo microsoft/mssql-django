@@ -19,6 +19,7 @@ from django.db.backends.ddl_references import (
     Table,
 )
 from django import VERSION as django_version
+from django.core.exceptions import FieldDoesNotExist
 from django.db.models import NOT_PROVIDED, Index, UniqueConstraint
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.fields.related import ForeignKey
@@ -427,7 +428,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         #      indexes from Meta.indexes are not restored. The _delete_indexes() method
         #      fails with FieldDoesNotExist because it looks up the index field by the
         #      old field name, but RenameField has already updated the model state.
-        #      Tests (marked @expectedFailure):
+        #      Tests:
         #        - test_index_from_meta_indexes_retained_after_rename_and_type_change
         #        - test_index_from_meta_indexes_retained_after_rename_and_nullability_change
         #
@@ -785,8 +786,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         #   - Only if type changed OR nullability changed
         #   - Only if column was NOT renamed (rename is handled separately)
         # Test:
-        #   - test_index_from_meta_indexes_retained_after_rename_and_type_change (@expectedFailure)
-        #   - test_index_from_meta_indexes_retained_after_rename_and_nullability_change (@expectedFailure)
+        #   - test_index_from_meta_indexes_retained_after_rename_and_type_change
+        #   - test_index_from_meta_indexes_retained_after_rename_and_nullability_change
         #
 
         # Restore indexes & unique constraints deleted above, SQL Server requires explicit restoration
@@ -950,12 +951,25 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # For other changes, only restore indexes involving the altered field.
             # --------------------------------------------------------------------------------
             for index in model._meta.indexes:
-                # Get the field objects for this index
-                index_fields = [model._meta.get_field(field_name) for field_name, _ in index.fields_orders]
-                index_columns_list = [field.column for field in index_fields]
+                # Get the column names for this index, resolving stale field names
+                # that may remain after a RenameField updated the model state but
+                # not the Index.fields list.
+                # See https://github.com/microsoft/mssql-django/issues/499
+                try:
+                    index_fields = [model._meta.get_field(field_name) for field_name, _ in index.fields_orders]
+                    index_columns_list = [field.column for field in index_fields]
+                except FieldDoesNotExist:
+                    # A field name in index.fields is stale (from a preceding RenameField).
+                    # Resolve columns individually, falling back to new_field.column.
+                    index_columns_list = []
+                    for field_name in index.fields_orders:
+                        try:
+                            index_columns_list.append(model._meta.get_field(field_name).column)
+                        except FieldDoesNotExist:
+                            index_columns_list.append(new_field.column)
 
                 # Restore if: AutoField change (all indexes dropped) OR field is in this index
-                if is_autofield_change or old_field.column in index_columns_list:
+                if is_autofield_change or old_field.column in index_columns_list or new_field.column in index_columns_list:
                     indexes_to_restore.append(index)  # Store the Index object, not field list
 
             # --------------------------------------------------------------------------------
@@ -964,13 +978,52 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # Restore Index objects using index.create_sql() to preserve explicit names
             # and attributes.
             #
+            # If an index has stale field names (from a preceding RenameField that
+            # updated the model state but not Index.fields), clone the index with
+            # corrected field names so that create_sql() can resolve them.
+            # See https://github.com/microsoft/mssql-django/issues/499
+            #
             # Deduplication: Skip if already in deferred_sql or post_actions
             # (which contains other_actions from _alter_column_type_sql).
             # This prevents duplicate index creation if the same index
             # was already scheduled elsewhere.
             # --------------------------------------------------------------------------------
             for index in indexes_to_restore:
-                create_index_sql_statement = index.create_sql(model, self)
+                # Fix stale field names in index.fields before calling create_sql()
+                restored_index = index
+                has_stale_fields = False
+                for field_name in index.fields:
+                    try:
+                        model._meta.get_field(field_name)
+                    except FieldDoesNotExist:
+                        has_stale_fields = True
+                        break
+                if has_stale_fields:
+                    # Build corrected field names preserving ordering prefixes.
+                    # index.fields stores raw strings like ['-a', 'b'] where '-'
+                    # means descending.  We need to replace just the name part
+                    # while keeping the prefix, because Index.__init__ derives
+                    # fields_orders (used by create_sql) from the raw strings.
+                    corrected_fields = []
+                    for raw_field in index.fields:
+                        # Strip optional '-' prefix to get the bare field name
+                        if raw_field.startswith('-'):
+                            prefix = '-'
+                            bare_name = raw_field[1:]
+                        else:
+                            prefix = ''
+                            bare_name = raw_field
+                        try:
+                            model._meta.get_field(bare_name)
+                            corrected_fields.append(raw_field)
+                        except FieldDoesNotExist:
+                            corrected_fields.append(prefix + new_field.name)
+                    # Reconstruct via deconstruct() so fields_orders is correct
+                    _, args, kwargs = index.deconstruct()
+                    kwargs['fields'] = corrected_fields
+                    restored_index = index.__class__(*args, **kwargs)
+
+                create_index_sql_statement = restored_index.create_sql(model, self)
                 if create_index_sql_statement and (str(create_index_sql_statement)
                         not in [str(sql) for sql in self.deferred_sql] + [str(statement[0]) for statement in post_actions]
                         ):
@@ -1092,6 +1145,23 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             return
         index_columns = []
         index_names = []
+
+        # After a RenameField + AlterField in the same migration, the model state
+        # has the new field name but Index.fields / index_together / unique_together
+        # may still reference the old field name (Django's rename_field() updates
+        # index_together and unique_together but NOT Meta.indexes). Additionally,
+        # sp_rename has already executed so the DB column uses new_field.column.
+        # This helper resolves a field name to its DB column, falling back to
+        # new_field.column when the field name is stale (FieldDoesNotExist).
+        # See https://github.com/microsoft/mssql-django/issues/499
+        def _resolve_column(field_name):
+            try:
+                return model._meta.get_field(field_name).column
+            except FieldDoesNotExist:
+                # The field was renamed by a preceding RenameField; the old name
+                # is stale. Use new_field.column since sp_rename has already run.
+                return new_field.column
+
         if old_field.db_index and new_field.db_index:
             index_columns.append([old_field.column])
         elif old_field.null != new_field.null:
@@ -1101,19 +1171,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
            # Iterate over each set of field names defined in index_together  
            for fields in model._meta.index_together:
               # Get the actual column names for each field in the set
-              columns = [model._meta.get_field(field).column for field in fields]
+              columns = [_resolve_column(field) for field in fields]
               # If the old field's column is among these columns, add to index_columns for later index deletion
-              if old_field.column in columns:
+              if old_field.column in columns or new_field.column in columns:
                  index_columns.append(columns)
 
         for index in model._meta.indexes:
-            columns = [model._meta.get_field(field_name).column for field_name, _ in index.fields_orders]
-            if old_field.column in columns:
+            columns = [_resolve_column(field) for field, _ in index.fields_orders]
+            if old_field.column in columns or new_field.column in columns:
                 index_columns.append(columns)
 
         for fields in model._meta.unique_together:
-            columns = [model._meta.get_field(field).column for field in fields]
-            if old_field.column in columns:
+            columns = [_resolve_column(field) for field in fields]
+            if old_field.column in columns or new_field.column in columns:
                 index_columns.append(columns)
         if index_columns:
             # remove duplicates first
