@@ -7,7 +7,11 @@ from itertools import chain
 
 import django
 from django.db.models.aggregates import Avg, Count, StdDev, Variance
-from django.db.models.expressions import Ref, Subquery, Value, Window
+from django.db.models import AutoField
+if django.VERSION >= (6, 0):
+    from django.db.models.aggregates import StringAgg
+from django.db.models.expressions import Col, OuterRef, Ref, Subquery, Value, Window
+from django.db.models.expressions import ResolvedOuterRef
 from django.db.models.functions import (
     Chr, ConcatPair, Greatest, Least, Length, LPad, Random, Repeat, RPad, StrIndex, Substr, Trim
 )
@@ -152,6 +156,36 @@ def _as_sql_variance(self, compiler, connection):
     if self.function == 'VAR_POP':
         function = '%sP' % function
     return self.as_sql(compiler, connection, function=function)
+
+
+def _as_sql_stringagg(self, compiler, connection):
+    if self.order_by and _contains_outerref(self.order_by, compiler.query):
+        node = self.copy()
+        node.order_by = None
+        return node.as_sql(compiler, connection)
+
+    template = None
+    if self.order_by:
+        template = '%(function)s(%(distinct)s%(expressions)s) WITHIN GROUP (%(order_by)s)%(filter)s'
+    return self.as_sql(compiler, connection, template=template)
+
+
+def _contains_outerref(expression, query=None):
+    if expression is None:
+        return False
+    if isinstance(expression, (OuterRef, ResolvedOuterRef)):
+        return True
+    if isinstance(expression, Col) and query is not None:
+        query_aliases = set(query.alias_map) if getattr(query, 'alias_map', None) else set()
+        if expression.alias not in query_aliases:
+            return True
+
+    source_expressions = getattr(expression, 'get_source_expressions', None)
+    if source_expressions is None:
+        return False
+
+    return any(_contains_outerref(expr, query) for expr in expression.get_source_expressions() if expr is not None)
+
 
 def _as_sql_window(self, compiler, connection, template=None):
     # Get the expressions supported by the backend
@@ -703,6 +737,8 @@ class SQLCompiler(compiler.SQLCompiler):
             as_microsoft = _as_sql_trim
         elif isinstance(node, Variance):
             as_microsoft = _as_sql_variance
+        elif django.VERSION >= (6, 0) and isinstance(node, StringAgg):
+            as_microsoft = _as_sql_stringagg
         if django.VERSION >= (3, 1):
             if isinstance(node, json_KeyTransform):
                 as_microsoft = _as_sql_json_keytransform
@@ -860,10 +896,58 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
                 params += param_rows
                 result.append(self.connection.ops.bulk_insert_sql(fields, placeholder_rows))
             else:
-                result.insert(0, 'SET NOCOUNT ON')
-                result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
-                params = [param_rows[0]]
-                result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+                returned_fields = self.get_returned_fields()
+                use_scope_identity = (
+                    len(returned_fields) == 1 and isinstance(returned_fields[0], AutoField)
+                )
+
+                if use_scope_identity:
+                    result.insert(0, 'SET NOCOUNT ON')
+                    if not self.query.fields:
+                        result.append('DEFAULT VALUES;')
+                        params = []
+                    else:
+                        result.append((values_format + ';') % ', '.join(placeholder_rows[0]))
+                        params = [param_rows[0]]
+                    result.append('SELECT CAST(SCOPE_IDENTITY() AS bigint)')
+                else:
+                    params = []
+                    table_name = qn(opts.db_table)
+                    tmp_table_name = '#django_returning_insert'
+                    returned_columns = ', '.join(qn(field.column) for field in returned_fields)
+                    select_into_columns = []
+                    for field in returned_fields:
+                        column_sql = qn(field.column)
+                        if isinstance(field, AutoField):
+                            select_into_columns.append(f'CAST({column_sql} AS bigint) AS {column_sql}')
+                        else:
+                            select_into_columns.append(column_sql)
+
+                    r_sql, self.returning_params = self.connection.ops.return_insert_columns(returned_fields)
+                    if r_sql and self.returning_params:
+                        params.append(self.returning_params)
+
+                    insert_sql = result[:]
+                    if r_sql:
+                        insert_sql.append(f'{r_sql} INTO {tmp_table_name}')
+                    if not self.query.fields:
+                        insert_sql.append('DEFAULT VALUES')
+                    else:
+                        insert_sql.append(values_format % ', '.join(placeholder_rows[0]))
+                        params.append(param_rows[0])
+
+                    sql_batch = '; '.join([
+                        'SET NOCOUNT ON',
+                        f"IF OBJECT_ID('tempdb..{tmp_table_name}') IS NOT NULL DROP TABLE {tmp_table_name}",
+                        f"SELECT TOP 0 {', '.join(select_into_columns)} INTO {tmp_table_name} FROM {table_name}",
+                        ' '.join(insert_sql),
+                        f'SELECT {returned_columns} FROM {tmp_table_name}',
+                        f'DROP TABLE {tmp_table_name}',
+                    ])
+                    sql = [(sql_batch, tuple(chain.from_iterable(params)))]
+                    if self.query.fields:
+                        sql = self.fix_auto(sql, opts, fields, qn)
+                    return sql
             sql = [(" ".join(result), tuple(chain.from_iterable(params)))]
         else:
             if can_bulk:

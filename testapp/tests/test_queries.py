@@ -157,3 +157,24 @@ class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
             ctx[0]["sql"].count(created_at_quoted_name),
             2 if connection.features.can_return_rows_from_bulk_insert else 1,
         )
+
+    def test_single_insert_with_returning_fields_when_bulk_rows_unsupported(self):
+        """Single-row create must still return all db_returning fields.
+
+        Regression for a path where can_return_rows_from_bulk_insert=False
+        caused SQLInsertCompiler to use SCOPE_IDENTITY() (1 column) while
+        Django expected all returning fields, leading to IndexError.
+        """
+        model = self.DbDefaultBulkInsertModel
+        old_return_rows_flag = connection.features_class.can_return_rows_from_bulk_insert
+        connection.features_class.can_return_rows_from_bulk_insert = False
+        try:
+            with self.assertNumQueries(1) as ctx:
+                obj = model.objects.create(name="single")
+
+            self.assertIsNotNone(obj.pk)
+            self.assertIsNotNone(obj.created_at)
+            self.assertIn("OUTPUT INSERTED", ctx[0]["sql"])
+            self.assertNotIn("SCOPE_IDENTITY", ctx[0]["sql"])
+        finally:
+            connection.features_class.can_return_rows_from_bulk_insert = old_return_rows_flag
