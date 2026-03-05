@@ -10,11 +10,12 @@ We hope you enjoy using the MSSQL-Django 3rd party backend.
 
 ## Features
 
--  Supports Django 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, and 5.2
+-  Supports Django 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, and 6.0
    - **Django 5.0 and below**: Full production support
    - **Django 5.1**: Supported with minor limitations (composite primary key inspectdb)
    - **Django 5.2**: Supported with enhanced SQL Server compatibility features and documented limitations (see Django 5.2 Specific Limitations section below)
--  Tested on Microsoft SQL Server 2016, 2017, 2019, 2022
+   - **Django 6.0**: Supported with Python 3.12, 3.13, and 3.14 (see Django 6.0 Specific Notes section below)
+-  Tested on Microsoft SQL Server 2016, 2017, 2019, 2022, 2025
 -  Passes most of the tests of the Django test suite
 -  Enhanced SQL Server compatibility with automatic schema creation and improved identifier quoting
 -  Compatible with
@@ -314,6 +315,17 @@ Django 5.2 introduces new features that may cause regressions for existing Djang
 **Workaround**: These limitations are documented in the test exclusions (`testapp/settings.py`) and are excellent candidates for community contributions. Applications using Django 5.0 and below are unaffected by these limitations.
 
 JSONField lookups have limitations, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
+
+### Django 6.0 Specific Notes
+
+Django 6.0 requires Python 3.12 or higher (Python 3.10 and 3.11 support was dropped). Key changes in Django 6.0 that affect this backend:
+
+- **Python Version**: Django 6.0 requires Python 3.12, 3.13, or 3.14
+- **API Changes**: `DatabaseOperations.return_insert_columns()` was renamed to `returning_columns()` and `fetch_returned_insert_rows()` to `fetch_returned_rows()` - this backend provides compatibility aliases
+- **JSON Path Compilation**: The `compile_json_path` function was moved from `django.db.models.fields.json` to `connection.ops.compile_json_path()` - this is handled transparently by the backend
+- **DEFAULT_AUTO_FIELD**: Now defaults to `BigAutoField` - projects created with Django 3.2+ templates already have this set
+
+Most Django 5.2 limitations also apply to Django 6.0. The backend has been updated to handle all breaking changes in Django 6.0.
 
 ## Contributing
 

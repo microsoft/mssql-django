@@ -7,6 +7,7 @@ import warnings
 import sys
 
 from django.conf import settings
+from django.db import NotSupportedError
 from django.db.backends.base.operations import BaseDatabaseOperations
 from django.db.models.expressions import Exists, ExpressionWrapper, RawSQL
 from django.db.models.sql.where import WhereNode
@@ -70,6 +71,29 @@ class DatabaseOperations(BaseDatabaseOperations):
         # query parameters for the `sp_executesql` call. This should only take
         # up 2 parameters but I've had this error when sending 2098 parameters.
         max_query_params = 2050
+
+        if objs and not hasattr(objs[0], '_meta'):
+            return max_query_params // fields_len
+
+        if objs and hasattr(objs[0], '_meta'):
+            if all(isinstance(field, str) for field in fields):
+                # Deletion collector batching calls this with a single string
+                # field name (from Collector.get_del_batches()). Treat that
+                # shape as delete batching, not insert/update batching, so we
+                # don't apply the extra /2 reduction that can split large
+                # cascade deletes into one additional query.
+                if fields_len == 1:
+                    return max_query_params // fields_len
+                return min(max_insert_rows, max_query_params // fields_len // 2)
+
+            obj_model = objs[0].__class__
+            field_models = {
+                field.model for field in fields
+                if hasattr(field, 'model') and field.model is not None
+            }
+            if field_models and any(field_model is not obj_model for field_model in field_models):
+                return max_query_params // fields_len
+
         # inserts are capped at 1000 rows regardless of number of query params.
         # bulk_update CASE...WHEN...THEN statement sometimes takes 2 parameters per field
         return min(max_insert_rows, max_query_params // fields_len // 2)
@@ -378,27 +402,15 @@ class DatabaseOperations(BaseDatabaseOperations):
         Returns a quoted version of the given table, index or column name. Does
         not quote the given name if it's already been quoted.
         
-        Supports:
-        - Schema.table format: quotes both schema and table separately
-        - Names with spaces: handles proper quoting
+        This method treats the name as a single identifier and quotes it as-is.
+        Names containing periods (like 'ordering_article.pub_date') are quoted
+        as a single identifier '[ordering_article.pub_date]', NOT split into
+        schema.table format.
         """
         if not name:
             return name
-        
-        # Already quoted
         if name.startswith('[') and name.endswith(']'):
             return name  # Quoting once is enough.
-        
-        # Enhanced schema.table support for Django 5.2+
-        if django_version >= (5, 2) and '.' in name and not name.startswith('['):
-            parts = name.split('.', 1)  # Split only on first dot
-            schema = parts[0].strip()
-            table = parts[1].strip()
-            
-            # Always quote both parts for SQL Server safety
-            return '[%s].[%s]' % (schema, table)
-        
-        # Always quote single names for SQL Server safety
         return '[%s]' % name
 
     def random_function_sql(self):
@@ -531,10 +543,11 @@ class DatabaseOperations(BaseDatabaseOperations):
                           RuntimeWarning)
         else:
             # Then reset the counters on each table.
-            sql_list.extend(['%s %s (%s, %s, %s) %s %s;' % (
+            # DBCC CHECKIDENT requires the table name in single quotes
+            sql_list.extend(['%s %s (\'%s\', %s, %s) %s %s;' % (
                 style.SQL_KEYWORD('DBCC'),
                 style.SQL_KEYWORD('CHECKIDENT'),
-                style.SQL_FIELD(self.quote_name(seq["table"])),
+                self.quote_name(seq["table"]),
                 style.SQL_KEYWORD('RESEED'),
                 style.SQL_FIELD('%d' % seq['start_id']),
                 style.SQL_KEYWORD('WITH'),
@@ -554,6 +567,8 @@ class DatabaseOperations(BaseDatabaseOperations):
     def subtract_temporals(self, internal_type, lhs, rhs):
         lhs_sql, lhs_params = lhs
         rhs_sql, rhs_params = rhs
+        lhs_params = tuple(lhs_params)
+        rhs_params = tuple(rhs_params)
         if internal_type == 'DateField':
             sql = "CAST(DATEDIFF(day, %(rhs)s, %(lhs)s) AS bigint) * 86400 * 1000000"
             params = (*rhs_params, *lhs_params)
@@ -653,3 +668,73 @@ class DatabaseOperations(BaseDatabaseOperations):
         if isinstance(expression, RawSQL) and expression.conditional:
             return True
         return False
+
+    def adapt_json_value(self, value, encoder):
+        """
+        Transform a Python value to a JSON-serializable format.
+        Added in Django 6.0 to handle JSON encoding.
+        
+        Matches Django's default behavior: use the provided encoder (or None).
+        """
+        import json
+
+        return json.dumps(value, cls=encoder)
+
+    def compile_json_path(self, key_transforms, include_root=True):
+        """
+        Compile a JSON path from a list of key transforms.
+        This method was moved from django.db.models.fields.json in Django 6.0
+        to connection.ops.compile_json_path().
+
+        Contract:
+        - This helper returns a raw JSON path string
+            (for example: $.a[0]."complex key").
+        - Callers that embed it inside SQL string literals must apply SQL
+            string-literal escaping exactly once at SQL generation time.
+        - Non-simple key text in the returned path is already JSON-escaped and
+            must not be JSON-escaped again.
+
+        SQL Server JSON path shape:
+        - Include root '$' when include_root is True.
+        - Emit array indices as bracket notation: [0], [1], ...
+        - Emit simple object keys (^[a-zA-Z_][a-zA-Z0-9_]*$) as dot notation:
+            .key_name
+        - Emit all other object keys as quoted dot notation with JSON-escaped
+            key text: ."complex key", ."key.with\"quotes\""
+
+        This function does not perform SQL identifier quoting.
+        """
+        import json
+        import re
+        path = ['$'] if include_root else []
+        for key_transform in key_transforms:
+            try:
+                num = int(key_transform)
+                if (
+                    num < 0
+                    and not self.connection.features.supports_json_negative_indexing
+                ):
+                    raise NotSupportedError(
+                        "Using negative JSON array indices is not supported on this "
+                        "database backend. (SQL Server)"
+                    )
+                path.append('[%s]' % num)
+            except ValueError:
+                # Check if key is simple (alphanumeric/underscore only)
+                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', key_transform):
+                    path.append('.')
+                    path.append(key_transform)
+                else:
+                    escaped_key = json.dumps(key_transform, ensure_ascii=True)[1:-1]
+                    path.append('."%s"' % escaped_key)
+        return ''.join(path)
+
+    # Django 6.0 renames return_insert_columns to returning_columns
+    # and fetch_returned_insert_rows to fetch_returned_rows
+    # Provide aliases for backwards compatibility
+    if django_version >= (6, 0):
+        def returning_columns(self, fields):
+            return self.return_insert_columns(fields)
+
+        def fetch_returned_rows(self, cursor, returning_params=None):
+            return self.fetch_returned_insert_rows(cursor)

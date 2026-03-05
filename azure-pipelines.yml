@@ -24,6 +24,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.14 - Django 6.0:
+          python.version: '3.14'
+          tox.env: 'py314-django60'
+        Python3.13 - Django 6.0:
+          python.version: '3.13'
+          tox.env: 'py313-django60'
+        Python3.12 - Django 6.0:
+          python.version: '3.12'
+          tox.env: 'py312-django60'
+
         Python3.13 - Django 5.2:
           python.version: '3.13'
           tox.env: 'py313-django52'
@@ -144,16 +154,14 @@ jobs:
         displayName: Restart SQL Server
 
       - powershell: |
-          (Get-Content -ReadCount 0 testapp\settings.py) -replace 'MyPassword42', '$(TestAppPassword)' | Set-Content testapp\settings.py
-        displayName: Change PASSWORD in settings.py
-
-      - powershell: |
           python -m pip install --upgrade pip wheel setuptools
           python -m pip install tox
           git clone https://github.com/django/django.git
 
           python -m tox -e $(tox.env)
         displayName: Run tox
+        env:
+          MSSQL_PASSWORD: $(TestAppPassword)
 
   - job: Linux
     pool:
@@ -164,6 +172,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.14 - Django 6.0:
+          python.version: '3.14'
+          tox.env: 'py314-django60'
+        Python3.13 - Django 6.0:
+          python.version: '3.13'
+          tox.env: 'py313-django60'
+        Python3.12 - Django 6.0:
+          python.version: '3.12'
+          tox.env: 'py312-django60'
+
         Python3.13 - Django 5.2:
           python.version: '3.13'
           tox.env: 'py313-django52'
@@ -257,8 +275,8 @@ jobs:
 
       - script: |
           docker version
-          docker pull mcr.microsoft.com/mssql/server:2022-latest
-          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+          docker pull mcr.microsoft.com/mssql/server:2025-latest
+          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2025-latest
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           
@@ -267,7 +285,7 @@ jobs:
           
           # Extended wait for the container to be running and SQL Server service to be listening
           for i in {1..60}; do
-            if docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) 2>&1 | grep -q "SQL Server is now ready for client connections"; then
+            if docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest) 2>&1 | grep -q "SQL Server is now ready for client connections"; then
               echo "SQL Server service is ready after $i attempts ($(($i * 3)) seconds)"
               break
             fi
@@ -283,7 +301,7 @@ jobs:
           echo "Testing SQL Server connectivity..."
           if ! timeout 30 bash -c 'until echo > /dev/tcp/localhost/1433; do sleep 1; done'; then
             echo "Cannot connect to SQL Server on port 1433"
-            docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
+            docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
             exit 1
           fi
           
@@ -347,7 +365,7 @@ jobs:
                 sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10
                 echo ""
                 echo "Container logs:"
-                docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest)
+                docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
                 exit 1
               else
                 echo "Authentication failed (attempt $i), waiting 10 seconds before retry..."
@@ -364,7 +382,8 @@ jobs:
           # Since pylibmc isn't supported for Python 3.12+ 
           # We need to install libmemcached-dev to build it - dependency for Django test suite
           # https://github.com/django/django/blob/1a744343999c9646912cee76ba0a2fa6ef5e6240/.github/workflows/schedule_tests.yml#L50
-          if [[ "$(python --version)" == *"3.12"* ]] || [[ "$(python --version)" == *"3.13"* ]]; then
+          PYTHON_MINOR=$(python -c "import sys; print(sys.version_info.minor)")
+          if [[ "$PYTHON_MINOR" -ge 12 ]]; then
             echo "Installing libmemcached-dev for Python 3.12+"
             sudo apt-get install -y libmemcached-dev
           fi
@@ -376,19 +395,11 @@ jobs:
           git clone https://github.com/django/django.git
         displayName: Install Python requirements
 
-      - script: |
-          sed -i 's/MyPassword42/$(TestAppPassword)/g' testapp/settings.py
-        displayName: Change PASSWORD in settings.py
-
-      - script: |
-          # Force Django DB host to IPv4 loopback to avoid IPv6 localhost resolution issues
-          sed -i "s|\"HOST\": \"localhost\"|\"HOST\": \"127.0.0.1\"|g" testapp/settings.py
-          echo "Updated DB HOST to 127.0.0.1"
-          grep -n "\"HOST\"" -n testapp/settings.py
-        displayName: Use IPv4 loopback for DB host
-
       - script: tox -e $(tox.env)
         displayName: Run tox
+        env:
+          MSSQL_PASSWORD: $(TestAppPassword)
+          MSSQL_HOST: 127.0.0.1
 
       - task: PublishCodeCoverageResults@1
         inputs:

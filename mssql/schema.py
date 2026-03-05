@@ -29,8 +29,9 @@ from django.utils.encoding import force_str
 if django_version >= (4, 0):
     from django.db.models.sql import Query
     from django.db.backends.ddl_references import Expressions
-
-
+# Import CompositePrimaryKey only if Django version is 5.2 or higher
+if django_version >= (5, 2):    
+    from django.db.models.fields.composite import CompositePrimaryKey
 class Statement(DjStatement):
     def __hash__(self):
         return hash((self.template, str(self.parts['name'])))
@@ -405,6 +406,43 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                      old_db_params, new_db_params, strict=False):
         """Actually perform a "physical" (non-ManyToMany) field update."""
 
+        # ============================================================================
+        # SQL Server Index/Constraint Management During Column Alterations
+        # ============================================================================
+        #
+        # OVERVIEW:
+        # SQL Server requires explicit DROP and RESTORE of indexes/constraints when
+        # altering column types or nullability. This method handles alterations in
+        # four phases:
+        #
+        # 1. Constraint and special case handling
+        # 2. Column alter preparation
+        # 3. Column alteration
+        # 4. Column alteration cleanup
+        #
+        #
+        # KNOWN BUGS/LIMITATIONS:
+        #   1. Rename + alter in same migration: When a field is renamed (via RenameField)
+        #      AND has a type or nullability change (via AlterField) in the same migration,
+        #      indexes from Meta.indexes are not restored. The _delete_indexes() method
+        #      fails with FieldDoesNotExist because it looks up the index field by the
+        #      old field name, but RenameField has already updated the model state.
+        #      Tests (marked @expectedFailure):
+        #        - test_index_from_meta_indexes_retained_after_rename_and_type_change
+        #        - test_index_from_meta_indexes_retained_after_rename_and_nullability_change
+        #
+        #   2. unique_together + unique=True: When a field has BOTH unique=True AND
+        #      participates in unique_together, only the single-field unique constraint
+        #      is restored after field alteration. The unique_together constraint is NOT
+        #      restored because the restoration code is in an 'else' block that only
+        #      executes when the field does NOT have unique=True.
+        #      Test (marked @expectedFailure):
+        #        - test_unique_together_retained_when_field_also_has_unique_true
+
+        # ============================================================================
+        # 1. Constraint and special case handling
+        # ============================================================================
+
         # the backend doesn't support altering a column to/from AutoField as
         # SQL Server cannot alter columns to add and remove IDENTITY properties
         old_is_auto = False
@@ -568,11 +606,23 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 if isinstance(sql, DjStatement):
                     sql.rename_column_references(model._meta.db_table, old_field.column, new_field.column)
 
+        # ===============================================================================
+        # 2. Column alter preparation
+        # ===============================================================================
+
         # Next, start accumulating actions to do
         actions = []
         null_actions = []
         post_actions = []
-        # Type or comment change?
+
+        # Column alter preparation: type change path
+        # Triggers when: Column type changes (or db_comment changes in Django 4.2+)
+        # Drops: Unique constraints + all indexes containing this field
+        #
+        # SQL Server requires indexes/constraints to be dropped before ALTER COLUMN
+        # can change the column's data type. This path drops both unique constraints
+        # and all indexes that include the altered field.
+
         if old_type != new_type or (django_version >= (4, 2) and
                 self.connection.features.supports_comments
                 and old_field.db_comment != new_field.db_comment
@@ -625,7 +675,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             needs_database_default = needs_database_default and new_field.db_default is NOT_PROVIDED
         if needs_database_default:
             actions.append(self._alter_column_default_sql(model, old_field, new_field))
-        # Nullability change?
+
+        # Column alter preparation: nullability change path
+        # Triggers when: Column nullability changes (NULL ↔ NOT NULL)
+        # Drops: Unique constraints + all indexes containing this field
+        #
+        # SQL Server requires indexes/constraints to be dropped before ALTER COLUMN
+        # can change the column's NULL/NOT NULL constraint.
+
         if old_field.null != new_field.null:
             fragment = self._alter_column_null_sql(model, old_field, new_field)
             if fragment:
@@ -633,21 +690,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 # Drop unique constraint, SQL Server requires explicit deletion
                 self._delete_unique_constraints(model, old_field, new_field, strict)
                 # Drop indexes, SQL Server requires explicit deletion
-                indexes_dropped = self._delete_indexes(model, old_field, new_field)
-                auto_index_names = []
-                for index_from_meta in model._meta.indexes:
-                    auto_index_names.append(self._create_index_name(model._meta.db_table, index_from_meta.fields))
+                self._delete_indexes(model, old_field, new_field)
 
-                if (
-                    new_field.get_internal_type() not in ("JSONField", "TextField") and
-                    (old_field.db_index or not new_field.db_index) and
-                    new_field.db_index or
-                    ((indexes_dropped and sorted(indexes_dropped) == sorted([index.name for index in model._meta.indexes])) or
-                     (indexes_dropped and sorted(indexes_dropped) == sorted(auto_index_names)))
-                ):
-                    create_index_sql_statement = self._create_index_sql(model, [new_field])
-                    if create_index_sql_statement.__str__() not in [sql.__str__() for sql in self.deferred_sql]:
-                        post_actions.append((create_index_sql_statement, ()))
+        # ================================================================================
+        # 3. Column alteration
+        # ================================================================================
+
         # Only if we have a default and there is a change from NULL to NOT NULL
         four_way_default_alteration = (
             (new_field.has_default() or (django_version >= (5,0) and new_field.db_default is not NOT_PROVIDED)) and
@@ -730,14 +778,28 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if (not old_field.db_index or old_field.unique) and new_field.db_index and not new_field.unique:
             self.execute(self._create_index_sql(model, [new_field]))
 
+        # ================================================================================
+        # 4. Column alteration cleanup
+        # ================================================================================
+        # WHEN THIS RUNS:
+        #   - Only if type changed OR nullability changed
+        #   - Only if column was NOT renamed (rename is handled separately)
+        # Test:
+        #   - test_index_from_meta_indexes_retained_after_rename_and_type_change (@expectedFailure)
+        #   - test_index_from_meta_indexes_retained_after_rename_and_nullability_change (@expectedFailure)
+        #
+
         # Restore indexes & unique constraints deleted above, SQL Server requires explicit restoration
         if (old_type != new_type or (old_field.null != new_field.null)) and (
             old_field.column == new_field.column  # column rename is handled separately above
         ):
-            # Restore unique constraints
-            # Note: if nullable they are implemented via an explicit filtered UNIQUE INDEX (not CONSTRAINT)
-            # in order to get ANSI-compliant NULL behaviour (i.e. NULL != NULL, multiple are allowed)
-            # Note: Don't restore primary keys, we need to re-create those seperately
+            # --------------------------------------------------------------------------------
+            # restore single-field unique constraints
+            # --------------------------------------------------------------------------------
+            # If the field had unique=True and still does, recreate the constraint.
+            # Note: Nullable unique constraints use filtered indexes (ANSI NULL behavior).
+            # Note: Primary keys are restored separately below.
+            # --------------------------------------------------------------------------------
             if old_field.unique and new_field.unique and not new_field.primary_key:
                 if new_field.null:
                     self.execute(
@@ -752,6 +814,15 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         self.execute(self._create_unique_sql(model, columns=[old_field.column]))
                 self._delete_deferred_unique_indexes_for_field(old_field)
             else:
+                # --------------------------------------------------------------------------------
+                # Restore unique_together constraints
+                # --------------------------------------------------------------------------------
+                # If the field is NOT unique itself but IS part of unique_together,
+                # restore those multi-field unique constraints as filtered indexes.
+                # The filter ensures ANSI NULL behavior (multiple NULLs allowed).
+                # Test: test_unique_together_retained_when_field_also_has_unique_true
+                # https://github.com/microsoft/mssql-django/issues/494
+                # --------------------------------------------------------------------------------
                 if django_version >= (4, 0):
                     for field_names in model._meta.unique_together:
                         columns = [model._meta.get_field(field).column for field in field_names]
@@ -765,7 +836,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         if old_field.column in columns:
                             condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
                             self.execute(self._create_unique_sql(model, columns, condition=condition))
-            # Restore primary keys
+
+            # --------------------------------------------------------------------------------
+            # Primary keys
+            # --------------------------------------------------------------------------------
+            # If the field was and still is a primary key, recreate the PK constraint.
+            # --------------------------------------------------------------------------------
             if old_field.primary_key and new_field.primary_key:
                 self.execute(
                     self.sql_create_pk % {
@@ -776,8 +852,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         "columns": self.quote_name(new_field.column),
                     }
                 )
-            # Restore unqiue_together
-            # If we have ALTERed an AutoField or BigAutoField we need to recreate all unique_together clauses
+
+            # --------------------------------------------------------------------------------
+            # AutoField/BigAutoField special handling - unique_together
+            # --------------------------------------------------------------------------------
+            # When altering an AutoField or BigAutoField, restore ALL unique_together
+            # constraints across the entire model (not just those containing this field).
+            # This is necessary due to SQL Server's IDENTITY column restrictions.
+            # --------------------------------------------------------------------------------
             for t in (AutoField, BigAutoField):
                 if isinstance(old_field, t) or isinstance(new_field, t):
                     for field_names in model._meta.unique_together:
@@ -796,36 +878,103 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                             )
                     break
 
-            # Restore indexes
-            # If we have ALTERed an AutoField or BigAutoField we need to recreate all indexes
-            for t in (AutoField, BigAutoField):
-                if isinstance(old_field, t) or isinstance(new_field, t):
-                    for field in model._meta.fields:
-                        if field.db_index:
-                            self.execute(
-                                self._create_index_sql(model, [field])
-                            )
-                    break
+            # --------------------------------------------------------------------------------
+            # db_index, index_together, and Meta.indexes
+            # --------------------------------------------------------------------------------
+            # Build lists of indexes to restore, then restore them with deduplication.
+            #
+            # Two lists are built:
+            #   - index_columns: Field lists for db_index and index_together
+            #   - indexes_to_restore: Index objects from Meta.indexes (preserves names)
+            #
+            #   - Deduplication: Check against deferred_sql and post_actions to prevent
+            #     double creation when both DROP paths triggered
+            #
+            # AutoField/BigAutoField changes are special: SQL Server requires dropping ALL
+            # indexes on the table to change an IDENTITY column, so we must restore ALL
+            # indexes (not just those involving the altered field).
+            # --------------------------------------------------------------------------------
             index_columns = []
-            if old_field.db_index and new_field.db_index:
+            indexes_to_restore = []
+
+            # Detect if this is an AutoField/BigAutoField type change
+            is_autofield_change = (
+                isinstance(old_field, (AutoField, BigAutoField)) or
+                isinstance(new_field, (AutoField, BigAutoField))
+            )
+
+            # ------------------------------------------------------------------------------------
+            # Collect db_index=True indexes
+            # ------------------------------------------------------------------------------------
+            if is_autofield_change:
+                # AutoField changes drop ALL indexes - restore ALL db_index=True fields
+                for field in model._meta.fields:
+                    if field.db_index:
+                        index_columns.append([field])
+            elif old_field.db_index and new_field.db_index:
                 index_columns.append([old_field])
-            else:
-                # Handle index_together for only django version < 5.1
-                if django_version < (5, 1):
-                   # Get the field objects for each field name in the index_together. 
-                   for fields in model._meta.index_together:
-                      # If the old field's column is among the columns for this index,
-                      # add this set of columns to index_columns for later index recreation.
-                      columns = [model._meta.get_field(field) for field in fields]
-                      if old_field.column in [c.column for c in columns]:
-                         index_columns.append(columns)
+
+            # --------------------------------------------------------------------------------
+            # index_together (Django < 5.1 only)
+            # --------------------------------------------------------------------------------
+            # Note: index_together is deprecated and removed in Django 5.1+.
+            # For AutoField changes, restore ALL index_together indexes.
+            # For other changes, only restore indexes involving the altered field.
+            # --------------------------------------------------------------------------------
+            if django_version < (5, 1):
+                for fields in model._meta.index_together:
+                    columns = [model._meta.get_field(field) for field in fields]
+                    if is_autofield_change or old_field.column in [c.column for c in columns]:
+                        index_columns.append(columns)
+
+            # --------------------------------------------------------------------------------
+            # Execute restoration: db_index and index_together
+            # --------------------------------------------------------------------------------
+            # Deduplication: Skip if already in deferred_sql (Django's queue) or
+            # post_actions (other_actions from _alter_column_type_sql).
+            # --------------------------------------------------------------------------------
             if index_columns:
                 for columns in index_columns:
                     create_index_sql_statement = self._create_index_sql(model, columns)
-                    if (create_index_sql_statement.__str__()
-                            not in [sql.__str__() for sql in self.deferred_sql] + [statement[0].__str__() for statement in post_actions]
+                    if (str(create_index_sql_statement)
+                            not in [str(sql) for sql in self.deferred_sql] + [str(statement[0]) for statement in post_actions]
                             ):
                         self.execute(create_index_sql_statement)
+
+            # --------------------------------------------------------------------------------
+            # Collect indexes defined in Meta.indexes
+            # --------------------------------------------------------------------------------
+            # Collect Index objects (not just field lists) to preserve explicit names
+            # and other index attributes when calling index.create_sql().
+            # For AutoField changes, restore ALL Meta.indexes.
+            # For other changes, only restore indexes involving the altered field.
+            # --------------------------------------------------------------------------------
+            for index in model._meta.indexes:
+                # Get the field objects for this index
+                index_fields = [model._meta.get_field(field_name) for field_name in index.fields]
+                index_columns_list = [field.column for field in index_fields]
+
+                # Restore if: AutoField change (all indexes dropped) OR field is in this index
+                if is_autofield_change or old_field.column in index_columns_list:
+                    indexes_to_restore.append(index)  # Store the Index object, not field list
+
+            # --------------------------------------------------------------------------------
+            # Execute restoration: Meta.indexes
+            # --------------------------------------------------------------------------------
+            # Restore Index objects using index.create_sql() to preserve explicit names
+            # and attributes.
+            #
+            # Deduplication: Skip if already in deferred_sql or post_actions
+            # (which contains other_actions from _alter_column_type_sql).
+            # This prevents duplicate index creation if the same index
+            # was already scheduled elsewhere.
+            # --------------------------------------------------------------------------------
+            for index in indexes_to_restore:
+                create_index_sql_statement = index.create_sql(model, self)
+                if create_index_sql_statement and (str(create_index_sql_statement)
+                        not in [str(sql) for sql in self.deferred_sql] + [str(statement[0]) for statement in post_actions]
+                        ):
+                    self.execute(create_index_sql_statement)
 
         # Type alteration on primary key? Then we need to alter the column
         # referring to us.
@@ -1315,7 +1464,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
                 if autoinc_sql:
                     self.deferred_sql.extend(autoinc_sql)
-
+                   
+        # Initialize composite_pk_sql to None; will be set if composite primary key is detected
+        composite_pk_sql = None
+         # Check if Django version is >= 5.2 and the model has composite primary key fields
+        if django_version >= (5, 2) and hasattr(model._meta, "pk_fields"):
+          #specifically refers to the primary key field of that model.
+          pk = model._meta.pk
+          # Check if the primary key is a CompositePrimaryKey instance
+          if isinstance(pk, CompositePrimaryKey):
+              # Get the column names for all fields in the composite primary key
+             pk_columns = [field.column for field in model._meta.pk_fields]
+             # Build the PRIMARY KEY SQL clause for the composite key
+             composite_pk_sql = "PRIMARY KEY (%s)" % ", ".join(self.quote_name(col) for col in pk_columns)
         # Add any unique_togethers (always deferred, as some fields might be
         # created afterwards, like geometry fields with some backends)
         for field_names in model._meta.unique_together:
@@ -1328,6 +1489,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.deferred_sql.append(self._create_unique_sql(model, columns, condition=condition))
 
         constraints = [constraint.constraint_sql(model, self) for constraint in model._meta.constraints]
+         # If a composite primary key SQL clause was generated, insert it at the beginning of the constraints list
+        if composite_pk_sql:
+          constraints.insert(0, composite_pk_sql)
         # Make the table
         sql = self.sql_create_table % {
             "table": self.quote_name(model._meta.db_table),
