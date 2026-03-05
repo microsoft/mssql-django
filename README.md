@@ -270,7 +270,7 @@ The following features are currently not fully supported:
 - Django annotate functions have floating point arithmetic problems in some cases
 - Annotate function with exists
 - Exists function in order_by
-- Righthand power and arithmetic with datatimes
+- Righthand power and arithmetic with datetimes
 - Timezones, timedeltas not fully supported
 - Rename field/model with foreign key constraint
 - Database level constraints
