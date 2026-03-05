@@ -120,9 +120,11 @@ Dictionary. Current available keys are:
 
 -  driver
 
-   String. ODBC Driver to use (`"ODBC Driver 17 for SQL Server"`,
-   `"SQL Server Native Client 11.0"`, `"FreeTDS"` etc).
-   Default is `"ODBC Driver 17 for SQL Server"`.
+   String. ODBC Driver to use (`"ODBC Driver 18 for SQL Server"`,
+   `"ODBC Driver 17 for SQL Server"`, `"SQL Server Native Client 11.0"`,
+   `"FreeTDS"` etc).
+   Default is `"ODBC Driver 18 for SQL Server"` with automatic fallback
+   to `"ODBC Driver 17 for SQL Server"` if v18 is not installed.
 
 -  isolation_level
 
@@ -254,7 +256,7 @@ Here is an example of the database settings:
             'PORT': '',
 
             'OPTIONS': {
-                'driver': 'ODBC Driver 17 for SQL Server',
+                'driver': 'ODBC Driver 18 for SQL Server',
             },
         },
     }
@@ -280,37 +282,21 @@ The following features are currently not fully supported:
 
 ### Django 5.1 Specific Limitations
 
-Django 5.1 introduces composite primary key support which has limited compatibility with SQL Server:
+Django 5.1 has minor compatibility limitations with SQL Server:
 - **inspectdb command**: Cannot properly inspect tables with composite primary keys
-- **Backend debugging**: SQL execution wrapper debug functionality may not work correctly
-- **Schema operations**: Some field unique constraint removal operations may have issues
 - Most other Django 5.1 features work correctly with SQL Server
 
 ### Django 5.2 Specific Limitations
 
 Django 5.2 introduces new features that may cause regressions for existing Django 5.0+ applications. This release includes enhanced SQL Server compatibility for Django 5.2, with automatic schema creation and improved identifier quoting. The following limitations remain:
 
-**Critical Limitations (May Affect Common Use Cases):**
-- **Tuple lookups**: Queries like `Model.objects.filter((col1, col2)__in=[(val1, val2)])` will fail with SQL syntax errors as SQL Server doesn't support `(col1, col2) IN (...)` syntax
-- **Multi-column foreign key relationships**: Complex queries involving foreign keys with multiple columns may fail in Django 5.2 due to tuple lookup generation
-- **JSONField with special characters**: JSONField lookups involving special characters (quotes, emojis, escape sequences) may generate invalid SQL
+**Remaining Limitations:**
+- **Tuple lookups (Django < 5.2.4 only)**: Queries like `Model.objects.filter((col1, col2)__in=[(val1, val2)])` use tuple comparison syntax that SQL Server doesn't support natively. Django 5.2.4+ includes a fallback that resolves most of these cases.
+- **Multi-column foreign key relationships (Django < 5.2.4 only)**: Complex queries involving foreign keys with multiple columns may fail due to tuple lookup generation. Resolved by the Django 5.2.4 fallback mechanism.
 - **JSONField bulk updates**: Bulk update operations on JSONField with null handling may fail
-
-**Moderate Impact:**
-- **Complex aggregations**: Some aggregation queries with filtered references and subqueries may not work correctly
-- **Prefetch operations**: `prefetch_related()` operations on multi-column foreign keys may fail
-
-**Low Impact (Edge Cases):**
-- **Migration operations**: Advanced migration operations involving composite primary keys and generated fields
-- **Backend debugging**: Certain backend debugging and introspection features
 - **JSONField CASE WHEN updates**: JSONField updates using CASE WHEN expressions with null handling
-
-**Specific Test Failures in Django 5.2:**
-- All `foreign_object.test_tuple_lookups.TupleLookupsTests.*` tests
-- All `foreign_object.tests.MultiColumnFKTests.*` tests involving complex queries
-- `model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars*` tests
-- `queries.test_bulk_update.BulkUpdateTests.test_json_field_sql_null` test
-- Various migration and backend debugging tests
+- **Complex aggregations**: Some aggregation queries with filtered references and subqueries may not work correctly
+- **Migration operations**: Advanced migration operations involving composite primary keys and generated fields
 
 **Workaround**: These limitations are documented in the test exclusions (`testapp/settings.py`) and are excellent candidates for community contributions. Applications using Django 5.0 and below are unaffected by these limitations.
 
