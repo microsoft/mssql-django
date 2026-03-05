@@ -51,6 +51,9 @@ setup(
         'pyodbc>=3.0',
         'pytz',
     ],
+    extras_require={
+        'test': ['unittest-xml-reporting>=3.2.0'],
+    },
     package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
     keywords='django',
