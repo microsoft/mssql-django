@@ -1,4 +1,4 @@
-# Microsoft Django backend for SQL Server
+# Django Backend for Microsoft SQL
 
 mssql-django is the official Microsoft‑supported Django database backend for SQL Server, Azure SQL and SQL Database in Microsoft Fabric. 
 
