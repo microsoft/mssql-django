@@ -48,6 +48,7 @@ from .schema import DatabaseSchemaEditor  # noqa
 
 EDITION_AZURE_SQL_DB = 5
 EDITION_AZURE_SQL_MANAGED_INSTANCE = 8
+EDITION_AZURE_SQL_FABRIC = 12
 
 def encode_connection_string(fields):
     """Encode dictionary of keys and values as an ODBC connection String.
@@ -517,13 +518,19 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         alias, we won't need query the server again.
         """
         if self.alias not in _known_versions:
-            with self.temporary_connection() as cursor:
-                cursor.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar)")
-                ver = cursor.fetchone()[0]
-                ver = int(ver.split('.')[0])
-                if ver not in self._sql_server_versions:
-                    raise NotSupportedError('SQL Server v%d is not supported.' % ver)
-                _known_versions[self.alias] = self._sql_server_versions[ver]
+            if self.to_azure_sql_db:
+                # Cloud engines (Azure SQL DB, Managed Instance, Fabric) report
+                # ProductVersion numbers that don't correspond to on-premises
+                # SQL Server releases. Treat them as the latest supported version.
+                _known_versions[self.alias] = max(self._sql_server_versions.values())
+            else:
+                with self.temporary_connection() as cursor:
+                    cursor.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar)")
+                    ver = cursor.fetchone()[0]
+                    ver = int(ver.split('.')[0])
+                    if ver not in self._sql_server_versions:
+                        raise NotSupportedError('SQL Server v%d is not supported.' % ver)
+                    _known_versions[self.alias] = self._sql_server_versions[ver]
         return _known_versions[self.alias]
 
     @cached_property
@@ -540,7 +547,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             with self.temporary_connection() as cursor:
                 cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
                 edition = cursor.fetchone()[0]
-                _known_azures[self.alias] = edition == EDITION_AZURE_SQL_DB or edition == EDITION_AZURE_SQL_MANAGED_INSTANCE
+                _known_azures[self.alias] = edition in (
+                    EDITION_AZURE_SQL_DB,
+                    EDITION_AZURE_SQL_MANAGED_INSTANCE,
+                    EDITION_AZURE_SQL_FABRIC,
+                )
         return _known_azures[self.alias]
 
     def _execute_foreach(self, sql, table_names=None):
