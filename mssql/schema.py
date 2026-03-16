@@ -951,7 +951,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # --------------------------------------------------------------------------------
             for index in model._meta.indexes:
                 # Get the field objects for this index
-                index_fields = [model._meta.get_field(field_name) for field_name in index.fields]
+                index_fields = [model._meta.get_field(field_name) for field_name, _ in index.fields_orders]
                 index_columns_list = [field.column for field in index_fields]
 
                 # Restore if: AutoField change (all indexes dropped) OR field is in this index
@@ -1107,7 +1107,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                  index_columns.append(columns)
 
         for index in model._meta.indexes:
-            columns = [model._meta.get_field(field).column for field in index.fields]
+            columns = [model._meta.get_field(field_name).column for field_name, _ in index.fields_orders]
             if old_field.column in columns:
                 index_columns.append(columns)
 
