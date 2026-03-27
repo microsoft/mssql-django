@@ -128,7 +128,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         prefix = '[dbo].['
         suffix = ']'
-        if name.startswith(prefix) and name.endswith(suffix):
+        if name is not None and name.startswith(prefix) and name.endswith(suffix):
             name = name[len(prefix):-len(suffix)]
         return name
 
