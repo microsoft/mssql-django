@@ -126,8 +126,10 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
 
         The default identifier converter is for case sensitive comparison.
         """
-        if name.startswith('[dbo].[') and name.endswith(']'):
-            return name.removeprefix('[dbo].[').removesuffix(']')
+        prefix = '[dbo].['
+        suffix = ']'
+        if name.startswith(prefix) and name.endswith(suffix):
+            name = name[len(prefix):-len(suffix)]
         return name
 
     def _is_auto_field(self, cursor, table_name, column_name):

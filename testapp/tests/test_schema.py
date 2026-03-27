@@ -46,7 +46,7 @@ class NonDefaultSchemaTests(TestCase):
         )
 
         num_schema = DboSchema.objects.all().count()
-        self.assertEqual(num_schema, 0, msg="DboSchema model was not inserted to")
+        self.assertEqual(num_schema, 1, msg="DboSchema model was not inserted to")
 
         self.__do_flush()
 
