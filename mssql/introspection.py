@@ -30,9 +30,10 @@ def get_table_name_with_schema(table_name):
     # This takes into account that doing
     # db_table = '[schema].[table_name]'
     # is supported
-    table_name = table_name.replace('[', '').replace(']', '')
+    
 
-    if '.' in table_name:
+    if '[' in table_name and ']' in table_name and '.' in table_name:
+        table_name = table_name.replace('[', '').replace(']', '')
         schema_name, table_name = table_name.split('.', 1)
         return f"'{schema_name}'", table_name
 
