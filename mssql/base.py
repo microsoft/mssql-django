@@ -289,7 +289,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         user = conn_params.get('USER', None)
         password = conn_params.get('PASSWORD', None)
         port = conn_params.get('PORT', None)
-        trusted_connection = conn_params.get('Trusted_Connection', 'yes')
+        trusted_connection = conn_params.get('Trusted_Connection', None)
 
         options = conn_params.get('OPTIONS', {})
         dsn = options.get('dsn', None)
@@ -331,10 +331,18 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 cstr_parts['PWD'] = password
         elif 'TOKEN' not in conn_params:
             if ms_drivers.match(driver) and 'Authentication=ActiveDirectoryMsi' not in options_extra_params:
-                cstr_parts['Trusted_Connection'] = trusted_connection
+                # Do not implicitly force Windows authentication.
+                # Only include Trusted_Connection when explicitly configured.
+                if trusted_connection is not None:
+                    cstr_parts['Trusted_Connection'] = trusted_connection
             else:
-                cstr_parts['Integrated Security'] = 'SSPI'
-
+                # Preserve legacy behavior for non-Microsoft drivers.
+                # For Microsoft drivers, avoid injecting an authentication mode
+                # unless explicitly requested through USER/PASSWORD, TOKEN,
+                # or Trusted_Connection.
+                if not ms_drivers.match(driver):
+                    cstr_parts['Integrated Security'] = 'SSPI'
+                
         cstr_parts['DATABASE'] = database
 
         if ms_drivers.match(driver) and os.name == 'nt':
