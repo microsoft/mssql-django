@@ -567,16 +567,18 @@ class DatabaseOperations(BaseDatabaseOperations):
     def subtract_temporals(self, internal_type, lhs, rhs):
         lhs_sql, lhs_params = lhs
         rhs_sql, rhs_params = rhs
+        # Normalize to tuples so mixed list/tuple concatenation never fails
+        # (compiler.compile() may return either type for params).
         lhs_params = tuple(lhs_params)
         rhs_params = tuple(rhs_params)
         if internal_type == 'DateField':
             sql = "CAST(DATEDIFF(day, %(rhs)s, %(lhs)s) AS bigint) * 86400 * 1000000"
-            params = (*rhs_params, *lhs_params)
+            params = rhs_params + lhs_params
         else:
             SECOND = "DATEDIFF(second, %(rhs)s, %(lhs)s)"
             MICROSECOND = "DATEPART(microsecond, %(lhs)s) - DATEPART(microsecond, %(rhs)s)"
             sql = "CAST({} AS bigint) * 1000000 + {}".format(SECOND, MICROSECOND)
-            params = tuple(rhs_params) + tuple(lhs_params) * 2 + tuple(rhs_params)
+            params = rhs_params + lhs_params * 2 + rhs_params
         return sql % {'lhs': lhs_sql, 'rhs': rhs_sql}, params
 
     def tablespace_sql(self, tablespace, inline=False):
