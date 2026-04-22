@@ -485,10 +485,10 @@ class TestEditionDetection(SimpleTestCase):
         wrapper.alias = alias
         return wrapper
 
-    def _mock_edition(self, wrapper, engine_edition):
-        """Mock temporary_connection to return the given EngineEdition."""
+    def _mock_server_properties(self, wrapper, engine_edition, product_version="12.0.2000.8"):
+        """Mock temporary_connection to return EngineEdition and ProductVersion."""
         mock_cursor = mock.MagicMock()
-        mock_cursor.fetchone.return_value = (engine_edition,)
+        mock_cursor.fetchone.return_value = (product_version, engine_edition)
         mock_ctx = mock.MagicMock()
         mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
         mock_ctx.__exit__ = mock.MagicMock(return_value=False)
@@ -510,21 +510,21 @@ class TestEditionDetection(SimpleTestCase):
     def test_fabric_detected_as_azure(self):
         """Fabric SQL Database (EngineEdition=12) should be recognized as Azure."""
         wrapper = self._make_wrapper("test_fabric")
-        self._mock_edition(wrapper, EDITION_AZURE_SQL_FABRIC)
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_FABRIC)
         self.assertTrue(wrapper.to_azure_sql_db)
         self._clear_caches(wrapper)
 
     def test_azure_sql_db_detected(self):
         """Azure SQL DB (EngineEdition=5) should be recognized."""
         wrapper = self._make_wrapper("test_azure_db")
-        self._mock_edition(wrapper, EDITION_AZURE_SQL_DB)
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_DB)
         self.assertTrue(wrapper.to_azure_sql_db)
         self._clear_caches(wrapper)
 
     def test_azure_managed_instance_detected(self):
         """Azure SQL Managed Instance (EngineEdition=8) should be recognized."""
         wrapper = self._make_wrapper("test_azure_mi")
-        self._mock_edition(wrapper, EDITION_AZURE_SQL_MANAGED_INSTANCE)
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_MANAGED_INSTANCE)
         self.assertTrue(wrapper.to_azure_sql_db)
         self._clear_caches(wrapper)
 
@@ -532,7 +532,7 @@ class TestEditionDetection(SimpleTestCase):
         """On-premises editions (2=Standard, 3=Enterprise) should not be Azure."""
         for edition in (1, 2, 3, 4):
             wrapper = self._make_wrapper(f"test_onprem_{edition}")
-            self._mock_edition(wrapper, edition)
+            self._mock_server_properties(wrapper, edition, "16.0.4135.4")
             self.assertFalse(wrapper.to_azure_sql_db)
             self._clear_caches(wrapper)
 
@@ -540,9 +540,22 @@ class TestEditionDetection(SimpleTestCase):
         """Unrecognized editions (e.g. 6=Synapse dedicated, 9=SQL Edge) should not be Azure."""
         for edition in (6, 9, 11):
             wrapper = self._make_wrapper(f"test_unknown_{edition}")
-            self._mock_edition(wrapper, edition)
+            self._mock_server_properties(wrapper, edition, "16.0.4135.4")
             self.assertFalse(wrapper.to_azure_sql_db)
             self._clear_caches(wrapper)
+
+    def test_single_query_populates_both_caches(self):
+        """Accessing to_azure_sql_db should also populate sql_server_version cache."""
+        wrapper = self._make_wrapper("test_single_query")
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_FABRIC)
+        # Access to_azure_sql_db first
+        self.assertTrue(wrapper.to_azure_sql_db)
+        # sql_server_version should already be cached (no extra query)
+        latest = max(DatabaseWrapper._sql_server_versions.values())
+        self.assertEqual(wrapper.sql_server_version, latest)
+        # temporary_connection should have been called only once
+        self.assertEqual(wrapper.temporary_connection.call_count, 1)
+        self._clear_caches(wrapper)
 
 
 class TestSqlServerVersionDetection(SimpleTestCase):
@@ -552,6 +565,15 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         wrapper = object.__new__(DatabaseWrapper)
         wrapper.alias = alias
         return wrapper
+
+    def _mock_server_properties(self, wrapper, engine_edition, product_version="12.0.2000.8"):
+        """Mock temporary_connection to return EngineEdition and ProductVersion."""
+        mock_cursor = mock.MagicMock()
+        mock_cursor.fetchone.return_value = (product_version, engine_edition)
+        mock_ctx = mock.MagicMock()
+        mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
+        mock_ctx.__exit__ = mock.MagicMock(return_value=False)
+        wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
 
     def _clear_caches(self, wrapper):
         azure_cache = DatabaseWrapper.__dict__["to_azure_sql_db"].func.__defaults__[0]
@@ -566,13 +588,7 @@ class TestSqlServerVersionDetection(SimpleTestCase):
     def test_fabric_gets_latest_version(self):
         """Fabric should get the latest supported version, not 2014."""
         wrapper = self._make_wrapper("test_fabric_ver")
-        mock_cursor = mock.MagicMock()
-        mock_cursor.fetchone.return_value = (EDITION_AZURE_SQL_FABRIC,)
-        mock_ctx = mock.MagicMock()
-        mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
-        mock_ctx.__exit__ = mock.MagicMock(return_value=False)
-        wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
-
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_FABRIC)
         latest = max(DatabaseWrapper._sql_server_versions.values())
         self.assertEqual(wrapper.sql_server_version, latest)
         self._clear_caches(wrapper)
@@ -580,13 +596,7 @@ class TestSqlServerVersionDetection(SimpleTestCase):
     def test_azure_sql_db_gets_latest_version(self):
         """Azure SQL DB should also get the latest supported version."""
         wrapper = self._make_wrapper("test_azure_ver")
-        mock_cursor = mock.MagicMock()
-        mock_cursor.fetchone.return_value = (EDITION_AZURE_SQL_DB,)
-        mock_ctx = mock.MagicMock()
-        mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
-        mock_ctx.__exit__ = mock.MagicMock(return_value=False)
-        wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
-
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_DB)
         latest = max(DatabaseWrapper._sql_server_versions.values())
         self.assertEqual(wrapper.sql_server_version, latest)
         self._clear_caches(wrapper)
@@ -594,15 +604,7 @@ class TestSqlServerVersionDetection(SimpleTestCase):
     def test_on_prem_sql2022_version(self):
         """On-premises SQL Server 2022 (ProductVersion 16.x) should return 2022."""
         wrapper = self._make_wrapper("test_onprem_2022")
-        mock_cursor = mock.MagicMock()
-        # First call: to_azure_sql_db queries EngineEdition
-        # Second call: sql_server_version queries ProductVersion
-        mock_cursor.fetchone.side_effect = [(3,), ("16.0.4135.4",)]
-        mock_ctx = mock.MagicMock()
-        mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
-        mock_ctx.__exit__ = mock.MagicMock(return_value=False)
-        wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
-
+        self._mock_server_properties(wrapper, 3, "16.0.4135.4")
         self.assertEqual(wrapper.sql_server_version, 2022)
         self._clear_caches(wrapper)
 
@@ -611,13 +613,7 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         from django.db import NotSupportedError
 
         wrapper = self._make_wrapper("test_onprem_bad")
-        mock_cursor = mock.MagicMock()
-        # EngineEdition=3 (Enterprise, on-prem), ProductVersion=99.x (unknown)
-        mock_cursor.fetchone.side_effect = [(3,), ("99.0.0.0",)]
-        mock_ctx = mock.MagicMock()
-        mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
-        mock_ctx.__exit__ = mock.MagicMock(return_value=False)
-        wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
+        self._mock_server_properties(wrapper, 3, "99.0.0.0")
 
         with self.assertRaises(NotSupportedError):
             _ = wrapper.sql_server_version
