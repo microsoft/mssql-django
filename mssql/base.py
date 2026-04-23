@@ -565,12 +565,16 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         is_azure = edition in _AZURE_EDITIONS
         _known_azures[self.alias] = is_azure
 
-        if is_azure:
-            # Cloud engines (Azure SQL DB, Managed Instance, Fabric) report
-            # ProductVersion numbers that don't correspond to on-premises
-            # SQL Server releases. Treat them as the latest supported version.
+        if edition == EDITION_AZURE_SQL_FABRIC:
+            # Fabric reports ProductVersion numbers that don't correspond to
+            # on-premises SQL Server releases but has modern capabilities.
+            # Treat it as the latest supported version.
             _known_versions[self.alias] = max(self._sql_server_versions.values())
         else:
+            # For on-prem and Azure SQL DB/Managed Instance, use ProductVersion
+            # to determine version. Azure SQL DB/MI report ProductVersion 12.x
+            # which maps to 2014 — their feature checks use to_azure_sql_db
+            # as a fallback (e.g. "version >= 2016 or to_azure_sql_db").
             ver = int(product_version.split('.')[0])
             if ver not in self._sql_server_versions:
                 raise NotSupportedError('SQL Server v%d is not supported.' % ver)

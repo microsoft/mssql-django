@@ -593,12 +593,23 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         self.assertEqual(wrapper.sql_server_version, latest)
         self._clear_caches(wrapper)
 
-    def test_azure_sql_db_gets_latest_version(self):
-        """Azure SQL DB should also get the latest supported version."""
+    def test_azure_sql_db_preserves_product_version(self):
+        """Azure SQL DB should use ProductVersion lookup, not latest version.
+
+        Azure SQL DB reports ProductVersion 12.0.2000.8 which maps to 2014.
+        Feature checks use 'or to_azure_sql_db' as a fallback, so changing
+        this would risk breaking existing Azure SQL DB connections.
+        """
         wrapper = self._make_wrapper("test_azure_ver")
         self._mock_server_properties(wrapper, EDITION_AZURE_SQL_DB)
-        latest = max(DatabaseWrapper._sql_server_versions.values())
-        self.assertEqual(wrapper.sql_server_version, latest)
+        self.assertEqual(wrapper.sql_server_version, 2014)
+        self._clear_caches(wrapper)
+
+    def test_azure_managed_instance_preserves_product_version(self):
+        """Azure SQL MI should use ProductVersion lookup, not latest version."""
+        wrapper = self._make_wrapper("test_azure_mi_ver")
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_MANAGED_INSTANCE)
+        self.assertEqual(wrapper.sql_server_version, 2014)
         self._clear_caches(wrapper)
 
     def test_on_prem_sql2022_version(self):
