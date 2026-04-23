@@ -381,6 +381,63 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     ),
                 )
 
+    def test_alter_field_with_descending_index_fields(self):
+        """
+        Regression test for https://github.com/microsoft/mssql-django/issues/405
+
+        When a model has Meta.indexes with descending fields (e.g. fields=['-date']),
+        AlterField on any field in the model crashed with FieldDoesNotExist because
+        _delete_indexes and the index restoration loop iterated over index.fields
+        (which contains '-date') instead of index.fields_orders (which yields ('date', 'DESC')).
+        """
+        for use_single_migration in [False, True]:
+
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestDescIdx{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('name', models.CharField(max_length=100)),
+                            ('date', models.DateTimeField()),
+                            ('optional', models.TextField(default='')),
+                        ],
+                    ),
+                    migrations.AddIndex(
+                        model_name=model_name.lower(),
+                        index=models.Index(fields=['-date'], name=f'idx_desc{suffix}'),
+                    ),
+                ]
+
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='optional',
+                        field=models.TextField(null=True),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_desc_idx',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_index_exists(
+                    result.constraints,
+                    expected_columns={'date'},
+                    error_msg=(
+                        f"Index on ('-date',) from Meta.indexes was not retained after AlterField "
+                        f"({self._get_context_description(use_single_migration)}). "
+                        f"Descending index fields should not cause FieldDoesNotExist."
+                    ),
+                )
+
     def test_db_index_retained_after_nullability_only_change(self):
         """
         Test that db_index=True indexes are retained when ONLY nullability changes.
