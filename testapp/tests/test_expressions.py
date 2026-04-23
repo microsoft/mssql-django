@@ -5,12 +5,16 @@ import datetime
 from unittest import skipUnless
 
 from django import VERSION
-from django.db.models import IntegerField, F
+from django.db.models import CharField, IntegerField, F
 from django.db.models.expressions import Case, Exists, OuterRef, Subquery, Value, When, ExpressionWrapper
 from django.test import TestCase, skipUnlessDBFeature
 
-from django.db.models.aggregates import Count
-from ..models import Author, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes
+from django.db.models.aggregates import Count, Sum
+
+if VERSION >= (6, 0):
+    from django.db.models import StringAgg
+
+from ..models import Author, Book, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes, Publisher
 
 
 DJANGO3 = VERSION[0] >= 3
@@ -85,6 +89,53 @@ class TestExists(TestCase):
         self.assertSequenceEqual(authors_by_posts, [author_without_posts, self.author])
 
 
+class TestGroupBy(TestCase):
+    def test_group_by_case(self):
+        annotated_queryset = Book.objects.annotate(age=Case(
+            When(id__gt=1000, then=Value("new")),
+            default=Value("old"),
+            output_field=CharField())).values('age').annotate(sum=Sum('id'))
+        self.assertEqual(list(annotated_queryset.all()), [])
+
+
+class TestOrderingRegressions(TestCase):
+    def setUp(self):
+        Author.objects.bulk_create([
+            Author(name='alice'),
+            Author(name='bob'),
+            Author(name='charlie'),
+        ])
+
+    def test_order_by_case_when_constant_value_executes(self):
+        queryset = Author.objects.order_by(
+            Case(
+                When(name__isnull=False, then=Value(1)),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
+        )
+        self.assertCountEqual(
+            list(queryset.values_list('name', flat=True)),
+            ['alice', 'bob', 'charlie'],
+        )
+
+    def test_order_by_case_when_constant_value_with_offset_executes(self):
+        queryset = Author.objects.order_by(Value(1))[1:3]
+        expected = list(Author.objects.order_by('pk').values_list('name', flat=True))[1:3]
+        self.assertEqual(
+            list(queryset.values_list('name', flat=True)),
+            expected,
+        )
+
+
+class TestModuloExpressionRegressions(TestCase):
+    def test_modulo_expression_with_value_parameter_executes(self):
+        author = Author.objects.create(name='mod-author')
+        annotated = Author.objects.filter(pk=author.pk).annotate(
+            mod_value=F('pk') % Value(2)
+        ).values_list('mod_value', flat=True)
+        self.assertEqual(list(annotated), [author.pk % 2])
+
 @skipUnless(DJANGO3, "Django 3 specific tests")
 @skipUnlessDBFeature("order_by_nulls_first")
 class TestOrderBy(TestCase):
@@ -123,3 +174,126 @@ class TestBulkUpdate(TestCase):
         self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(int_value__isnull=True), objs)
         self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(name__isnull=True), objs)
         self.assertCountEqual(ModelWithNullableFieldsOfDifferentTypes.objects.filter(date__isnull=True), objs)
+
+
+class TestStringAggOrderingRegression(TestCase):
+    @skipUnless(VERSION >= (6, 0), "StringAgg ordering is Django 6.0+")
+    def test_stringagg_honors_ordering(self):
+        Author.objects.bulk_create([
+            Author(name='Charlie'),
+            Author(name='Alice'),
+            Author(name='Bob'),
+        ])
+        with self.assertNumQueries(1) as ctx:
+            result = Author.objects.aggregate(
+                names=StringAgg('name', delimiter=Value(', '), order_by=F('name'))
+            )
+        self.assertEqual(result['names'], 'Alice, Bob, Charlie')
+        self.assertIn('WITHIN GROUP (', ctx[0]['sql'])
+        self.assertIn('ORDER BY [testapp_author].[name]', ctx[0]['sql'])
+
+    @skipUnless(VERSION >= (6, 0), "StringAgg ordering is Django 6.0+")
+    def test_stringagg_order_by_outerref_does_not_use_within_group(self):
+        publisher_1 = Publisher.objects.create(name='p1')
+        Book.objects.create(name='Alpha', publisher=publisher_1)
+
+        with self.assertNumQueries(1) as ctx:
+            values = list(
+                Publisher.objects.filter(pk=publisher_1.pk).annotate(
+                    names=Subquery(
+                        Book.objects.annotate(
+                            names=StringAgg(
+                                'name',
+                                delimiter=Value(';'),
+                                order_by=OuterRef('pk'),
+                            )
+                        ).values('names')[:1]
+                    )
+                ).values_list('names', flat=True)
+            )
+
+        self.assertEqual(values, ['Alpha'])
+        self.assertNotIn('WITHIN GROUP', ctx[0]['sql'])
+
+
+class TestSubtractTemporals(TestCase):
+    """
+    Regression tests for subtract_temporals() handling mixed list/tuple params.
+    See https://github.com/microsoft/mssql-django/issues/368
+    """
+
+    def _get_ops(self):
+        from django.db import connection
+        return connection.ops
+
+    def test_date_field_both_tuples(self):
+        ops = self._get_ops()
+        lhs = ('%s', ('2024-01-15',))
+        rhs = ('%s', ('2024-01-01',))
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertIn('DATEDIFF', sql)
+        self.assertEqual(params, ('2024-01-01', '2024-01-15'))
+
+    def test_date_field_both_lists(self):
+        ops = self._get_ops()
+        lhs = ('%s', ['2024-01-15'])
+        rhs = ('%s', ['2024-01-01'])
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertEqual(params, ('2024-01-01', '2024-01-15'))
+
+    def test_date_field_mixed_list_and_tuple(self):
+        """The exact scenario from issue #368: list + empty tuple."""
+        ops = self._get_ops()
+        lhs = ('%s', ())       # column ref with no params (tuple)
+        rhs = ('%s', ['2015-01-01'])  # constant value (list)
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertEqual(params, ('2015-01-01',))
+
+    def test_date_field_mixed_tuple_and_list(self):
+        ops = self._get_ops()
+        lhs = ('%s', ['2024-06-15'])
+        rhs = ('%s', ())
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertEqual(params, ('2024-06-15',))
+
+    def test_datetime_field_both_tuples(self):
+        ops = self._get_ops()
+        lhs = ('%s', ('2024-01-15 12:00:00',))
+        rhs = ('%s', ('2024-01-01 00:00:00',))
+        sql, params = ops.subtract_temporals('DateTimeField', lhs, rhs)
+        self.assertIn('DATEDIFF', sql)
+        # Pattern: rhs + lhs*2 + rhs
+        self.assertEqual(params, (
+            '2024-01-01 00:00:00',
+            '2024-01-15 12:00:00', '2024-01-15 12:00:00',
+            '2024-01-01 00:00:00',
+        ))
+
+    def test_datetime_field_mixed_list_and_tuple(self):
+        ops = self._get_ops()
+        lhs = ('%s', ())
+        rhs = ('%s', ['2024-01-01 00:00:00'])
+        sql, params = ops.subtract_temporals('DateTimeField', lhs, rhs)
+        # rhs + lhs*2 + rhs = ('2024-01-01',) + () + ('2024-01-01',)
+        self.assertEqual(params, ('2024-01-01 00:00:00', '2024-01-01 00:00:00'))
+
+    def test_datetime_field_both_lists(self):
+        ops = self._get_ops()
+        lhs = ('%s', ['2024-01-15 12:00:00'])
+        rhs = ('%s', ['2024-01-01 00:00:00'])
+        sql, params = ops.subtract_temporals('DateTimeField', lhs, rhs)
+        self.assertEqual(params, (
+            '2024-01-01 00:00:00',
+            '2024-01-15 12:00:00', '2024-01-15 12:00:00',
+            '2024-01-01 00:00:00',
+        ))
+
+    def test_date_field_no_params(self):
+        """Both sides are column references (no params)."""
+        ops = self._get_ops()
+        lhs = ('[t].[start_date]', ())
+        rhs = ('[t].[end_date]', ())
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertEqual(params, ())
+        self.assertIn('[t].[start_date]', sql)
+        self.assertIn('[t].[end_date]', sql)

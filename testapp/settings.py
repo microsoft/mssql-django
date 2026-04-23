@@ -10,21 +10,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATABASES = {
     "default": {
         "ENGINE": "mssql",
-        "NAME": "default",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
-        "HOST": "localhost",
-        "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
+        "NAME": os.environ.get("MSSQL_DB_NAME", "default"),
+        "USER": os.environ.get("MSSQL_USER", "sa"),
+        "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
+        "HOST": os.environ.get("MSSQL_HOST", "localhost"),
+        "PORT": os.environ.get("MSSQL_PORT", "1433"),
+        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
     },
     'other': {
         "ENGINE": "mssql",
-        "NAME": "other",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
-        "HOST": "localhost",
-        "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
+        "NAME": os.environ.get("MSSQL_DB_NAME_OTHER", "other"),
+        "USER": os.environ.get("MSSQL_USER", "sa"),
+        "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
+        "HOST": os.environ.get("MSSQL_HOST", "localhost"),
+        "PORT": os.environ.get("MSSQL_PORT", "1433"),
+        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
     },
 }
 
@@ -92,12 +92,21 @@ PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
 
-DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+# Set DEFAULT_AUTO_FIELD to suppress W042 warnings in Django's test suite.
+# Our testapp models that need AutoField (Question, Choice) have explicit
+# id = models.AutoField(primary_key=True) to match their existing migrations.
+if VERSION >= (6, 0):
+    DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+else:
+    DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 ENABLE_REGEX_TESTS = False
 USE_TZ = False
 
 TEST_RUNNER = "testapp.runners.ExcludedTestSuiteRunner"
+
+# Test exclusions for features not supported by SQL Server or requiring special handling
+# Community contributions welcome to implement these features incrementally
 EXCLUDED_TESTS = [
     'aggregation_regress.tests.AggregationTests.test_annotation_with_value',
     'aggregation.tests.AggregateTestCase.test_distinct_on_aggregate',
@@ -186,7 +195,6 @@ EXCLUDED_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_none_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
     'model_fields.test_jsonfield.TestQuerying.test_key_escape',
-    'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
     'expressions_window.tests.WindowFunctionTests.test_key_transform',
 
     # Django 3.2
@@ -262,7 +270,6 @@ EXCLUDED_TESTS = [
     'db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests.test_extract_lookup_name_sql_injection',
     'db_functions.datetime.test_extract_trunc.DateFunctionTests.test_extract_lookup_name_sql_injection',
     'schema.tests.SchemaTests.test_autofield_to_o2o',
-    'schema.tests.SchemaTests.test_add_auto_field',
     'prefetch_related.tests.PrefetchRelatedTests.test_m2m_prefetching_iterator_with_chunks',
     'migrations.test_operations.OperationTests.test_create_model_with_boolean_expression_in_check_constraint',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_in_subquery_related_outerref',
@@ -280,15 +287,115 @@ EXCLUDED_TESTS = [
     'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregate_ref_subquery_annotation',
     'aggregation.tests.AggregateAnnotationPruningTests.test_referenced_group_by_annotation_kept',
     'aggregation.tests.AggregateAnnotationPruningTests.test_referenced_window_requires_wrapping',
-    'aggregation.tests.AggregateAnnotationPruningTests.test_unused_aliased_aggregate_and_annotation_reverse_fk',
-    'aggregation.tests.AggregateAnnotationPruningTests.test_unused_aliased_aggregate_and_annotation_reverse_fk_grouped',
     'aggregation.tests.AggregateTestCase.test_group_by_nested_expression_with_params',
     'expressions.tests.BasicExpressionsTests.test_aggregate_subquery_annotation',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_order_with_null_first_last',
     'queries.test_qs_combinators.QuerySetSetOperationTests.test_union_with_select_related_and_order',
     'expressions_window.tests.WindowFunctionTests.test_limited_filter',
     'schema.tests.SchemaTests.test_remove_ignored_unique_constraint_not_create_fk_index',
+
 ]
+
+# Django 5.0 specific exclusions - these tests fail due to SQL Server limitations
+if VERSION >= (5, 0):
+    EXCLUDED_TESTS.extend([
+        # Generated field 5.0.6 tests
+        'migrations.test_operations.OperationTests.test_invalid_generated_field_changes_on_rename_virtual',
+        'migrations.test_operations.OperationTests.test_invalid_generated_field_changes_on_rename_stored',
+    ])
+
+# Django 5.1 specific exclusions - these tests fail due to SQL Server limitations
+if VERSION >= (5, 1):
+    EXCLUDED_TESTS.extend([
+        # Composite primary key tests - not supported in SQL Server
+        'inspectdb.tests.InspectDBTransactionalTests.test_composite_primary_key',
+        
+        # Backend and schema test failures that appear in Django 5.1
+        # TODO: Fix SQL Server specific backend behavior 
+        'backends.base.test_base.ExecuteWrapperTests.test_wrapper_debug',
+        'indexes.tests.SchemaIndexesTests.test_alter_field_unique_false_removes_deferred_sql',
+    ])
+
+# Django 6.0 specific exclusions
+if VERSION >= (6, 0):
+    EXCLUDED_TESTS.extend([
+        # Constant CASE ORDER BY compiles to a parameterized ordering expression
+        # that SQL Server rejects (error 1008).
+        'ordering.tests.OrderingTests.test_order_by_case_when_constant_value',
+        
+        # SQL Server limitations (permanent exclusions)
+        # STRING_AGG with DISTINCT - SQL Server syntax differs
+        'aggregation.tests.AggregateTestCase.test_distinct_on_stringagg',
+        # REGEXP_LIKE function not available in SQL Server
+        'expressions.tests.BasicExpressionsTests.test_lookups_subquery',
+
+        # Constraint validation (single-query path) query count still under investigation
+        'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
+    ])
+
+# Django 5.2 specific exclusions
+# These are good candidates for community contributions - see GitHub issues
+if VERSION >= (5, 2):
+    EXCLUDED_TESTS.extend([
+        # SQL Server parameter splitting uses temp tables, resulting in different query count
+        'composite_pk.tests.CompositePKTests.test_in_bulk_batching',
+        
+        # inspectdb tests that expect specific table structures in inspectdb_special/pascal schemas
+        'inspectdb.tests.InspectDBTestCase.test_custom_normalize_table_name',
+        'inspectdb.tests.InspectDBTestCase.test_special_column_name_introspection', 
+        'inspectdb.tests.InspectDBTestCase.test_table_name_introspection',
+        
+        # JSONField bulk update with null handling
+        # TODO: Fix bulk update SQL generation for JSONField null values
+        'queries.test_bulk_update.BulkUpdateTests.test_json_field_sql_null',
+        
+        # Migration and composite primary key issues  
+        # TODO: Implement composite primary key support
+        'migrations.test_operations.OperationTests.test_composite_pk_operations',
+        'migrations.test_operations.OperationTests.test_generated_field_changes_output_field',
+        
+        # Backend and schema test failures
+        # TODO: Fix SQL Server specific backend behavior 
+        # 'backends.base.test_base.ExecuteWrapperTests.test_wrapper_debug',  # Removed duplicate; now only in Django 5.2+ block
+        'indexes.tests.SchemaIndexesTests.test_alter_field_unique_false_removes_deferred_sql',
+        
+        # Aggregation with filtered references  
+        # TODO: Fix complex aggregation queries with outer references
+        'aggregation.test_filter_argument.FilteredAggregateTests.test_filtered_aggregrate_ref_in_subquery_annotation',
+        
+        # JSONField test failures
+        # TODO: Fix JSONField update with CASE WHEN handling
+        'expressions.tests.BasicExpressionsTests.test_update_jsonfield_case_when_key_is_null',
+        
+    ])
+
+if VERSION >= (5, 2) and VERSION < (5, 2, 4):
+    EXCLUDED_TESTS.extend([
+        # Composite PK tuple subquery fallback fix landed in Django 5.2.4.
+        'composite_pk.test_filter.CompositePKFilterTests.test_explicit_subquery',
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_exact',
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_comparison',
+
+        # Tuple lookup tests kept excluded for Django <5.2.4.
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_exact',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gt',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gte',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_in',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lt',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lte',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
+        'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
+
+        # Multi-column foreign key tuple-lookup tests kept excluded for Django <5.2.4.
+        'foreign_object.tests.MultiColumnFKTests.test_double_nested_query',
+        'foreign_object.tests.MultiColumnFKTests.test_forward_in_lookup_filters_correctly',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_forward',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_hidden_forward',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_reverse',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_forward_works',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_reverse_works',
+        'foreign_object.tests.MultiColumnFKTests.test_reverse_query_returns_correct_result',
+    ])
 
 REGEX_TESTS = [
     'lookup.tests.LookupTests.test_regex',

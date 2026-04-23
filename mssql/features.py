@@ -3,8 +3,10 @@
 
 from django.db.backends.base.features import BaseDatabaseFeatures
 from django.utils.functional import cached_property
-
-
+from django import VERSION as django_version
+# Import CompositePrimaryKey only if Django version is 5.2 or higher
+if django_version >= (5, 2):    
+    from django.db.models.fields.composite import CompositePrimaryKey
 class DatabaseFeatures(BaseDatabaseFeatures):
     allows_group_by_select_index = False
     allow_sliced_subqueries_with_in = False
@@ -22,7 +24,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     has_json_object_function = False
     has_json_operators = False
     has_native_json_field = False
-    has_native_uuid_field = True
+    has_native_uuid_field = False
     has_real_datatype = True
     has_select_for_update = True
     has_select_for_update_nowait = True
@@ -41,7 +43,10 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_ignore_conflicts = False
     supports_index_on_text_field = False
     supports_json_field_contains = False
+    supports_json_negative_indexing = False
     supports_order_by_nulls_modifier = False
+    supports_aggregate_order_by_clause = True
+    supports_order_by_in_aggregate = True
     supports_over_clause = True
     supports_paramstyle_pyformat = False
     supports_primitives_in_json_field = False
@@ -63,8 +68,13 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_default_keyword_in_bulk_insert = True
     supports_stored_generated_columns = True
     supports_virtual_generated_columns = True
-
-
+    # CompositePrimaryKey support is only available in Django 5.2 and later
+    supports_composite_primary_keys = django_version >= (5, 2)
+    if django_version >= (5, 2) and isinstance(CompositePrimaryKey, type):
+        # SQL Server doesn't support native tuple lookups.
+        supports_tuple_lookups = False
+        if django_version >= (5, 2, 4):
+            supports_tuple_comparison_against_subquery = False
     @cached_property
     def has_zoneinfo_database(self):
         with self.connection.cursor() as cursor:

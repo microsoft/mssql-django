@@ -4,11 +4,16 @@
 """
 MS SQL Server database backend for Django.
 """
+import logging
 import os
 import re
 import time
 import struct
 import datetime
+
+logger = logging.getLogger('django.db.backends')
+from decimal import Decimal
+from uuid import UUID
 
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.functional import cached_property
@@ -41,8 +46,17 @@ from .introspection import DatabaseIntrospection, SQL_TIMESTAMP_WITH_TIMEZONE  #
 from .operations import DatabaseOperations  # noqa
 from .schema import DatabaseSchemaEditor  # noqa
 
+# EngineEdition values from SERVERPROPERTY('EngineEdition').
+# See: https://learn.microsoft.com/sql/t-sql/functions/serverproperty-transact-sql
 EDITION_AZURE_SQL_DB = 5
 EDITION_AZURE_SQL_MANAGED_INSTANCE = 8
+EDITION_AZURE_SQL_FABRIC = 12
+
+_AZURE_EDITIONS = (
+    EDITION_AZURE_SQL_DB,
+    EDITION_AZURE_SQL_MANAGED_INSTANCE,
+    EDITION_AZURE_SQL_FABRIC,
+)
 
 def encode_connection_string(fields):
     """Encode dictionary of keys and values as an ODBC connection String.
@@ -124,7 +138,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'SmallIntegerField': 'smallint',
         'TextField': 'nvarchar(max)',
         'TimeField': 'time',
-        'UUIDField': 'uniqueidentifier',
+        'UUIDField': 'char(32)',
     }
     data_types_suffix = {
         'AutoField': 'IDENTITY (1, 1)',
@@ -194,6 +208,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         14: 2017,
         15: 2019,
         16: 2022,
+        17: 2025,
     }
 
     # https://azure.microsoft.com/en-us/documentation/articles/sql-database-develop-csharp-retry-windows/
@@ -276,7 +291,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             conn_params['NAME'] = 'master'
         return conn_params
 
-    def get_new_connection(self, conn_params):
+    def _build_connection_string(self, conn_params, driver):
+        """Build ODBC connection string for the given driver."""
         database = conn_params['NAME']
         host = conn_params.get('HOST', 'localhost')
         user = conn_params.get('USER', None)
@@ -285,7 +301,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         trusted_connection = conn_params.get('Trusted_Connection', 'yes')
 
         options = conn_params.get('OPTIONS', {})
-        driver = options.get('driver', 'ODBC Driver 17 for SQL Server')
         dsn = options.get('dsn', None)
         options_extra_params = options.get('extra_params', '')
 
@@ -342,6 +357,23 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if options.get('extra_params', None):
             connstr += ';' + options['extra_params']
 
+        return connstr
+
+    def _is_driver_not_found_error(self, exception):
+        """Check if the exception indicates a driver not found error."""
+        error_msg = str(exception).lower()
+        return (
+            "can't open lib" in error_msg or
+            "data source name not found" in error_msg or
+            "driver not found" in error_msg or
+            "specified driver could not be loaded" in error_msg
+        )
+
+    def get_new_connection(self, conn_params):
+        options = conn_params.get('OPTIONS', {})
+        driver = options.get('driver', 'ODBC Driver 18 for SQL Server')
+        driver_explicitly_set = 'driver' in options
+
         unicode_results = options.get('unicode_results', False)
         timeout = options.get('connection_timeout', 0)
         retries = options.get('connection_retries', 5)
@@ -349,6 +381,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         query_timeout = options.get('query_timeout', 0)
         setencoding = options.get('setencoding', None)
         setdecoding = options.get('setdecoding', None)
+
+        connstr = self._build_connection_string(conn_params, driver)
 
         conn = None
         retry_count = 0
@@ -361,10 +395,39 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             args['attrs_before'] = {
                 1256: prepare_token_for_odbc(conn_params['TOKEN'])
             }
+
+        # Track if we've attempted fallback to v17
+        attempted_v17_fallback = False
+
         while conn is None:
             try:
                 conn = Database.connect(connstr, **args)
             except Exception as e:
+                # If driver not explicitly set and v18 failed with driver not found,
+                # try falling back to v17
+                if (not driver_explicitly_set and
+                    not attempted_v17_fallback and
+                    self._is_driver_not_found_error(e) and
+                    'ODBC Driver 18' in driver):
+
+                    attempted_v17_fallback = True
+                    driver = 'ODBC Driver 17 for SQL Server'
+                    connstr = self._build_connection_string(conn_params, driver)
+
+                    logger.warning(
+                        "ODBC Driver 18 for SQL Server not found. "
+                        "Falling back to ODBC Driver 17 for SQL Server. "
+                        "SECURITY WARNING: ODBC Driver 18 has more secure defaults. "
+                        "To resolve this warning, consider one of the following options "
+                        "(in order of recommendation): "
+                        "(1) Install ODBC Driver 18 and configure a valid certificate on the server, "
+                        "(2) Install ODBC Driver 18 and set 'TrustServerCertificate': 'yes' in OPTIONS extra_params "
+                        "if you trust the server, "
+                        "(3) Explicitly set 'driver': 'ODBC Driver 17 for SQL Server' in OPTIONS "
+                        "to suppress this warning."
+                    )
+                    continue
+
                 for error_number in self._transient_error_numbers:
                     if error_number in e.args[1]:
                         if error_number in e.args[1] and retry_count < retries:
@@ -430,9 +493,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if (options.get('return_rows_bulk_insert', False)):
             self.features_class.can_return_rows_from_bulk_insert = True
 
-        if (options.get('has_native_uuid_field', True)):
-            Database.native_uuid = True
-            
         val = self.get_system_datetime
         if isinstance(val, str):
             raise ImproperlyConfigured(
@@ -458,7 +518,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     @cached_property
     def sql_server_version(self, _known_versions={}):
         """
-        Get the SQL server version
+        Get the SQL Server version.
+
+        Fetches both ProductVersion and EngineEdition in a single query,
+        populating both this cache and the to_azure_sql_db cache to avoid
+        extra round trips.
 
         The _known_versions default dictionary is created on the class. This is
         intentional - it allows us to cache this property's value across instances.
@@ -466,19 +530,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         alias, we won't need query the server again.
         """
         if self.alias not in _known_versions:
-            with self.temporary_connection() as cursor:
-                cursor.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar)")
-                ver = cursor.fetchone()[0]
-                ver = int(ver.split('.')[0])
-                if ver not in self._sql_server_versions:
-                    raise NotSupportedError('SQL Server v%d is not supported.' % ver)
-                _known_versions[self.alias] = self._sql_server_versions[ver]
+            self._fetch_server_properties()
         return _known_versions[self.alias]
 
     @cached_property
     def to_azure_sql_db(self, _known_azures={}):
         """
-        Whether this connection is to a Microsoft Azure database server
+        Whether this connection is to a Microsoft Azure database server.
 
         The _known_azures default dictionary is created on the class. This is
         intentional - it allows us to cache this property's value across instances.
@@ -486,11 +544,41 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         alias, we won't need query the server again.
         """
         if self.alias not in _known_azures:
-            with self.temporary_connection() as cursor:
-                cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
-                edition = cursor.fetchone()[0]
-                _known_azures[self.alias] = edition == EDITION_AZURE_SQL_DB or edition == EDITION_AZURE_SQL_MANAGED_INSTANCE
+            self._fetch_server_properties()
         return _known_azures[self.alias]
+
+    def _fetch_server_properties(self):
+        """
+        Fetch ProductVersion and EngineEdition in a single query and populate
+        both sql_server_version and to_azure_sql_db caches.
+        """
+        _known_versions = type(self).__dict__['sql_server_version'].func.__defaults__[0]
+        _known_azures = type(self).__dict__['to_azure_sql_db'].func.__defaults__[0]
+
+        with self.temporary_connection() as cursor:
+            cursor.execute(
+                "SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar), "
+                "CAST(SERVERPROPERTY('EngineEdition') AS integer)"
+            )
+            product_version, edition = cursor.fetchone()
+
+        is_azure = edition in _AZURE_EDITIONS
+        _known_azures[self.alias] = is_azure
+
+        if edition == EDITION_AZURE_SQL_FABRIC:
+            # Fabric reports ProductVersion numbers that don't correspond to
+            # on-premises SQL Server releases but has modern capabilities.
+            # Treat it as the latest supported version.
+            _known_versions[self.alias] = max(self._sql_server_versions.values())
+        else:
+            # For on-prem and Azure SQL DB/Managed Instance, use ProductVersion
+            # to determine version. Azure SQL DB/MI report ProductVersion 12.x
+            # which maps to 2014 — their feature checks use to_azure_sql_db
+            # as a fallback (e.g. "version >= 2016 or to_azure_sql_db").
+            ver = int(product_version.split('.')[0])
+            if ver not in self._sql_server_versions:
+                raise NotSupportedError('SQL Server v%d is not supported.' % ver)
+            _known_versions[self.alias] = self._sql_server_versions[ver]
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
@@ -571,6 +659,38 @@ class CursorWrapper(object):
         self.last_sql = ''
         self.last_params = ()
 
+    def _as_sql_type(self, typ, value):
+        if isinstance(value, str):
+            length = len(value)
+            if length == 0:
+                return 'NVARCHAR'
+            elif length > 4000:
+                return 'NVARCHAR(max)'
+            return 'NVARCHAR(%s)' % len(value)
+        elif typ == int:
+            if value < 0x7FFFFFFF and value > -0x7FFFFFFF:
+                return 'INT'
+            else:
+                return 'BIGINT'
+        elif typ == float:
+            return 'DOUBLE PRECISION'
+        elif typ == bool:
+            return 'BIT'
+        elif isinstance(value, Decimal):
+            return 'NUMERIC'
+        elif isinstance(value, datetime.datetime):
+            return 'DATETIME2'
+        elif isinstance(value, datetime.date):
+            return 'DATE'
+        elif isinstance(value, datetime.time):
+            return 'TIME'
+        elif isinstance(value, UUID):
+            return 'uniqueidentifier'
+        elif isinstance(value, bytes):
+            return 'VARBINARY'
+        else:
+            raise NotImplementedError('Not supported type %s (%s)' % (type(value), repr(value)))
+
     def close(self):
         if self.active:
             self.active = False
@@ -587,6 +707,29 @@ class CursorWrapper(object):
             sql = sql % tuple('?' * len(params))
 
         return sql
+
+    def format_group_by_params(self, query, params):
+        # Prepare query for string formatting
+        query = re.sub(r'%\w+', '{}', query)
+
+        if params:
+            # Insert None params directly into the query
+            if None in params:
+                null_params = ['NULL' if param is None else '{}' for param in params]
+                query = query.format(*null_params)
+                params = tuple(p for p in params if p is not None)
+            params = [(param, type(param)) for param in params]
+            params_dict = {param: '@var%d' % i for i, param in enumerate(set(params))}
+            args = [params_dict[param] for param in params]
+
+            variables = []
+            params = []
+            for key, value in params_dict.items():
+                datatype = self._as_sql_type(key[1], key[0])
+                variables.append("%s %s = %%s " % (value, datatype))
+                params.append(key[0])
+            query = ('DECLARE %s \n' % ','.join(variables)) + (query.format(*args))
+        return query, params
 
     def format_params(self, params):
         fp = []
@@ -616,6 +759,8 @@ class CursorWrapper(object):
 
     def execute(self, sql, params=None):
         self.last_sql = sql
+        if 'GROUP BY' in sql:
+            sql, params = self.format_group_by_params(sql, params)
         sql = self.format_sql(sql, params)
         params = self.format_params(params)
         self.last_params = params
