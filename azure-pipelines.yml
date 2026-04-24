@@ -7,8 +7,8 @@ pr:
       - dev
 
 schedules:
-- cron: "0 9 * * *"
-  displayName: Daily midnight build
+- cron: "0 21 * * *"
+  displayName: Daily nightly build (2:30 AM IST)
   branches:
     include:
     - dev
