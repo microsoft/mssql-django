@@ -46,8 +46,17 @@ from .introspection import DatabaseIntrospection, SQL_TIMESTAMP_WITH_TIMEZONE  #
 from .operations import DatabaseOperations  # noqa
 from .schema import DatabaseSchemaEditor  # noqa
 
+# EngineEdition values from SERVERPROPERTY('EngineEdition').
+# See: https://learn.microsoft.com/sql/t-sql/functions/serverproperty-transact-sql
 EDITION_AZURE_SQL_DB = 5
 EDITION_AZURE_SQL_MANAGED_INSTANCE = 8
+EDITION_AZURE_SQL_FABRIC = 12
+
+_AZURE_EDITIONS = (
+    EDITION_AZURE_SQL_DB,
+    EDITION_AZURE_SQL_MANAGED_INSTANCE,
+    EDITION_AZURE_SQL_FABRIC,
+)
 
 def encode_connection_string(fields):
     """Encode dictionary of keys and values as an ODBC connection String.
@@ -509,7 +518,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     @cached_property
     def sql_server_version(self, _known_versions={}):
         """
-        Get the SQL server version
+        Get the SQL Server version.
+
+        Fetches both ProductVersion and EngineEdition in a single query,
+        populating both this cache and the to_azure_sql_db cache to avoid
+        extra round trips.
 
         The _known_versions default dictionary is created on the class. This is
         intentional - it allows us to cache this property's value across instances.
@@ -517,19 +530,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         alias, we won't need query the server again.
         """
         if self.alias not in _known_versions:
-            with self.temporary_connection() as cursor:
-                cursor.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar)")
-                ver = cursor.fetchone()[0]
-                ver = int(ver.split('.')[0])
-                if ver not in self._sql_server_versions:
-                    raise NotSupportedError('SQL Server v%d is not supported.' % ver)
-                _known_versions[self.alias] = self._sql_server_versions[ver]
+            self._fetch_server_properties()
         return _known_versions[self.alias]
 
     @cached_property
     def to_azure_sql_db(self, _known_azures={}):
         """
-        Whether this connection is to a Microsoft Azure database server
+        Whether this connection is to a Microsoft Azure database server.
 
         The _known_azures default dictionary is created on the class. This is
         intentional - it allows us to cache this property's value across instances.
@@ -537,11 +544,41 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         alias, we won't need query the server again.
         """
         if self.alias not in _known_azures:
-            with self.temporary_connection() as cursor:
-                cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
-                edition = cursor.fetchone()[0]
-                _known_azures[self.alias] = edition == EDITION_AZURE_SQL_DB or edition == EDITION_AZURE_SQL_MANAGED_INSTANCE
+            self._fetch_server_properties()
         return _known_azures[self.alias]
+
+    def _fetch_server_properties(self):
+        """
+        Fetch ProductVersion and EngineEdition in a single query and populate
+        both sql_server_version and to_azure_sql_db caches.
+        """
+        _known_versions = type(self).__dict__['sql_server_version'].func.__defaults__[0]
+        _known_azures = type(self).__dict__['to_azure_sql_db'].func.__defaults__[0]
+
+        with self.temporary_connection() as cursor:
+            cursor.execute(
+                "SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar), "
+                "CAST(SERVERPROPERTY('EngineEdition') AS integer)"
+            )
+            product_version, edition = cursor.fetchone()
+
+        is_azure = edition in _AZURE_EDITIONS
+        _known_azures[self.alias] = is_azure
+
+        if edition == EDITION_AZURE_SQL_FABRIC:
+            # Fabric reports ProductVersion numbers that don't correspond to
+            # on-premises SQL Server releases but has modern capabilities.
+            # Treat it as the latest supported version.
+            _known_versions[self.alias] = max(self._sql_server_versions.values())
+        else:
+            # For on-prem and Azure SQL DB/Managed Instance, use ProductVersion
+            # to determine version. Azure SQL DB/MI report ProductVersion 12.x
+            # which maps to 2014 — their feature checks use to_azure_sql_db
+            # as a fallback (e.g. "version >= 2016 or to_azure_sql_db").
+            ver = int(product_version.split('.')[0])
+            if ver not in self._sql_server_versions:
+                raise NotSupportedError('SQL Server v%d is not supported.' % ver)
+            _known_versions[self.alias] = self._sql_server_versions[ver]
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
