@@ -8,7 +8,7 @@ from django.test import TransactionTestCase, TestCase, skipUnlessDBFeature
 from django.test.utils import override_settings
 from django.utils import timezone
 
-from ..models import Author, BinaryData
+from ..models import Author, BinaryData, Editor
 
 
 class TestTableWithTrigger(TransactionTestCase):
@@ -179,6 +179,21 @@ class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
             self.assertNotIn("SCOPE_IDENTITY", ctx[0]["sql"])
         finally:
             connection.features_class.can_return_rows_from_bulk_insert = old_return_rows_flag
+
+
+class ExplainRegressionTests(TestCase):
+    """Regression test for #409: explain() AttributeError on Django 4.0+.
+
+    Django 4.0 replaced query.explain_format/explain_options with
+    query.explain_info. The compiler must read the correct attributes
+    so .explain() raises NotSupportedError (not AttributeError).
+    """
+
+    def test_explain_raises_not_supported(self):
+        """explain() should raise NotSupportedError, not AttributeError."""
+        qs = Author.objects.all()
+        with self.assertRaises(django.db.utils.NotSupportedError):
+            qs.explain()
 
 
 class NowSQLTemplateTests(TestCase):
