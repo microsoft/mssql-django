@@ -174,6 +174,25 @@ class TestHandleDatetimeoffset(SimpleTestCase):
         self.assertIsNotNone(result.tzinfo)
         self.assertEqual(result.utcoffset(), datetime.timedelta(hours=-5))
 
+    def test_datetime_negative_half_hour_offset(self):
+        """Test conversion with a negative half-hour offset (-09:30 Marquesas)."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 7, 1, 12, 0, 0, 0, -9, -30)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.hour, 12)
+        self.assertIsNotNone(result.tzinfo)
+        expected = datetime.timedelta(hours=-9, minutes=-30)
+        self.assertEqual(result.utcoffset(), expected)
+
+    def test_datetime_positive_three_quarter_offset(self):
+        """Test conversion with +05:45 (Nepal) offset."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 3, 15, 10, 30, 0, 0, 5, 45)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.hour, 10)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(hours=5, minutes=45))
+
     def test_datetime_edge_case_midnight_utc(self):
         """Test with edge case: midnight on Jan 1, 2000 at UTC."""
         dto_bytes = struct.pack("<6hI2h", 2000, 1, 1, 0, 0, 0, 0, 0, 0)
