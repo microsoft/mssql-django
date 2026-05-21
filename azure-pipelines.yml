@@ -7,8 +7,8 @@ pr:
       - dev
 
 schedules:
-- cron: "0 9 * * *"
-  displayName: Daily midnight build
+- cron: "0 21 * * *"
+  displayName: Daily nightly build (2:30 AM IST)
   branches:
     include:
     - dev
@@ -19,7 +19,7 @@ jobs:
     pool:
       name: Django-1ES-pool
       demands:
-      - imageOverride -equals JDBC-MMS2019-SQL2019-2
+      - imageOverride -equals JDBC-MMS2025-SQL2025
     timeoutInMinutes: 120
 
     strategy:
