@@ -180,6 +180,18 @@ if VERSION >= (3, 1):
 
 
 if VERSION >= (3, 2):
+    # Django 6.0+ renamed 'check' parameter to 'condition' in CheckConstraint
+    if VERSION >= (6, 0):
+        _check_constraint_kwargs = {
+            'condition': ~models.Q(name__startswith='\u00f7'),
+            'name': 'name_does_not_starts_with_\u00f7',
+        }
+    else:
+        _check_constraint_kwargs = {
+            'check': ~models.Q(name__startswith='\u00f7'),
+            'name': 'name_does_not_starts_with_\u00f7',
+        }
+
     class TestCheckConstraintWithUnicode(models.Model):
         name = models.CharField(max_length=100)
 
@@ -188,14 +200,13 @@ if VERSION >= (3, 2):
                 'supports_table_check_constraints',
             }
             constraints = [
-                models.CheckConstraint(
-                    check=~models.Q(name__startswith='\u00f7'),
-                    name='name_does_not_starts_with_\u00f7',
-                )
+                models.CheckConstraint(**_check_constraint_kwargs)
             ]
 
 
 class Question(models.Model):
+    # Explicit id to match migration 0018 (AutoField)
+    id = models.AutoField(primary_key=True)
     question_text = models.CharField(max_length=200)
     pub_date = models.DateTimeField('date published')
 
@@ -207,6 +218,8 @@ class Question(models.Model):
 
 
 class Choice(models.Model):
+    # Explicit id to match migration 0018 (AutoField)
+    id = models.AutoField(primary_key=True)
     question = models.ForeignKey(Question, on_delete=models.CASCADE, null=True)
     choice_text = models.CharField(max_length=200)
     votes = models.IntegerField(default=0)

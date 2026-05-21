@@ -2,29 +2,43 @@
 # Licensed under the BSD license.
 
 import json
+import itertools
 
 from django import VERSION
 from django.core import validators
 from django.db import NotSupportedError, connections, transaction
-from django.db.models import BooleanField, CheckConstraint, Value
-from django.db.models.expressions import Case, Exists, OrderBy, When, Window
+from django.db.models import BooleanField, CheckConstraint, Q, Value
+from django.db.models.expressions import Case, Exists, OrderBy, Subquery, When, Window
 from django.db.models.fields import BinaryField, Field
 from django.db.models.functions import Cast, NthValue, MD5, SHA1, SHA224, SHA256, SHA384, SHA512
 from django.db.models.functions.datetime import Now
 from django.db.models.functions.math import ATan2, Ln, Log, Mod, Round, Degrees, Radians, Power
 from django.db.models.functions.text import Replace
-from django.db.models.lookups import In, Lookup
+from django.db.models.lookups import Exact, In, Lookup
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
+if VERSION >= (5, 2):
+    from django.db.models.expressions import ColPairs
+else:
+    ColPairs = None
 # import value and JSONArray for Django 5.2+
 if VERSION >= (5, 2):
     from django.db.models import Value
     from django.db.models.functions import JSONArray
+    from django.db.models.fields.composite import CompositePrimaryKey
 
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
         KeyTransform, KeyTransformIn, KeyTransformExact,
-        HasKeyLookup, compile_json_path)
+        HasKeyLookup)
+    # compile_json_path was moved from django.db.models.fields.json to
+    # connection.ops.compile_json_path() in Django 6.0
+    # We use connection.ops.compile_json_path() which we provide in operations.py
+    if VERSION < (6, 0):
+        from django.db.models.fields.json import compile_json_path
+    else:
+        # For Django 6.0+, we'll use connection.ops.compile_json_path()
+        compile_json_path = None
 
 if VERSION >= (3, 2):
     from django.db.models.functions.math import Random
@@ -104,13 +118,15 @@ def sqlserver_mod(self, compiler, connection):
     # Compile the left-hand side (lhs) expression to SQL and parameters.
     lhs_sql, lhs_params = compiler.compile(expr[0])
     # Compile the right-hand side (rhs) expression to SQL and parameters.
-    rhs_sql, rhs_params = compiler.compile(expr[1])   
+    rhs_sql, rhs_params = compiler.compile(expr[1])
+    lhs_params = tuple(lhs_params)
+    rhs_params = tuple(rhs_params)
     # Build the SQL template for modulo using ABS, FLOOR, and SIGN functions.
     template = '(ABS(%s) - FLOOR(ABS(%s) / ABS(%s)) * ABS(%s)) * SIGN(%s) * SIGN(%s)'  
     # Substitute the compiled SQL expressions into the template.
     sql = template % (lhs_sql, lhs_sql, rhs_sql, rhs_sql, lhs_sql, rhs_sql)   
     # Combine all parameters in the correct order for the SQL statement.
-    params = lhs_params + lhs_params + rhs_params + rhs_params + lhs_params + rhs_params    
+    params = lhs_params + lhs_params + rhs_params + rhs_params + lhs_params + rhs_params
     try:
         # return sql,params
         return sql, params
@@ -224,6 +240,95 @@ def mssql_split_parameter_list_as_sql(self, compiler, connection):
     return in_clause, ()
 
 
+def _tuple_lookup_rhs_query(rhs):
+    if isinstance(rhs, Query):
+        return rhs
+    if isinstance(rhs, Subquery):
+        return rhs.query
+    return None
+
+
+def _tuple_lookup_exists_sql(lhs, rhs_query, compiler, connection):
+    rhs_exprs = itertools.chain.from_iterable(
+        (
+            select_expr
+            if ColPairs is not None and isinstance((select_expr := select[0]), ColPairs)
+            else [select_expr]
+        )
+        for select in rhs_query.get_compiler(connection=connection).get_select()[0]
+    )
+    query = rhs_query.clone()
+    query.add_q(Q(*[Exact(col, val) for col, val in zip(lhs, rhs_exprs)]))
+    return compiler.compile(Exists(query))
+
+
+if VERSION >= (5, 2, 4):
+    from django.db.models.fields.tuple_lookups import (
+        TupleExact,
+        TupleGreaterThan,
+        TupleGreaterThanOrEqual,
+        TupleIn,
+        TupleLessThan,
+        TupleLessThanOrEqual,
+    )
+
+    tuple_exact_get_fallback_sql = TupleExact.get_fallback_sql
+    tuple_in_get_fallback_sql = TupleIn.get_fallback_sql
+    tuple_gt_get_fallback_sql = TupleGreaterThan.get_fallback_sql
+    tuple_gte_get_fallback_sql = TupleGreaterThanOrEqual.get_fallback_sql
+    tuple_lt_get_fallback_sql = TupleLessThan.get_fallback_sql
+    tuple_lte_get_fallback_sql = TupleLessThanOrEqual.get_fallback_sql
+
+    def _sqlserver_tuple_comparison_get_fallback_sql(self, compiler, connection, original):
+        if connection.vendor == 'microsoft' and _tuple_lookup_rhs_query(self.rhs) is not None:
+            lookup = self.lookup_name
+            raise NotSupportedError(
+                f'"{lookup}" cannot be used to target composite fields through subqueries on this backend'
+            )
+        return original(self, compiler, connection)
+
+    def sqlserver_tuple_exact_get_fallback_sql(self, compiler, connection):
+        if connection.vendor == 'microsoft':
+            rhs_query = _tuple_lookup_rhs_query(self.rhs)
+            if rhs_query is not None:
+                return _tuple_lookup_exists_sql(self.lhs, rhs_query, compiler, connection)
+        return tuple_exact_get_fallback_sql(self, compiler, connection)
+
+    def sqlserver_tuple_in_get_fallback_sql(self, compiler, connection):
+        if connection.vendor == 'microsoft':
+            rhs_query = _tuple_lookup_rhs_query(self.rhs)
+            if rhs_query is not None:
+                return _tuple_lookup_exists_sql(self.lhs, rhs_query, compiler, connection)
+        return tuple_in_get_fallback_sql(self, compiler, connection)
+
+    def sqlserver_tuple_gt_get_fallback_sql(self, compiler, connection):
+        return _sqlserver_tuple_comparison_get_fallback_sql(
+            self, compiler, connection, tuple_gt_get_fallback_sql
+        )
+
+    def sqlserver_tuple_gte_get_fallback_sql(self, compiler, connection):
+        return _sqlserver_tuple_comparison_get_fallback_sql(
+            self, compiler, connection, tuple_gte_get_fallback_sql
+        )
+
+    def sqlserver_tuple_lt_get_fallback_sql(self, compiler, connection):
+        return _sqlserver_tuple_comparison_get_fallback_sql(
+            self, compiler, connection, tuple_lt_get_fallback_sql
+        )
+
+    def sqlserver_tuple_lte_get_fallback_sql(self, compiler, connection):
+        return _sqlserver_tuple_comparison_get_fallback_sql(
+            self, compiler, connection, tuple_lte_get_fallback_sql
+        )
+
+    TupleExact.get_fallback_sql = sqlserver_tuple_exact_get_fallback_sql
+    TupleIn.get_fallback_sql = sqlserver_tuple_in_get_fallback_sql
+    TupleGreaterThan.get_fallback_sql = sqlserver_tuple_gt_get_fallback_sql
+    TupleGreaterThanOrEqual.get_fallback_sql = sqlserver_tuple_gte_get_fallback_sql
+    TupleLessThan.get_fallback_sql = sqlserver_tuple_lt_get_fallback_sql
+    TupleLessThanOrEqual.get_fallback_sql = sqlserver_tuple_lte_get_fallback_sql
+
+
 def unquote_json_rhs(rhs_params):
     for value in rhs_params:
         value = json.loads(value)
@@ -316,6 +421,16 @@ def json_HasKeyLookup(self, compiler, connection):
     - SQL Server 2022+: Uses JSON_PATH_EXISTS function
     - Older versions: Uses JSON_VALUE IS NOT NULL
     """
+    # Helper function to compile JSON path
+    def _compile_json_path(key_transforms, include_root=True):
+        # For Django < 6.0, use Django's built-in compile_json_path
+        # For Django 6.0+, use connection.ops.compile_json_path()
+        # This is necessary because compile_json_path was moved in Django 6.0 from
+        # django.db.models.fields.json to connection.ops.compile_json_path().
+        if VERSION >= (6, 0):
+            return connection.ops.compile_json_path(key_transforms, include_root)
+        else:
+            return compile_json_path(key_transforms, include_root)
 
     def _combine_conditions(conditions):
         # Combine multiple conditions using the logical operator if present, otherwise return the first condition
@@ -329,7 +444,7 @@ def json_HasKeyLookup(self, compiler, connection):
     if isinstance(self.lhs, KeyTransform):
         # If lhs is a KeyTransform, preprocess to get SQL and JSON path
         lhs, _, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
-        lhs_json_path = compile_json_path(lhs_key_transforms)
+        lhs_json_path = _compile_json_path(lhs_key_transforms)
         lhs_params = []
     else:
         # Otherwise, process lhs normally and set default JSON path
@@ -357,15 +472,19 @@ def json_HasKeyLookup(self, compiler, connection):
         if VERSION >= (4, 1):
             # For Django 4.1+, split out the final key and build the JSON path accordingly
             *rhs_key_transforms, final_key = rhs_key_transforms
-            rhs_json_path = compile_json_path(rhs_key_transforms, include_root=False)
-            rhs_json_path += self.compile_json_path_final_key(final_key)
+            rhs_json_path = _compile_json_path(rhs_key_transforms, include_root=False)
+            # Django 6.0+ changed signature to include connection parameter
+            if VERSION >= (6, 0):
+                rhs_json_path += self.compile_json_path_final_key(connection, final_key)
+            else:
+                rhs_json_path += self.compile_json_path_final_key(final_key)
             rhs_params.append(lhs_json_path + rhs_json_path)
         else:
             # For older Django, just compile the JSON path
             rhs_params.append(
                 '%s%s' % (
                     lhs_json_path,
-                    compile_json_path(rhs_key_transforms, include_root=False)
+                    _compile_json_path(rhs_key_transforms, include_root=False)
                 )
             )
 
@@ -378,7 +497,6 @@ def json_HasKeyLookup(self, compiler, connection):
             cast_sql, cast_params = self.lhs.as_sql(compiler, connection)
 
             for path in rhs_params:
-                # Escape single quotes in the path for SQL
                 path_escaped = path.replace("'", "''")
                 # Build the JSON_PATH_EXISTS condition
                 conditions.append(f"JSON_PATH_EXISTS({cast_sql}, '{path_escaped}') > 0")
@@ -387,7 +505,6 @@ def json_HasKeyLookup(self, compiler, connection):
             return _combine_conditions(conditions), params
         else:
             for path in rhs_params:
-                # Escape single quotes in the path for SQL
                 path_escaped = path.replace("'", "''")
                 # Build the JSON_PATH_EXISTS condition using lhs
                 conditions.append("JSON_PATH_EXISTS(%s, '%s') > 0" % (lhs, path_escaped))
@@ -406,7 +523,6 @@ def json_HasKeyLookup(self, compiler, connection):
         else:
             conditions = []
             for path in rhs_params:
-                # Escape single quotes in the path for SQL
                 path_escaped = path.replace("'", "''")
                 # Build the JSON_VALUE IS NOT NULL condition
                 conditions.append("JSON_VALUE(%s, '%s') IS NOT NULL" % (lhs, path_escaped))
@@ -470,7 +586,12 @@ def bulk_update_with_default(self, objs, fields, batch_size=None, default=None):
     fields = [self.model._meta.get_field(name) for name in fields]
     if any(not f.concrete or f.many_to_many for f in fields):
         raise ValueError('bulk_update() can only be used with concrete fields.')
-    if any(f.primary_key for f in fields):
+    # Check for primary key fields, including composite PK fields in Django 5.2+
+    pk_field_names = set()
+    if VERSION >= (5, 2) and isinstance(self.model._meta.pk, CompositePrimaryKey):
+        # For composite PKs, get all field names that are part of the PK
+        pk_field_names = set(self.model._meta.pk.field_names)
+    if any(f.primary_key or f.name in pk_field_names for f in fields):
         raise ValueError('bulk_update() cannot be used with primary key fields.')
     if not objs:
         return 0

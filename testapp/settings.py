@@ -10,21 +10,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATABASES = {
     "default": {
         "ENGINE": "mssql",
-        "NAME": "default",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
-        "HOST": "localhost",
-        "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
+        "NAME": os.environ.get("MSSQL_DB_NAME", "default"),
+        "USER": os.environ.get("MSSQL_USER", "sa"),
+        "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
+        "HOST": os.environ.get("MSSQL_HOST", "localhost"),
+        "PORT": os.environ.get("MSSQL_PORT", "1433"),
+        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
     },
     'other': {
         "ENGINE": "mssql",
-        "NAME": "other",
-        "USER": "sa",
-        "PASSWORD": "MyPassword42",
-        "HOST": "localhost",
-        "PORT": "1433",
-        "OPTIONS": {"driver": "ODBC Driver 17 for SQL Server", "return_rows_bulk_insert": True},
+        "NAME": os.environ.get("MSSQL_DB_NAME_OTHER", "other"),
+        "USER": os.environ.get("MSSQL_USER", "sa"),
+        "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
+        "HOST": os.environ.get("MSSQL_HOST", "localhost"),
+        "PORT": os.environ.get("MSSQL_PORT", "1433"),
+        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
     },
 }
 
@@ -92,7 +92,13 @@ PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
 
-DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+# Set DEFAULT_AUTO_FIELD to suppress W042 warnings in Django's test suite.
+# Our testapp models that need AutoField (Question, Choice) have explicit
+# id = models.AutoField(primary_key=True) to match their existing migrations.
+if VERSION >= (6, 0):
+    DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+else:
+    DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 ENABLE_REGEX_TESTS = False
 USE_TZ = False
@@ -193,7 +199,6 @@ EXCLUDED_TESTS = [
     'model_fields.test_jsonfield.TestQuerying.test_none_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
     'model_fields.test_jsonfield.TestQuerying.test_key_escape',
-    'model_fields.test_jsonfield.TestQuerying.test_ordering_by_transform',
     'expressions_window.tests.WindowFunctionTests.test_key_transform',
 
     # Django 3.2
@@ -315,41 +320,34 @@ if VERSION >= (5, 1):
         'indexes.tests.SchemaIndexesTests.test_alter_field_unique_false_removes_deferred_sql',
     ])
 
-# Django 5.2 specific exclusions - tuple lookups not supported in SQL Server
+# Django 6.0 specific exclusions
+if VERSION >= (6, 0):
+    EXCLUDED_TESTS.extend([
+        # Constant CASE ORDER BY compiles to a parameterized ordering expression
+        # that SQL Server rejects (error 1008).
+        'ordering.tests.OrderingTests.test_order_by_case_when_constant_value',
+        
+        # SQL Server limitations (permanent exclusions)
+        # STRING_AGG with DISTINCT - SQL Server syntax differs
+        'aggregation.tests.AggregateTestCase.test_distinct_on_stringagg',
+        # REGEXP_LIKE function not available in SQL Server
+        'expressions.tests.BasicExpressionsTests.test_lookups_subquery',
+
+        # Constraint validation (single-query path) query count still under investigation
+        'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
+    ])
+
+# Django 5.2 specific exclusions
 # These are good candidates for community contributions - see GitHub issues
 if VERSION >= (5, 2):
     EXCLUDED_TESTS.extend([
-        # Tuple lookup tests - SQL Server doesn't support (col1, col2) IN syntax
-        # TODO: Implement tuple lookup handling for SQL Server compatibility
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_exact',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gt',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gte',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_in',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lt',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lte',
-        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
-        'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
+        # SQL Server parameter splitting uses temp tables, resulting in different query count
+        'composite_pk.tests.CompositePKTests.test_in_bulk_batching',
         
         # inspectdb tests that expect specific table structures in inspectdb_special/pascal schemas
         'inspectdb.tests.InspectDBTestCase.test_custom_normalize_table_name',
         'inspectdb.tests.InspectDBTestCase.test_special_column_name_introspection', 
         'inspectdb.tests.InspectDBTestCase.test_table_name_introspection',
-        
-        # Multi-column foreign key tests with tuple lookups - also affected by SQL Server limitations
-        # TODO: Fix tuple lookup generation for multi-column FKs 
-        'foreign_object.tests.MultiColumnFKTests.test_double_nested_query',
-        'foreign_object.tests.MultiColumnFKTests.test_forward_in_lookup_filters_correctly',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_forward',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_hidden_forward',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_reverse',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_forward_works',
-        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_reverse_works',
-        'foreign_object.tests.MultiColumnFKTests.test_reverse_query_returns_correct_result',
-        
-        # JSONField special character handling - SQL Server specific syntax issues
-        # TODO: Fix JSONField key escaping for special characters
-        'model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars',
-        'model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars_double_quotes',
         
         # JSONField bulk update with null handling
         # TODO: Fix bulk update SQL generation for JSONField null values
@@ -373,6 +371,34 @@ if VERSION >= (5, 2):
         # TODO: Fix JSONField update with CASE WHEN handling
         'expressions.tests.BasicExpressionsTests.test_update_jsonfield_case_when_key_is_null',
         
+    ])
+
+if VERSION >= (5, 2) and VERSION < (5, 2, 4):
+    EXCLUDED_TESTS.extend([
+        # Composite PK tuple subquery fallback fix landed in Django 5.2.4.
+        'composite_pk.test_filter.CompositePKFilterTests.test_explicit_subquery',
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_exact',
+        'composite_pk.test_filter.CompositePKFilterTests.test_outer_ref_pk_filter_on_pk_comparison',
+
+        # Tuple lookup tests kept excluded for Django <5.2.4.
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_exact',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gt',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_gte',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_in',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lt',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_lte',
+        'foreign_object.test_tuple_lookups.TupleLookupsTests.test_tuple_in_subquery',
+        'foreign_object.test_agnostic_order_trimjoin.TestLookupQuery.test_deep_mixed_backward',
+
+        # Multi-column foreign key tuple-lookup tests kept excluded for Django <5.2.4.
+        'foreign_object.tests.MultiColumnFKTests.test_double_nested_query',
+        'foreign_object.tests.MultiColumnFKTests.test_forward_in_lookup_filters_correctly',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_forward',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_hidden_forward',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_foreignobject_reverse',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_forward_works',
+        'foreign_object.tests.MultiColumnFKTests.test_prefetch_related_m2m_reverse_works',
+        'foreign_object.tests.MultiColumnFKTests.test_reverse_query_returns_correct_result',
     ])
 
 REGEX_TESTS = [

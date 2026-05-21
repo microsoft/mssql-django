@@ -17,6 +17,7 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
     'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
     'Framework :: Django :: 3.2',
     'Framework :: Django :: 4.0',
     'Framework :: Django :: 4.1',
@@ -24,6 +25,7 @@ CLASSIFIERS = [
     'Framework :: Django :: 5.0',
     'Framework :: Django :: 5.1',
     'Framework :: Django :: 5.2',
+    'Framework :: Django :: 6.0',
 ]
 
 this_directory = path.abspath(path.dirname(__file__))
@@ -32,7 +34,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='mssql-django',
-    version='1.6',
+    version='1.7.1',
     description='Django backend for Microsoft SQL Server',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -43,12 +45,15 @@ setup(
     'Release Notes': 'https://github.com/microsoft/mssql-django/releases',
     },
     license='BSD',
-    packages=find_packages(),
+    packages=find_packages(exclude=['testapp', 'testapp.*']),
     install_requires=[
-        'django>=3.2,<5.3',
+        'django>=3.2,<6.1',
         'pyodbc>=3.0',
         'pytz',
     ],
+    extras_require={
+        'test': ['unittest-xml-reporting>=3.2.0'],
+    },
     package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
     keywords='django',

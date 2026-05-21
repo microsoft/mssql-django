@@ -12,13 +12,20 @@ git fetch --depth=1 origin +refs/tags/*:refs/tags/*
 git checkout $DJANGO_VERSION
 pip install -r tests/requirements/py3.txt
 
-coverage run tests/runtests.py --settings=testapp.settings --noinput \
+# composite_pk tests were introduced in Django 5.2
+COMPOSITE_PK_TESTS=""
+if python -c "import django; exit(0 if django.VERSION >= (5, 2) else 1)"; then
+    COMPOSITE_PK_TESTS="composite_pk"
+fi
+
+PYTHONPATH=.. coverage run tests/runtests.py --settings=testapp.settings --noinput \
     aggregation \
     aggregation_regress \
     annotations \
     backends \
     basic \
     bulk_create \
+    $COMPOSITE_PK_TESTS \
     constraints \
     custom_columns \
     custom_lookups \

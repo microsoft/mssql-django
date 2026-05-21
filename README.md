@@ -1,339 +1,147 @@
-# Microsoft Django backend for SQL Server
+# Django Backend for Microsoft SQL
 
-Welcome to the MSSQL-Django 3rd party backend project!
+mssql-django is the official Microsoft‑supported Django database backend for SQL Server, Azure SQL and SQL Database in Microsoft Fabric. 
 
-*mssql-django* is a fork of [django-mssql-backend](https://pypi.org/project/django-mssql-backend/). This project provides an enterprise database connectivity option for the Django Web Framework, with support for Microsoft SQL Server and Azure SQL Database.
+It provides a reliable, enterprise‑grade database connectivity option for the Django web framework, enabling Python developers to build and run production‑ready applications on Microsoft’s data platform.
 
-We'd like to give thanks to the community that made this project possible, with particular recognition of the contributors: OskarPersson, michiya, dlo and the original Google Code django-pyodbc team. Moving forward we encourage partipation in this project from both old and new contributors!
+This project is the continuation and evolution of earlier community efforts, and it builds on the strong foundation established by django-mssql-backend and its predecessors. mssql-django focuses on long‑term stability, performance, security, and compatibility with both Django and SQL Server.
 
-We hope you enjoy using the MSSQL-Django 3rd party backend.
+## Supportability
 
-## Features
+| Component | Supported Versions |
+|---|---|
+| Django | 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0 |
+| Python | 3.8 – 3.14 (Django 6.0 requires 3.12+) |
+| SQL Server | 2016, 2017, 2019, 2022, 2025 |
+| Azure SQL | Database, Managed Instance, SQL Database in Microsoft Fabric |
+| ODBC Driver | Microsoft ODBC Driver 17 or 18 for SQL Server |
+| FreeTDS | Supported via FreeTDS ODBC driver |
 
--  Supports Django 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, and 5.2
-   - **Django 5.0 and below**: Full production support
-   - **Django 5.1**: Supported with minor limitations (composite primary key inspectdb)
-   - **Django 5.2**: Supported with enhanced SQL Server compatibility features and documented limitations (see Django 5.2 Specific Limitations section below)
--  Tested on Microsoft SQL Server 2016, 2017, 2019, 2022
--  Passes most of the tests of the Django test suite
--  Enhanced SQL Server compatibility with automatic schema creation and improved identifier quoting
--  Compatible with
-   [Micosoft ODBC Driver for SQL Server](https://docs.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server),
-   [SQL Server Native Client](https://msdn.microsoft.com/en-us/library/ms131321(v=sql.120).aspx),
-   and [FreeTDS](https://www.freetds.org/) ODBC drivers
+## Quick Start
 
-## Dependencies
-
--  pyodbc 3.0 or newer
-
-## Installation
-
-1. Install pyodbc 3.0 (or newer) and Django
-2. Install mssql-django:
+1. Install mssql-django (pulls in Django, pyodbc, and pytz automatically):
 
        pip install mssql-django
 
-3. Set the `ENGINE` setting in the `settings.py` file used by
-   your Django application or project to `'mssql'`:
+2. Configure your `settings.py`:
 
-       'ENGINE': 'mssql'
+```python
+DATABASES = {
+    'default': {
+        'ENGINE': 'mssql',
+        'NAME': 'mydb',
+        'USER': 'user@myserver',
+        'PASSWORD': 'password',
+        'HOST': 'myserver.database.windows.net',
+        'PORT': '',
+        'OPTIONS': {
+            'driver': 'ODBC Driver 18 for SQL Server',
+        },
+    },
+}
 
-## Configuration
+# set this to False if you want to turn off pyodbc's connection pooling
+DATABASE_CONNECTION_POOLING = False
+```
 
-### Standard Django settings
+## Configuration Reference
 
-The following entries in a database-level settings dictionary
-in DATABASES control the behavior of the backend:
+### Standard Django Settings
 
--  ENGINE
+| Setting | Type | Description |
+|---|---|---|
+| `ENGINE` | String | Must be `"mssql"` |
+| `NAME` | String | Database name. Required. |
+| `HOST` | String | SQL Server instance in `"server\instance"` format |
+| `PORT` | String | Server instance port. Empty string means default port. |
+| `USER` | String | Database user name. If not given, MS Integrated Security is used. |
+| `PASSWORD` | String | Database user password |
+| `TOKEN` | String | Access token for Azure AD auth (e.g. via `azure.identity`) |
+| `AUTOCOMMIT` | Boolean | Set to `False` to disable Django's transaction management |
+| `Trusted_Connection` | String | Default `"yes"`. Set to `"no"` if required. |
 
-   String. It must be `"mssql"`.
+### TEST Settings
 
--  NAME
-
-   String. Database name. Required.
-
--  HOST
-
-   String. SQL Server instance in `"server\instance"` format.
-
--  PORT
-
-   String. Server instance port.
-   An empty string means the default port.
-
--  USER
-
-   String. Database user name in `"user"` format.
-   If not given then MS Integrated Security will be used.
-
--  PASSWORD
-
-   String. Database user password.
-
--  TOKEN
-
-   String. Access token fetched as a user or service principal which
-   has access to the database. E.g. when using `azure.identity`, the
-   result of `DefaultAzureCredential().get_token('https://database.windows.net/.default')`
-   can be passed.
-
--  AUTOCOMMIT
-
-   Boolean. Set this to `False` if you want to disable
-   Django's transaction management and implement your own.
-
--  Trusted_Connection
-
-   String. Default is `"yes"`. Can be set to `"no"` if required.
-
-and the following entries are also available in the `TEST` dictionary
-for any given database-level settings dictionary:
-
--  NAME
-
-   String. The name of database to use when running the test suite.
-   If the default value (`None`) is used, the test database will use
-   the name `"test_" + NAME`.
-
--  COLLATION
-
-   String. The collation order to use when creating the test database.
-   If the default value (`None`) is used, the test database is assigned
-   the default collation of the instance of SQL Server.
-
--  DEPENDENCIES
-
-   String. The creation-order dependencies of the database.
-   See the official Django documentation for more details.
-
--  MIRROR
-
-   String. The alias of the database that this database should
-   mirror during testing. Default value is `None`.
-   See the official Django documentation for more details.
+| Setting | Type | Description |
+|---|---|---|
+| `NAME` | String | Test database name. Default: `"test_" + NAME` |
+| `COLLATION` | String | Collation for test database. Default: instance default. |
+| `DEPENDENCIES` | String | Creation-order dependencies of the database |
+| `MIRROR` | String | Alias of database to mirror during testing |
 
 ### OPTIONS
 
-Dictionary. Current available keys are:
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `driver` | String | `"ODBC Driver 18 for SQL Server"` | ODBC driver to use. Auto-falls back to Driver 17 if 18 is not installed. |
+| `isolation_level` | String | `None` | [Transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql): `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SNAPSHOT`, or `SERIALIZABLE` |
+| `dsn` | String | — | Named DSN, can be used instead of `HOST` |
+| `host_is_server` | Boolean | `False` | Set to `True` to use `HOST`/`PORT` directly with FreeTDS instead of a `freetds.conf` dataserver name. [Details](https://www.freetds.org/userguide/dsnless.html) |
+| `unicode_results` | Boolean | `False` | Activate pyodbc's unicode\_results feature |
+| `extra_params` | String | — | Additional ODBC params (`"param=value;param=value"`). Use for [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication). |
+| `collation` | String | `None` | Collation for text field lookups (e.g. `"Chinese_PRC_CI_AS"`) |
+| `connection_timeout` | Integer | `0` | Connection timeout in seconds (`0` = disabled) |
+| `connection_retries` | Integer | `5` | Number of connection retry attempts |
+| `connection_retry_backoff_time` | Integer | `5` | Back-off time in seconds between retries |
+| `query_timeout` | Integer | `0` | Query timeout in seconds (`0` = disabled) |
+| `setencoding` / `setdecoding` | List | — | pyodbc [encoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) / [decoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding) config |
+| `return_rows_bulk_insert` | Boolean | `False` | Allow returning rows from bulk insert. Must be `False` if tables have triggers. |
 
--  driver
+### Backend-Specific Settings
 
-   String. ODBC Driver to use (`"ODBC Driver 17 for SQL Server"`,
-   `"SQL Server Native Client 11.0"`, `"FreeTDS"` etc).
-   Default is `"ODBC Driver 17 for SQL Server"`.
+| Setting | Type | Default | Description |
+|---|---|---|---|
+| `DATABASE_CONNECTION_POOLING` | Boolean | `True` | Set to `False` to disable pyodbc's connection pooling |
 
--  isolation_level
+## Known Limitations
 
-   String. Sets [transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql)
-   for each database session. Valid values for this entry are
-   `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`,
-   `SNAPSHOT`, and `SERIALIZABLE`. Default is `None` which means
-   no isolation level is set to a database session and SQL Server default
-   will be used.
+The following limitations apply when using SQL Server with Django:
 
--  dsn
-
-   String. A named DSN can be used instead of `HOST`.
-
--  host_is_server
-
-   Boolean. Only relevant if using the FreeTDS ODBC driver under
-   Unix/Linux.
-
-   By default, when using the FreeTDS ODBC driver the value specified in
-   the ``HOST`` setting is used in a ``SERVERNAME`` ODBC connection
-   string component instead of being used in a ``SERVER`` component;
-   this means that this value should be the name of a *dataserver*
-   definition present in the ``freetds.conf`` FreeTDS configuration file
-   instead of a hostname or an IP address.
-
-   But if this option is present and its value is ``True``, this
-   special behavior is turned off. Instead, connections to the database
-   server will be established using ``HOST`` and ``PORT`` options, without
-   requiring ``freetds.conf`` to be configured.
-
-   See https://www.freetds.org/userguide/dsnless.html for more information.
-
--  unicode_results
-
-   Boolean. If it is set to ``True``, pyodbc's *unicode_results* feature
-   is activated and strings returned from pyodbc are always Unicode.
-   Default value is ``False``.
-
--  extra_params
-
-   String. Additional parameters for the ODBC connection. The format is
-   ``"param=value;param=value"``, [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) (Service Principal, Interactive, Msi) can be added to this field.
-
--  collation
-
-   String. Name of the collation to use when performing text field
-   lookups against the database. Default is ``None``; this means no
-   collation specifier is added to your lookup SQL (the default
-   collation of your database will be used). For Chinese language you
-   can set it to ``"Chinese_PRC_CI_AS"``.
-
--  connection_timeout
-
-   Integer. Sets the timeout in seconds for the database connection process.
-   Default value is ``0`` which disables the timeout.
-
--  connection_retries
-
-   Integer. Sets the times to retry the database connection process.
-   Default value is ``5``.
-
--  connection_retry_backoff_time
-
-   Integer. Sets the back off time in seconds for reries of
-   the database connection process. Default value is ``5``.
-
--  query_timeout
-
-   Integer. Sets the timeout in seconds for the database query.
-   Default value is ``0`` which disables the timeout.
-
-- [setencoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) and [setdecoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding)
-
-    ```python
-    # Example
-    "OPTIONS": {
-            "setdecoding": [
-                {"sqltype": pyodbc.SQL_CHAR, "encoding": 'utf-8'},
-                {"sqltype": pyodbc.SQL_WCHAR, "encoding": 'utf-8'}],
-            "setencoding": [
-                {"encoding": "utf-8"}],
-            ...
-            },
-    ```
-
-- return_rows_bulk_insert
-
-  Boolean. Sets if backend can return rows from bulk insert.
-  Default value is False which doesn't allows for the backend to
-  return rows from bulk insert. Must be set to False if database
-  has tables with triggers to prevent errors when inserting.
-
-  ```python
-  # Examples
-  "OPTIONS": {
-      # This database doesn't have any triggers so can use return
-      # rows from bulk insert feature
-      "return_rows_bulk_insert": True
-  }
-
-  "OPTIONS": {
-      # This database has triggers so leave return_rows_bulk_insert as blank (False)
-      # to prevent errors related to inserting and returning rows from bulk insert
-  }
-  ```
-
-### Backend-specific settings
-
-The following project-level settings also control the behavior of the backend:
-
--  DATABASE_CONNECTION_POOLING
-
-   Boolean. If it is set to ``False``, pyodbc's connection pooling feature
-   won't be activated.
-
-### Example
-
-Here is an example of the database settings:
-
-```python
-    DATABASES = {
-        'default': {
-            'ENGINE': 'mssql',
-            'NAME': 'mydb',
-            'USER': 'user@myserver',
-            'PASSWORD': 'password',
-            'HOST': 'myserver.database.windows.net',
-            'PORT': '',
-
-            'OPTIONS': {
-                'driver': 'ODBC Driver 17 for SQL Server',
-            },
-        },
-    }
-
-    # set this to False if you want to turn off pyodbc's connection pooling
-    DATABASE_CONNECTION_POOLING = False
-```
-
-## Limitations
-
-The following features are currently not fully supported:
 - Altering a model field from or to AutoField at migration
-- Django annotate functions have floating point arithmetic problems in some cases
-- Annotate function with exists
-- Exists function in order_by
-- Righthand power and arithmetic with datatimes
-- Timezones, timedeltas not fully supported
+- Floating point arithmetic in some annotate functions
+- Annotate/exists function in `order_by`
+- Righthand power and arithmetic with datetimes
+- Timezones and timedeltas not fully supported
 - Rename field/model with foreign key constraint
-- Database level constraints
-- Filtered index
+- Database level constraints and filtered indexes
 - Date extract function
-- Bulk insert into a table with a trigger and returning the rows inserted
+- Bulk insert with triggers and returning rows
 
-### Django 5.1 Specific Limitations
+### Version-Specific Notes
 
-Django 5.1 introduces composite primary key support which has limited compatibility with SQL Server:
-- **inspectdb command**: Cannot properly inspect tables with composite primary keys
-- **Backend debugging**: SQL execution wrapper debug functionality may not work correctly
-- **Schema operations**: Some field unique constraint removal operations may have issues
-- Most other Django 5.1 features work correctly with SQL Server
+| Version | Notes |
+|---|---|
+| Django 5.1 | Minor limitations with composite primary key inspection via `inspectdb` |
+| Django 5.2 | Tuple lookups require Django 5.2.4+ for full support. Some JSONField bulk/CASE WHEN update edge cases. See [test exclusions](https://github.com/microsoft/mssql-django/blob/dev/testapp/settings.py) for details. |
+| Django 6.0 | Requires Python 3.12+. All 5.2 limitations apply. Backend handles all 6.0 API changes transparently. |
 
-### Django 5.2 Specific Limitations
+JSONField lookups have additional limitations — see the [JSONField wiki page](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
-Django 5.2 introduces new features that may cause regressions for existing Django 5.0+ applications. This release includes enhanced SQL Server compatibility for Django 5.2, with automatic schema creation and improved identifier quoting. The following limitations remain:
+## Helpful Links
 
-**Critical Limitations (May Affect Common Use Cases):**
-- **Tuple lookups**: Queries like `Model.objects.filter((col1, col2)__in=[(val1, val2)])` will fail with SQL syntax errors as SQL Server doesn't support `(col1, col2) IN (...)` syntax
-- **Multi-column foreign key relationships**: Complex queries involving foreign keys with multiple columns may fail in Django 5.2 due to tuple lookup generation
-- **JSONField with special characters**: JSONField lookups involving special characters (quotes, emojis, escape sequences) may generate invalid SQL
-- **JSONField bulk updates**: Bulk update operations on JSONField with null handling may fail
+| Resource | Link |
+|---|---|
+| Wiki & Guides | [mssql-django Wiki](https://github.com/microsoft/mssql-django/wiki) |
+| Contributing | [Contributing Guide](https://github.com/microsoft/mssql-django/blob/dev/CONTRIBUTING.md) |
+| Code of Conduct | [Microsoft Open Source Code of Conduct](https://github.com/microsoft/mssql-django/blob/dev/CODE_OF_CONDUCT.md) |
 
-**Moderate Impact:**
-- **Complex aggregations**: Some aggregation queries with filtered references and subqueries may not work correctly
-- **Prefetch operations**: `prefetch_related()` operations on multi-column foreign keys may fail
+## Still have questions?
 
-**Low Impact (Edge Cases):**
-- **Migration operations**: Advanced migration operations involving composite primary keys and generated fields
-- **Backend debugging**: Certain backend debugging and introspection features
-- **JSONField CASE WHEN updates**: JSONField updates using CASE WHEN expressions with null handling
-
-**Specific Test Failures in Django 5.2:**
-- All `foreign_object.test_tuple_lookups.TupleLookupsTests.*` tests
-- All `foreign_object.tests.MultiColumnFKTests.*` tests involving complex queries
-- `model_fields.test_jsonfield.TestQuerying.test_lookups_special_chars*` tests
-- `queries.test_bulk_update.BulkUpdateTests.test_json_field_sql_null` test
-- Various migration and backend debugging tests
-
-**Workaround**: These limitations are documented in the test exclusions (`testapp/settings.py`) and are excellent candidates for community contributions. Applications using Django 5.0 and below are unaffected by these limitations.
-
-JSONField lookups have limitations, more details [here](https://github.com/microsoft/mssql-django/wiki/JSONField).
+Check the [FAQ](https://github.com/microsoft/mssql-django/wiki/Frequently-Asked-Questions) or [open an issue](https://github.com/microsoft/mssql-django/issues/new) on GitHub.
 
 ## Contributing
 
-More details on contributing can be found [here](CONTRIBUTING.md).
+We welcome contributions and suggestions! See [CONTRIBUTING.md](https://github.com/microsoft/mssql-django/blob/dev/CONTRIBUTING.md) for details.
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+All contributors are listed on GitHub: [Contributor Insights](https://github.com/microsoft/mssql-django/graphs/contributors)
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+Most contributions require a Contributor License Agreement (CLA). For details, visit https://cla.opensource.microsoft.com. A CLA bot will guide you when you submit a pull request.
 
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
-## Security Reporting Instructions
+## Security
 
-For security reporting instructions please refer to the [`SECURITY.md`](SECURITY.md) file in this repository.
+For security reporting instructions please refer to [`SECURITY.md`](https://github.com/microsoft/mssql-django/blob/dev/SECURITY.md).
 
 ## Trademarks
 
