@@ -5,6 +5,7 @@ from django import VERSION
 from django.db import connections, connection, models
 from django.db.models.functions import Now
 from django.test import TransactionTestCase, TestCase, skipUnlessDBFeature
+from django.test.utils import override_settings
 from django.utils import timezone
 
 from ..models import Author, BinaryData, Editor
@@ -193,3 +194,24 @@ class ExplainRegressionTests(TestCase):
         qs = Author.objects.all()
         with self.assertRaises(django.db.utils.NotSupportedError):
             qs.explain()
+
+
+class NowSQLTemplateTests(TestCase):
+    """Regression tests for #371 / PR #484: Now() should emit
+    SYSDATETIMEOFFSET() when USE_TZ=True, SYSDATETIME() otherwise."""
+
+    @override_settings(USE_TZ=True)
+    def test_now_uses_sysdatetimeoffset_when_use_tz(self):
+        qs = Author.objects.annotate(ts=Now()).filter(name="x")
+        compiler = qs.query.get_compiler(using="default")
+        sql_compiled, _ = compiler.as_sql()
+        self.assertIn("SYSDATETIMEOFFSET()", sql_compiled)
+        self.assertNotIn("SYSDATETIME()", sql_compiled)
+
+    @override_settings(USE_TZ=False)
+    def test_now_uses_sysdatetime_when_no_tz(self):
+        qs = Author.objects.annotate(ts=Now()).filter(name="x")
+        compiler = qs.query.get_compiler(using="default")
+        sql_compiled, _ = compiler.as_sql()
+        self.assertIn("SYSDATETIME()", sql_compiled)
+        self.assertNotIn("SYSDATETIMEOFFSET()", sql_compiled)
