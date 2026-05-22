@@ -202,7 +202,7 @@ class NowSQLTemplateTests(TestCase):
 
     @override_settings(USE_TZ=True)
     def test_now_uses_sysdatetimeoffset_when_use_tz(self):
-        qs = Author.objects.annotate(ts=Now()).filter(first_name="x")
+        qs = Author.objects.annotate(ts=Now()).filter(name="x")
         compiler = qs.query.get_compiler(using="default")
         sql_compiled, _ = compiler.as_sql()
         self.assertIn("SYSDATETIMEOFFSET()", sql_compiled)
@@ -210,7 +210,7 @@ class NowSQLTemplateTests(TestCase):
 
     @override_settings(USE_TZ=False)
     def test_now_uses_sysdatetime_when_no_tz(self):
-        qs = Author.objects.annotate(ts=Now()).filter(first_name="x")
+        qs = Author.objects.annotate(ts=Now()).filter(name="x")
         compiler = qs.query.get_compiler(using="default")
         sql_compiled, _ = compiler.as_sql()
         self.assertIn("SYSDATETIME()", sql_compiled)
