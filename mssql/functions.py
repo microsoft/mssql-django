@@ -5,6 +5,7 @@ import json
 import itertools
 
 from django import VERSION
+from django.conf import settings
 from django.core import validators
 from django.db import NotSupportedError, connections, transaction
 from django.db.models import BooleanField, CheckConstraint, Q, Value
@@ -169,9 +170,9 @@ def sqlserver_exists(self, compiler, connection, template=None, **extra_context)
     return sql, params
 
 def sqlserver_now(self, compiler, connection, **extra_context):
-        return self.as_sql(
-            compiler, connection, template="SYSDATETIME()", **extra_context
-        )
+    if settings.USE_TZ:
+        return self.as_sql(compiler, connection, template="SYSDATETIMEOFFSET()", **extra_context)
+    return self.as_sql(compiler, connection, template="SYSDATETIME()", **extra_context)
 
 def sqlserver_lookup(self, compiler, connection):
     # MSSQL doesn't allow EXISTS() to be compared to another expression

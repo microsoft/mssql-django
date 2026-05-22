@@ -567,6 +567,8 @@ class DatabaseOperations(BaseDatabaseOperations):
     def subtract_temporals(self, internal_type, lhs, rhs):
         lhs_sql, lhs_params = lhs
         rhs_sql, rhs_params = rhs
+        # Normalize to tuples so mixed list/tuple concatenation never fails
+        # (compiler.compile() may return either type for params).
         lhs_params = tuple(lhs_params)
         rhs_params = tuple(rhs_params)
         if internal_type == 'DateField':

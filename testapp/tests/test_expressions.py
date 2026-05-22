@@ -214,3 +214,86 @@ class TestStringAggOrderingRegression(TestCase):
 
         self.assertEqual(values, ['Alpha'])
         self.assertNotIn('WITHIN GROUP', ctx[0]['sql'])
+
+
+class TestSubtractTemporals(TestCase):
+    """
+    Regression tests for subtract_temporals() handling mixed list/tuple params.
+    See https://github.com/microsoft/mssql-django/issues/368
+    """
+
+    def _get_ops(self):
+        from django.db import connection
+        return connection.ops
+
+    def test_date_field_both_tuples(self):
+        ops = self._get_ops()
+        lhs = ('%s', ('2024-01-15',))
+        rhs = ('%s', ('2024-01-01',))
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertIn('DATEDIFF', sql)
+        self.assertEqual(params, ('2024-01-01', '2024-01-15'))
+
+    def test_date_field_both_lists(self):
+        ops = self._get_ops()
+        lhs = ('%s', ['2024-01-15'])
+        rhs = ('%s', ['2024-01-01'])
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertEqual(params, ('2024-01-01', '2024-01-15'))
+
+    def test_date_field_mixed_list_and_tuple(self):
+        """The exact scenario from issue #368: list + empty tuple."""
+        ops = self._get_ops()
+        lhs = ('%s', ())       # column ref with no params (tuple)
+        rhs = ('%s', ['2015-01-01'])  # constant value (list)
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertEqual(params, ('2015-01-01',))
+
+    def test_date_field_mixed_tuple_and_list(self):
+        ops = self._get_ops()
+        lhs = ('%s', ['2024-06-15'])
+        rhs = ('%s', ())
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertEqual(params, ('2024-06-15',))
+
+    def test_datetime_field_both_tuples(self):
+        ops = self._get_ops()
+        lhs = ('%s', ('2024-01-15 12:00:00',))
+        rhs = ('%s', ('2024-01-01 00:00:00',))
+        sql, params = ops.subtract_temporals('DateTimeField', lhs, rhs)
+        self.assertIn('DATEDIFF', sql)
+        # Pattern: rhs + lhs*2 + rhs
+        self.assertEqual(params, (
+            '2024-01-01 00:00:00',
+            '2024-01-15 12:00:00', '2024-01-15 12:00:00',
+            '2024-01-01 00:00:00',
+        ))
+
+    def test_datetime_field_mixed_list_and_tuple(self):
+        ops = self._get_ops()
+        lhs = ('%s', ())
+        rhs = ('%s', ['2024-01-01 00:00:00'])
+        sql, params = ops.subtract_temporals('DateTimeField', lhs, rhs)
+        # rhs + lhs*2 + rhs = ('2024-01-01',) + () + ('2024-01-01',)
+        self.assertEqual(params, ('2024-01-01 00:00:00', '2024-01-01 00:00:00'))
+
+    def test_datetime_field_both_lists(self):
+        ops = self._get_ops()
+        lhs = ('%s', ['2024-01-15 12:00:00'])
+        rhs = ('%s', ['2024-01-01 00:00:00'])
+        sql, params = ops.subtract_temporals('DateTimeField', lhs, rhs)
+        self.assertEqual(params, (
+            '2024-01-01 00:00:00',
+            '2024-01-15 12:00:00', '2024-01-15 12:00:00',
+            '2024-01-01 00:00:00',
+        ))
+
+    def test_date_field_no_params(self):
+        """Both sides are column references (no params)."""
+        ops = self._get_ops()
+        lhs = ('[t].[start_date]', ())
+        rhs = ('[t].[end_date]', ())
+        sql, params = ops.subtract_temporals('DateField', lhs, rhs)
+        self.assertEqual(params, ())
+        self.assertIn('[t].[start_date]', sql)
+        self.assertIn('[t].[end_date]', sql)

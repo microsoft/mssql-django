@@ -4,6 +4,7 @@
 """
 Tests for mssql/base.py utility functions and classes.
 """
+
 import struct
 import datetime
 from decimal import Decimal
@@ -18,6 +19,9 @@ from mssql.base import (
     prepare_token_for_odbc,
     handle_datetimeoffset,
     DatabaseWrapper,
+    EDITION_AZURE_SQL_DB,
+    EDITION_AZURE_SQL_MANAGED_INSTANCE,
+    EDITION_AZURE_SQL_FABRIC,
 )
 
 
@@ -26,27 +30,27 @@ class TestEncodeValue(SimpleTestCase):
 
     def test_simple_value(self):
         """Simple values without special characters should pass through unchanged."""
-        self.assertEqual(encode_value('simple'), 'simple')
-        self.assertEqual(encode_value('MyPassword123'), 'MyPassword123')
+        self.assertEqual(encode_value("simple"), "simple")
+        self.assertEqual(encode_value("MyPassword123"), "MyPassword123")
 
     def test_value_with_semicolon(self):
         """Values containing semicolons should be wrapped in curly braces."""
-        self.assertEqual(encode_value('pass;word'), '{pass;word}')
-        self.assertEqual(encode_value('a;b;c'), '{a;b;c}')
+        self.assertEqual(encode_value("pass;word"), "{pass;word}")
+        self.assertEqual(encode_value("a;b;c"), "{a;b;c}")
 
     def test_value_starting_with_curly_brace(self):
         """Values starting with { should be wrapped and escaped."""
         # '{value}' -> the } is escaped to }}, then wrapped: {{value}}}
-        self.assertEqual(encode_value('{value}'), '{{value}}}')
-        self.assertEqual(encode_value('  {spaced}'), '{  {spaced}}}')
+        self.assertEqual(encode_value("{value}"), "{{value}}}")
+        self.assertEqual(encode_value("  {spaced}"), "{  {spaced}}}")
 
     def test_value_with_right_curly_brace(self):
         """Right curly braces should be escaped when wrapping is needed."""
-        self.assertEqual(encode_value('pass}word;'), '{pass}}word;}')
+        self.assertEqual(encode_value("pass}word;"), "{pass}}word;}")
 
     def test_empty_string(self):
         """Empty string should pass through unchanged."""
-        self.assertEqual(encode_value(''), '')
+        self.assertEqual(encode_value(""), "")
 
 
 class TestEncodeConnectionString(SimpleTestCase):
@@ -54,34 +58,34 @@ class TestEncodeConnectionString(SimpleTestCase):
 
     def test_simple_connection_string(self):
         """Test basic connection string encoding."""
-        fields = {'DRIVER': 'ODBC Driver 18 for SQL Server', 'SERVER': 'localhost'}
+        fields = {"DRIVER": "ODBC Driver 18 for SQL Server", "SERVER": "localhost"}
         result = encode_connection_string(fields)
-        self.assertIn('DRIVER=ODBC Driver 18 for SQL Server', result)
-        self.assertIn('SERVER=localhost', result)
+        self.assertIn("DRIVER=ODBC Driver 18 for SQL Server", result)
+        self.assertIn("SERVER=localhost", result)
 
     def test_connection_string_with_special_chars(self):
         """Test connection string with values containing special characters."""
-        fields = {'PASSWORD': 'pass;word'}
+        fields = {"PASSWORD": "pass;word"}
         result = encode_connection_string(fields)
-        self.assertEqual(result, 'PASSWORD={pass;word}')
+        self.assertEqual(result, "PASSWORD={pass;word}")
 
     def test_empty_fields(self):
         """Test with empty fields dictionary."""
         result = encode_connection_string({})
-        self.assertEqual(result, '')
+        self.assertEqual(result, "")
 
     def test_multiple_fields(self):
         """Test with multiple fields."""
         fields = {
-            'DRIVER': 'ODBC Driver 18 for SQL Server',
-            'SERVER': 'localhost',
-            'DATABASE': 'testdb',
-            'UID': 'testuser',
+            "DRIVER": "ODBC Driver 18 for SQL Server",
+            "SERVER": "localhost",
+            "DATABASE": "testdb",
+            "UID": "testuser",
         }
         result = encode_connection_string(fields)
         # All keys should be present
         for key in fields:
-            self.assertIn(f'{key}=', result)
+            self.assertIn(f"{key}=", result)
 
 
 class TestPrepareTokenForOdbc(SimpleTestCase):
@@ -104,10 +108,10 @@ class TestPrepareTokenForOdbc(SimpleTestCase):
         # Skip the 4-byte length header
         payload = result[4:]
         # 'A' should be followed by null byte
-        self.assertEqual(payload[0], ord('A'))
+        self.assertEqual(payload[0], ord("A"))
         self.assertEqual(payload[1], 0)
         # 'B' should be followed by null byte
-        self.assertEqual(payload[2], ord('B'))
+        self.assertEqual(payload[2], ord("B"))
         self.assertEqual(payload[3], 0)
 
     def test_invalid_token_type(self):
@@ -134,10 +138,8 @@ class TestPrepareTokenForOdbc(SimpleTestCase):
 class TestHandleDatetimeoffset(SimpleTestCase):
     """Tests for the handle_datetimeoffset function."""
 
-    def test_datetime_conversion(self):
-        """Test conversion of binary datetime offset to Python datetime."""
-        # Pack a known datetime: 2023-06-15 14:30:45.123456
-        # Format: year, month, day, hour, minute, second, nanoseconds (as microseconds * 1000), tz_hour, tz_min
+    def test_datetime_conversion_utc(self):
+        """Test conversion of binary datetime offset with UTC (zero offset)."""
         dto_bytes = struct.pack("<6hI2h", 2023, 6, 15, 14, 30, 45, 123456000, 0, 0)
         result = handle_datetimeoffset(dto_bytes)
 
@@ -149,10 +151,50 @@ class TestHandleDatetimeoffset(SimpleTestCase):
         self.assertEqual(result.minute, 30)
         self.assertEqual(result.second, 45)
         self.assertEqual(result.microsecond, 123456)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(0))
 
-    def test_datetime_edge_case(self):
-        """Test with edge case values."""
-        # Midnight on Jan 1, 2000
+    def test_datetime_positive_offset(self):
+        """Test conversion with a positive timezone offset (+05:30 IST)."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 1, 10, 9, 0, 0, 0, 5, 30)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.year, 2024)
+        self.assertEqual(result.hour, 9)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(hours=5, minutes=30))
+
+    def test_datetime_negative_offset(self):
+        """Test conversion with a negative timezone offset (-05:00 EST)."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 12, 25, 18, 0, 0, 0, -5, 0)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.year, 2024)
+        self.assertEqual(result.hour, 18)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(hours=-5))
+
+    def test_datetime_negative_half_hour_offset(self):
+        """Test conversion with a negative half-hour offset (-09:30 Marquesas)."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 7, 1, 12, 0, 0, 0, -9, -30)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.hour, 12)
+        self.assertIsNotNone(result.tzinfo)
+        expected = datetime.timedelta(hours=-9, minutes=-30)
+        self.assertEqual(result.utcoffset(), expected)
+
+    def test_datetime_positive_three_quarter_offset(self):
+        """Test conversion with +05:45 (Nepal) offset."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 3, 15, 10, 30, 0, 0, 5, 45)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.hour, 10)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(hours=5, minutes=45))
+
+    def test_datetime_edge_case_midnight_utc(self):
+        """Test with edge case: midnight on Jan 1, 2000 at UTC."""
         dto_bytes = struct.pack("<6hI2h", 2000, 1, 1, 0, 0, 0, 0, 0, 0)
         result = handle_datetimeoffset(dto_bytes)
 
@@ -163,6 +205,7 @@ class TestHandleDatetimeoffset(SimpleTestCase):
         self.assertEqual(result.minute, 0)
         self.assertEqual(result.second, 0)
         self.assertEqual(result.microsecond, 0)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(0))
 
 
 class TestDatabaseWrapperIsDriverNotFoundError(SimpleTestCase):
@@ -211,116 +254,112 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
     def test_basic_connection_string(self):
         """Test basic connection string building."""
         conn_params = {
-            'NAME': 'testdb',
-            'HOST': 'localhost',
-            'USER': 'testuser',
-            'PASSWORD': 'testpass',
-            'OPTIONS': {},
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {},
         }
-        driver = 'ODBC Driver 18 for SQL Server'
+        driver = "ODBC Driver 18 for SQL Server"
         result = self.wrapper._build_connection_string(conn_params, driver)
 
-        self.assertIn('DRIVER=ODBC Driver 18 for SQL Server', result)
-        self.assertIn('SERVER=localhost', result)
-        self.assertIn('DATABASE=testdb', result)
-        self.assertIn('UID=testuser', result)
-        self.assertIn('PWD=testpass', result)
+        self.assertIn("DRIVER=ODBC Driver 18 for SQL Server", result)
+        self.assertIn("SERVER=localhost", result)
+        self.assertIn("DATABASE=testdb", result)
+        self.assertIn("UID=testuser", result)
+        self.assertIn("PWD=testpass", result)
 
     def test_connection_string_with_port(self):
         """Test connection string with port number."""
         conn_params = {
-            'NAME': 'testdb',
-            'HOST': 'localhost',
-            'PORT': 1433,
-            'USER': 'testuser',
-            'PASSWORD': 'testpass',
-            'OPTIONS': {},
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "PORT": 1433,
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {},
         }
-        driver = 'ODBC Driver 18 for SQL Server'
+        driver = "ODBC Driver 18 for SQL Server"
         result = self.wrapper._build_connection_string(conn_params, driver)
 
         # Microsoft drivers use comma for port
-        self.assertIn('SERVER=localhost,1433', result)
+        self.assertIn("SERVER=localhost,1433", result)
 
     def test_connection_string_with_dsn(self):
         """Test connection string with DSN."""
         conn_params = {
-            'NAME': 'testdb',
-            'HOST': 'localhost',
-            'OPTIONS': {'dsn': 'MyDSN'},
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "OPTIONS": {"dsn": "MyDSN"},
         }
-        driver = 'ODBC Driver 18 for SQL Server'
+        driver = "ODBC Driver 18 for SQL Server"
         result = self.wrapper._build_connection_string(conn_params, driver)
 
-        self.assertIn('DSN=MyDSN', result)
+        self.assertIn("DSN=MyDSN", result)
         # DRIVER should not be present when using DSN
-        self.assertNotIn('DRIVER=', result)
+        self.assertNotIn("DRIVER=", result)
 
     def test_connection_string_trusted_connection(self):
         """Test connection string with trusted connection (no user/password)."""
         conn_params = {
-            'NAME': 'testdb',
-            'HOST': 'localhost',
-            'OPTIONS': {},
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "OPTIONS": {},
         }
-        driver = 'ODBC Driver 18 for SQL Server'
+        driver = "ODBC Driver 18 for SQL Server"
         result = self.wrapper._build_connection_string(conn_params, driver)
 
-        self.assertIn('Trusted_Connection=yes', result)
-        self.assertNotIn('UID=', result)
-        self.assertNotIn('PWD=', result)
+        self.assertIn("Trusted_Connection=yes", result)
+        self.assertNotIn("UID=", result)
+        self.assertNotIn("PWD=", result)
 
     def test_connection_string_with_extra_params(self):
         """Test connection string with extra parameters."""
         conn_params = {
-            'NAME': 'testdb',
-            'HOST': 'localhost',
-            'USER': 'testuser',
-            'PASSWORD': 'testpass',
-            'OPTIONS': {
-                'extra_params': 'Encrypt=yes;TrustServerCertificate=yes'
-            },
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {"extra_params": "Encrypt=yes;TrustServerCertificate=yes"},
         }
-        driver = 'ODBC Driver 18 for SQL Server'
+        driver = "ODBC Driver 18 for SQL Server"
         result = self.wrapper._build_connection_string(conn_params, driver)
 
-        self.assertIn('Encrypt=yes', result)
-        self.assertIn('TrustServerCertificate=yes', result)
+        self.assertIn("Encrypt=yes", result)
+        self.assertIn("TrustServerCertificate=yes", result)
 
     def test_connection_string_freetds(self):
         """Test connection string building for FreeTDS driver."""
         conn_params = {
-            'NAME': 'testdb',
-            'HOST': 'myserver',
-            'PORT': 1433,
-            'OPTIONS': {
-                'host_is_server': True,
+            "NAME": "testdb",
+            "HOST": "myserver",
+            "PORT": 1433,
+            "OPTIONS": {
+                "host_is_server": True,
             },
         }
-        driver = 'FreeTDS'
+        driver = "FreeTDS"
         result = self.wrapper._build_connection_string(conn_params, driver)
 
         # FreeTDS uses PORT separately when host_is_server is True
-        self.assertIn('SERVER=myserver', result)
-        self.assertIn('PORT=1433', result)
-        self.assertIn('Integrated Security=SSPI', result)
+        self.assertIn("SERVER=myserver", result)
+        self.assertIn("PORT=1433", result)
+        self.assertIn("Integrated Security=SSPI", result)
 
     def test_connection_string_active_directory_interactive(self):
         """Test that PASSWORD is not included with ActiveDirectoryInteractive auth."""
         conn_params = {
-            'NAME': 'testdb',
-            'HOST': 'localhost',
-            'USER': 'user@domain.com',
-            'PASSWORD': 'ignored',
-            'OPTIONS': {
-                'extra_params': 'Authentication=ActiveDirectoryInteractive'
-            },
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "USER": "user@domain.com",
+            "PASSWORD": "ignored",
+            "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryInteractive"},
         }
-        driver = 'ODBC Driver 18 for SQL Server'
+        driver = "ODBC Driver 18 for SQL Server"
         result = self.wrapper._build_connection_string(conn_params, driver)
 
-        self.assertIn('UID=user@domain.com', result)
-        self.assertNotIn('PWD=', result)
+        self.assertIn("UID=user@domain.com", result)
+        self.assertNotIn("PWD=", result)
 
 
 class TestCursorWrapperAsSqlType(SimpleTestCase):
@@ -328,6 +367,7 @@ class TestCursorWrapperAsSqlType(SimpleTestCase):
 
     def setUp(self):
         from mssql.base import CursorWrapper
+
         # Create a mock CursorWrapper
         mock_cursor = mock.MagicMock()
         mock_connection = mock.MagicMock()
@@ -336,56 +376,58 @@ class TestCursorWrapperAsSqlType(SimpleTestCase):
 
     def test_string_types(self):
         """Test SQL type detection for strings."""
-        self.assertEqual(self.wrapper._as_sql_type(str, ''), 'NVARCHAR')
-        self.assertEqual(self.wrapper._as_sql_type(str, 'short'), 'NVARCHAR(5)')
-        self.assertEqual(self.wrapper._as_sql_type(str, 'x' * 5000), 'NVARCHAR(max)')
+        self.assertEqual(self.wrapper._as_sql_type(str, ""), "NVARCHAR")
+        self.assertEqual(self.wrapper._as_sql_type(str, "short"), "NVARCHAR(5)")
+        self.assertEqual(self.wrapper._as_sql_type(str, "x" * 5000), "NVARCHAR(max)")
 
     def test_integer_types(self):
         """Test SQL type detection for integers."""
-        self.assertEqual(self.wrapper._as_sql_type(int, 100), 'INT')
-        self.assertEqual(self.wrapper._as_sql_type(int, -100), 'INT')
+        self.assertEqual(self.wrapper._as_sql_type(int, 100), "INT")
+        self.assertEqual(self.wrapper._as_sql_type(int, -100), "INT")
         # Values exceeding INT range should be BIGINT
-        self.assertEqual(self.wrapper._as_sql_type(int, 0x7FFFFFFF + 1), 'BIGINT')
-        self.assertEqual(self.wrapper._as_sql_type(int, -0x7FFFFFFF - 1), 'BIGINT')
+        self.assertEqual(self.wrapper._as_sql_type(int, 0x7FFFFFFF + 1), "BIGINT")
+        self.assertEqual(self.wrapper._as_sql_type(int, -0x7FFFFFFF - 1), "BIGINT")
 
     def test_float_type(self):
         """Test SQL type detection for floats."""
-        self.assertEqual(self.wrapper._as_sql_type(float, 3.14), 'DOUBLE PRECISION')
+        self.assertEqual(self.wrapper._as_sql_type(float, 3.14), "DOUBLE PRECISION")
 
     def test_bool_type(self):
         """Test SQL type detection for booleans."""
-        self.assertEqual(self.wrapper._as_sql_type(bool, True), 'BIT')
-        self.assertEqual(self.wrapper._as_sql_type(bool, False), 'BIT')
+        self.assertEqual(self.wrapper._as_sql_type(bool, True), "BIT")
+        self.assertEqual(self.wrapper._as_sql_type(bool, False), "BIT")
 
     def test_decimal_type(self):
         """Test SQL type detection for Decimal."""
-        self.assertEqual(self.wrapper._as_sql_type(Decimal, Decimal('123.45')), 'NUMERIC')
+        self.assertEqual(
+            self.wrapper._as_sql_type(Decimal, Decimal("123.45")), "NUMERIC"
+        )
 
     def test_datetime_types(self):
         """Test SQL type detection for datetime types."""
         self.assertEqual(
             self.wrapper._as_sql_type(datetime.datetime, datetime.datetime.now()),
-            'DATETIME2'
+            "DATETIME2",
         )
         self.assertEqual(
-            self.wrapper._as_sql_type(datetime.date, datetime.date.today()),
-            'DATE'
+            self.wrapper._as_sql_type(datetime.date, datetime.date.today()), "DATE"
         )
         self.assertEqual(
-            self.wrapper._as_sql_type(datetime.time, datetime.time(12, 30)),
-            'TIME'
+            self.wrapper._as_sql_type(datetime.time, datetime.time(12, 30)), "TIME"
         )
 
     def test_uuid_type(self):
         """Test SQL type detection for UUID."""
         self.assertEqual(
-            self.wrapper._as_sql_type(UUID, UUID('12345678-1234-5678-1234-567812345678')),
-            'uniqueidentifier'
+            self.wrapper._as_sql_type(
+                UUID, UUID("12345678-1234-5678-1234-567812345678")
+            ),
+            "uniqueidentifier",
         )
 
     def test_bytes_type(self):
         """Test SQL type detection for bytes."""
-        self.assertEqual(self.wrapper._as_sql_type(bytes, b'binary_data'), 'VARBINARY')
+        self.assertEqual(self.wrapper._as_sql_type(bytes, b"binary_data"), "VARBINARY")
 
     def test_unsupported_type(self):
         """Test that unsupported types raise NotImplementedError."""
@@ -398,6 +440,7 @@ class TestCursorWrapperFormatSql(SimpleTestCase):
 
     def setUp(self):
         from mssql.base import CursorWrapper
+
         mock_cursor = mock.MagicMock()
         mock_connection = mock.MagicMock()
         mock_connection.driver_charset = None
@@ -418,7 +461,7 @@ class TestCursorWrapperFormatSql(SimpleTestCase):
     def test_format_sql_with_params(self):
         """Test SQL formatting replaces %s with ?."""
         sql = "SELECT * FROM users WHERE id = %s AND name = %s"
-        result = self.wrapper.format_sql(sql, ['param1', 'param2'])
+        result = self.wrapper.format_sql(sql, ["param1", "param2"])
         self.assertEqual(result, "SELECT * FROM users WHERE id = ? AND name = ?")
 
 
@@ -427,6 +470,7 @@ class TestCursorWrapperFormatParams(SimpleTestCase):
 
     def setUp(self):
         from mssql.base import CursorWrapper
+
         mock_cursor = mock.MagicMock()
         mock_connection = mock.MagicMock()
         mock_connection.driver_charset = None
@@ -439,13 +483,13 @@ class TestCursorWrapperFormatParams(SimpleTestCase):
 
     def test_format_params_string(self):
         """Test formatting string parameters."""
-        result = self.wrapper.format_params(['hello', 'world'])
-        self.assertEqual(result, ('hello', 'world'))
+        result = self.wrapper.format_params(["hello", "world"])
+        self.assertEqual(result, ("hello", "world"))
 
     def test_format_params_bytes(self):
         """Test formatting bytes parameters."""
-        result = self.wrapper.format_params([b'binary'])
-        self.assertEqual(result, (b'binary',))
+        result = self.wrapper.format_params([b"binary"])
+        self.assertEqual(result, (b"binary",))
 
     def test_format_params_bool(self):
         """Test formatting boolean parameters (converted to 1/0)."""
@@ -454,17 +498,173 @@ class TestCursorWrapperFormatParams(SimpleTestCase):
 
     def test_format_params_mixed(self):
         """Test formatting mixed parameter types."""
-        result = self.wrapper.format_params([True, 'text', 123, None])
-        self.assertEqual(result, (1, 'text', 123, None))
+        result = self.wrapper.format_params([True, "text", 123, None])
+        self.assertEqual(result, (1, "text", 123, None))
 
     def test_format_params_with_driver_charset(self):
         """Test formatting with driver charset encoding."""
         from mssql.base import CursorWrapper
+
         mock_cursor = mock.MagicMock()
         mock_connection = mock.MagicMock()
-        mock_connection.driver_charset = 'utf-8'
+        mock_connection.driver_charset = "utf-8"
         wrapper = CursorWrapper(mock_cursor, mock_connection)
 
-        result = wrapper.format_params(['unicode: \u00e9'])
+        result = wrapper.format_params(["unicode: \u00e9"])
         # String should be encoded
-        self.assertEqual(result[0], 'unicode: é')
+        self.assertEqual(result[0], "unicode: é")
+
+
+class TestEditionDetection(SimpleTestCase):
+    """Tests for EngineEdition detection including Fabric support."""
+
+    def _make_wrapper(self, alias):
+        """Create a bare DatabaseWrapper without calling __init__."""
+        wrapper = object.__new__(DatabaseWrapper)
+        wrapper.alias = alias
+        return wrapper
+
+    def _mock_server_properties(self, wrapper, engine_edition, product_version="12.0.2000.8"):
+        """Mock temporary_connection to return EngineEdition and ProductVersion."""
+        mock_cursor = mock.MagicMock()
+        mock_cursor.fetchone.return_value = (product_version, engine_edition)
+        mock_ctx = mock.MagicMock()
+        mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
+        mock_ctx.__exit__ = mock.MagicMock(return_value=False)
+        wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
+
+    def _clear_caches(self, wrapper):
+        """Clear both class-level and instance-level caches."""
+        # Clear class-level mutable default dict caches
+        azure_cache = DatabaseWrapper.__dict__["to_azure_sql_db"].func.__defaults__[0]
+        azure_cache.pop(wrapper.alias, None)
+        version_cache = DatabaseWrapper.__dict__[
+            "sql_server_version"
+        ].func.__defaults__[0]
+        version_cache.pop(wrapper.alias, None)
+        # Clear instance-level cached_property values
+        wrapper.__dict__.pop("to_azure_sql_db", None)
+        wrapper.__dict__.pop("sql_server_version", None)
+
+    def test_fabric_detected_as_azure(self):
+        """Fabric SQL Database (EngineEdition=12) should be recognized as Azure."""
+        wrapper = self._make_wrapper("test_fabric")
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_FABRIC)
+        self.assertTrue(wrapper.to_azure_sql_db)
+        self._clear_caches(wrapper)
+
+    def test_azure_sql_db_detected(self):
+        """Azure SQL DB (EngineEdition=5) should be recognized."""
+        wrapper = self._make_wrapper("test_azure_db")
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_DB)
+        self.assertTrue(wrapper.to_azure_sql_db)
+        self._clear_caches(wrapper)
+
+    def test_azure_managed_instance_detected(self):
+        """Azure SQL Managed Instance (EngineEdition=8) should be recognized."""
+        wrapper = self._make_wrapper("test_azure_mi")
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_MANAGED_INSTANCE)
+        self.assertTrue(wrapper.to_azure_sql_db)
+        self._clear_caches(wrapper)
+
+    def test_on_prem_not_detected_as_azure(self):
+        """On-premises editions (2=Standard, 3=Enterprise) should not be Azure."""
+        for edition in (1, 2, 3, 4):
+            wrapper = self._make_wrapper(f"test_onprem_{edition}")
+            self._mock_server_properties(wrapper, edition, "16.0.4135.4")
+            self.assertFalse(wrapper.to_azure_sql_db)
+            self._clear_caches(wrapper)
+
+    def test_unrecognized_edition_not_detected_as_azure(self):
+        """Unrecognized editions (e.g. 6=Synapse dedicated, 9=SQL Edge) should not be Azure."""
+        for edition in (6, 9, 11):
+            wrapper = self._make_wrapper(f"test_unknown_{edition}")
+            self._mock_server_properties(wrapper, edition, "16.0.4135.4")
+            self.assertFalse(wrapper.to_azure_sql_db)
+            self._clear_caches(wrapper)
+
+    def test_single_query_populates_both_caches(self):
+        """Accessing to_azure_sql_db should also populate sql_server_version cache."""
+        wrapper = self._make_wrapper("test_single_query")
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_FABRIC)
+        # Access to_azure_sql_db first
+        self.assertTrue(wrapper.to_azure_sql_db)
+        # sql_server_version should already be cached (no extra query)
+        latest = max(DatabaseWrapper._sql_server_versions.values())
+        self.assertEqual(wrapper.sql_server_version, latest)
+        # temporary_connection should have been called only once
+        self.assertEqual(wrapper.temporary_connection.call_count, 1)
+        self._clear_caches(wrapper)
+
+
+class TestSqlServerVersionDetection(SimpleTestCase):
+    """Tests for sql_server_version with cloud engines."""
+
+    def _make_wrapper(self, alias):
+        wrapper = object.__new__(DatabaseWrapper)
+        wrapper.alias = alias
+        return wrapper
+
+    def _mock_server_properties(self, wrapper, engine_edition, product_version="12.0.2000.8"):
+        """Mock temporary_connection to return EngineEdition and ProductVersion."""
+        mock_cursor = mock.MagicMock()
+        mock_cursor.fetchone.return_value = (product_version, engine_edition)
+        mock_ctx = mock.MagicMock()
+        mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
+        mock_ctx.__exit__ = mock.MagicMock(return_value=False)
+        wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
+
+    def _clear_caches(self, wrapper):
+        azure_cache = DatabaseWrapper.__dict__["to_azure_sql_db"].func.__defaults__[0]
+        azure_cache.pop(wrapper.alias, None)
+        version_cache = DatabaseWrapper.__dict__[
+            "sql_server_version"
+        ].func.__defaults__[0]
+        version_cache.pop(wrapper.alias, None)
+        wrapper.__dict__.pop("to_azure_sql_db", None)
+        wrapper.__dict__.pop("sql_server_version", None)
+
+    def test_fabric_gets_latest_version(self):
+        """Fabric should get the latest supported version, not 2014."""
+        wrapper = self._make_wrapper("test_fabric_ver")
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_FABRIC)
+        latest = max(DatabaseWrapper._sql_server_versions.values())
+        self.assertEqual(wrapper.sql_server_version, latest)
+        self._clear_caches(wrapper)
+
+    def test_azure_sql_db_preserves_product_version(self):
+        """Azure SQL DB should use ProductVersion lookup, not latest version.
+
+        Azure SQL DB reports ProductVersion 12.0.2000.8 which maps to 2014.
+        Feature checks use 'or to_azure_sql_db' as a fallback, so changing
+        this would risk breaking existing Azure SQL DB connections.
+        """
+        wrapper = self._make_wrapper("test_azure_ver")
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_DB)
+        self.assertEqual(wrapper.sql_server_version, 2014)
+        self._clear_caches(wrapper)
+
+    def test_azure_managed_instance_preserves_product_version(self):
+        """Azure SQL MI should use ProductVersion lookup, not latest version."""
+        wrapper = self._make_wrapper("test_azure_mi_ver")
+        self._mock_server_properties(wrapper, EDITION_AZURE_SQL_MANAGED_INSTANCE)
+        self.assertEqual(wrapper.sql_server_version, 2014)
+        self._clear_caches(wrapper)
+
+    def test_on_prem_sql2022_version(self):
+        """On-premises SQL Server 2022 (ProductVersion 16.x) should return 2022."""
+        wrapper = self._make_wrapper("test_onprem_2022")
+        self._mock_server_properties(wrapper, 3, "16.0.4135.4")
+        self.assertEqual(wrapper.sql_server_version, 2022)
+        self._clear_caches(wrapper)
+
+    def test_on_prem_unsupported_version_raises(self):
+        """Unsupported on-premises version should raise NotSupportedError."""
+        from django.db import NotSupportedError
+
+        wrapper = self._make_wrapper("test_onprem_bad")
+        self._mock_server_properties(wrapper, 3, "99.0.0.0")
+
+        with self.assertRaises(NotSupportedError):
+            _ = wrapper.sql_server_version
+        self._clear_caches(wrapper)
