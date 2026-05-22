@@ -138,10 +138,8 @@ class TestPrepareTokenForOdbc(SimpleTestCase):
 class TestHandleDatetimeoffset(SimpleTestCase):
     """Tests for the handle_datetimeoffset function."""
 
-    def test_datetime_conversion(self):
-        """Test conversion of binary datetime offset to Python datetime."""
-        # Pack a known datetime: 2023-06-15 14:30:45.123456
-        # Format: year, month, day, hour, minute, second, nanoseconds (as microseconds * 1000), tz_hour, tz_min
+    def test_datetime_conversion_utc(self):
+        """Test conversion of binary datetime offset with UTC (zero offset)."""
         dto_bytes = struct.pack("<6hI2h", 2023, 6, 15, 14, 30, 45, 123456000, 0, 0)
         result = handle_datetimeoffset(dto_bytes)
 
@@ -153,10 +151,50 @@ class TestHandleDatetimeoffset(SimpleTestCase):
         self.assertEqual(result.minute, 30)
         self.assertEqual(result.second, 45)
         self.assertEqual(result.microsecond, 123456)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(0))
 
-    def test_datetime_edge_case(self):
-        """Test with edge case values."""
-        # Midnight on Jan 1, 2000
+    def test_datetime_positive_offset(self):
+        """Test conversion with a positive timezone offset (+05:30 IST)."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 1, 10, 9, 0, 0, 0, 5, 30)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.year, 2024)
+        self.assertEqual(result.hour, 9)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(hours=5, minutes=30))
+
+    def test_datetime_negative_offset(self):
+        """Test conversion with a negative timezone offset (-05:00 EST)."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 12, 25, 18, 0, 0, 0, -5, 0)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.year, 2024)
+        self.assertEqual(result.hour, 18)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(hours=-5))
+
+    def test_datetime_negative_half_hour_offset(self):
+        """Test conversion with a negative half-hour offset (-09:30 Marquesas)."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 7, 1, 12, 0, 0, 0, -9, -30)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.hour, 12)
+        self.assertIsNotNone(result.tzinfo)
+        expected = datetime.timedelta(hours=-9, minutes=-30)
+        self.assertEqual(result.utcoffset(), expected)
+
+    def test_datetime_positive_three_quarter_offset(self):
+        """Test conversion with +05:45 (Nepal) offset."""
+        dto_bytes = struct.pack("<6hI2h", 2024, 3, 15, 10, 30, 0, 0, 5, 45)
+        result = handle_datetimeoffset(dto_bytes)
+
+        self.assertEqual(result.hour, 10)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(hours=5, minutes=45))
+
+    def test_datetime_edge_case_midnight_utc(self):
+        """Test with edge case: midnight on Jan 1, 2000 at UTC."""
         dto_bytes = struct.pack("<6hI2h", 2000, 1, 1, 0, 0, 0, 0, 0, 0)
         result = handle_datetimeoffset(dto_bytes)
 
@@ -167,6 +205,7 @@ class TestHandleDatetimeoffset(SimpleTestCase):
         self.assertEqual(result.minute, 0)
         self.assertEqual(result.second, 0)
         self.assertEqual(result.microsecond, 0)
+        self.assertEqual(result.utcoffset(), datetime.timedelta(0))
 
 
 class TestDatabaseWrapperIsDriverNotFoundError(SimpleTestCase):
