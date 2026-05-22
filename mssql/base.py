@@ -99,8 +99,13 @@ def encode_value(v):
 def handle_datetimeoffset(dto_value):
     # Decode bytes returned from SQL Server
     # source: https://github.com/mkleehammer/pyodbc/wiki/Using-an-Output-Converter-function
-    tup = struct.unpack("<6hI2h", dto_value)  # e.g., (2017, 3, 16, 10, 35, 18, 500000000)
-    return datetime.datetime(tup[0], tup[1], tup[2], tup[3], tup[4], tup[5], tup[6] // 1000)
+    # Format: 6 shorts (year, month, day, hour, minute, second),
+    #         1 unsigned int (nanoseconds), 2 shorts (tz_offset_hour, tz_offset_minute)
+    tup = struct.unpack("<6hI2h", dto_value)
+    return datetime.datetime(
+        tup[0], tup[1], tup[2], tup[3], tup[4], tup[5], tup[6] // 1000,
+        datetime.timezone(datetime.timedelta(hours=tup[7], minutes=tup[8])),
+    )
 
 
 class DatabaseWrapper(BaseDatabaseWrapper):

@@ -504,9 +504,15 @@ class SQLCompiler(compiler.SQLCompiler):
 
             explain = self.query.explain_info if django.VERSION >= (4, 0) else self.query.explain_query
             if explain:
+                if django.VERSION >= (4, 0):
+                    explain_format = explain.format
+                    explain_options = explain.options
+                else:
+                    explain_format = self.query.explain_format
+                    explain_options = self.query.explain_options
                 result.insert(0, self.connection.ops.explain_query_prefix(
-                    self.query.explain_format,
-                    **self.query.explain_options
+                    explain_format,
+                    **explain_options
                 ))
 
             if order_by:

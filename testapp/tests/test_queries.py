@@ -5,9 +5,10 @@ from django import VERSION
 from django.db import connections, connection, models
 from django.db.models.functions import Now
 from django.test import TransactionTestCase, TestCase, skipUnlessDBFeature
+from django.test.utils import override_settings
 from django.utils import timezone
 
-from ..models import Author, BinaryData
+from ..models import Author, BinaryData, Editor
 
 
 class TestTableWithTrigger(TransactionTestCase):
@@ -178,3 +179,39 @@ class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
             self.assertNotIn("SCOPE_IDENTITY", ctx[0]["sql"])
         finally:
             connection.features_class.can_return_rows_from_bulk_insert = old_return_rows_flag
+
+
+class ExplainRegressionTests(TestCase):
+    """Regression test for #409: explain() AttributeError on Django 4.0+.
+
+    Django 4.0 replaced query.explain_format/explain_options with
+    query.explain_info. The compiler must read the correct attributes
+    so .explain() raises NotSupportedError (not AttributeError).
+    """
+
+    def test_explain_raises_not_supported(self):
+        """explain() should raise NotSupportedError, not AttributeError."""
+        qs = Author.objects.all()
+        with self.assertRaises(django.db.utils.NotSupportedError):
+            qs.explain()
+
+
+class NowSQLTemplateTests(TestCase):
+    """Regression tests for #371 / PR #484: Now() should emit
+    SYSDATETIMEOFFSET() when USE_TZ=True, SYSDATETIME() otherwise."""
+
+    @override_settings(USE_TZ=True)
+    def test_now_uses_sysdatetimeoffset_when_use_tz(self):
+        qs = Author.objects.annotate(ts=Now()).filter(name="x")
+        compiler = qs.query.get_compiler(using="default")
+        sql_compiled, _ = compiler.as_sql()
+        self.assertIn("SYSDATETIMEOFFSET()", sql_compiled)
+        self.assertNotIn("SYSDATETIME()", sql_compiled)
+
+    @override_settings(USE_TZ=False)
+    def test_now_uses_sysdatetime_when_no_tz(self):
+        qs = Author.objects.annotate(ts=Now()).filter(name="x")
+        compiler = qs.query.get_compiler(using="default")
+        sql_compiled, _ = compiler.as_sql()
+        self.assertIn("SYSDATETIME()", sql_compiled)
+        self.assertNotIn("SYSDATETIMEOFFSET()", sql_compiled)
