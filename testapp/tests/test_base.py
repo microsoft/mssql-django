@@ -535,13 +535,9 @@ class TestEditionDetection(SimpleTestCase):
 
     def _clear_caches(self, wrapper):
         """Clear both class-level and instance-level caches."""
-        # Clear class-level mutable default dict caches
-        azure_cache = DatabaseWrapper.__dict__["to_azure_sql_db"].func.__defaults__[0]
-        azure_cache.pop(wrapper.alias, None)
-        version_cache = DatabaseWrapper.__dict__[
-            "sql_server_version"
-        ].func.__defaults__[0]
-        version_cache.pop(wrapper.alias, None)
+        # Clear class-level caches
+        DatabaseWrapper._known_azures.pop(wrapper.alias, None)
+        DatabaseWrapper._known_versions.pop(wrapper.alias, None)
         # Clear instance-level cached_property values
         wrapper.__dict__.pop("to_azure_sql_db", None)
         wrapper.__dict__.pop("sql_server_version", None)
@@ -615,12 +611,8 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
 
     def _clear_caches(self, wrapper):
-        azure_cache = DatabaseWrapper.__dict__["to_azure_sql_db"].func.__defaults__[0]
-        azure_cache.pop(wrapper.alias, None)
-        version_cache = DatabaseWrapper.__dict__[
-            "sql_server_version"
-        ].func.__defaults__[0]
-        version_cache.pop(wrapper.alias, None)
+        DatabaseWrapper._known_azures.pop(wrapper.alias, None)
+        DatabaseWrapper._known_versions.pop(wrapper.alias, None)
         wrapper.__dict__.pop("to_azure_sql_db", None)
         wrapper.__dict__.pop("sql_server_version", None)
 
