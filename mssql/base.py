@@ -296,6 +296,22 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             conn_params['NAME'] = 'master'
         return conn_params
 
+    # Authentication modes where the ODBC driver handles credential
+    # acquisition, so the backend must not inject PWD.
+    _AUTH_MODES_WITHOUT_PASSWORD = frozenset({
+        'activedirectoryintegrated',
+        'activedirectoryinteractive',
+        'activedirectorymsi',
+        'activedirectorydefault',
+        'activedirectorydeviceflow',
+    })
+
+    @staticmethod
+    def _get_authentication_mode(extra_params):
+        """Return the normalized Authentication mode from extra_params, or None."""
+        match = re.search(r'(?i)(?:^|;)\s*Authentication\s*=\s*([^;]+)', extra_params)
+        return match.group(1).strip().lower() if match else None
+
     def _build_connection_string(self, conn_params, driver):
         """Build ODBC connection string for the given driver."""
         database = conn_params['NAME']
@@ -308,6 +324,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         options = conn_params.get('OPTIONS', {})
         dsn = options.get('dsn', None)
         options_extra_params = options.get('extra_params', '')
+        auth_mode = self._get_authentication_mode(options_extra_params)
 
         # Microsoft driver names assumed here are:
         # * SQL Server Native Client 10.0/11.0
@@ -341,10 +358,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         if user:
             cstr_parts['UID'] = user
-            if 'Authentication=ActiveDirectoryInteractive' not in options_extra_params:
+            if auth_mode not in self._AUTH_MODES_WITHOUT_PASSWORD:
                 cstr_parts['PWD'] = password
         elif 'TOKEN' not in conn_params:
-            if ms_drivers.match(driver) and 'Authentication=ActiveDirectoryMsi' not in options_extra_params:
+            if auth_mode is not None:
+                # User supplied an explicit Authentication= keyword;
+                # do not inject Trusted_Connection or Integrated Security
+                # as the ODBC driver rejects that combination (FA001).
+                pass
+            elif ms_drivers.match(driver):
                 cstr_parts['Trusted_Connection'] = trusted_connection
             else:
                 cstr_parts['Integrated Security'] = 'SSPI'
