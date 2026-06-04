@@ -45,9 +45,14 @@ setup(
     },
     license='BSD',
     packages=find_packages(exclude=['testapp', 'testapp.*']),
+    python_requires='>=3.9',
     install_requires=[
         'django>=3.2,<6.1',
         'pyodbc>=3.0',
+        # zoneinfo (used in mssql/operations.py) needs an IANA tz
+        # database. Windows has none, so always install tzdata there.
+        # also pull it in on any platform that lacks system tz data.
+        'tzdata; sys_platform == "win32"',
     ],
     extras_require={
         'test': ['unittest-xml-reporting>=3.2.0'],
