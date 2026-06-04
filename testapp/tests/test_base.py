@@ -500,6 +500,57 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
         )
         self.assertEqual(result, 'sqlpassword')
 
+    def test_get_authentication_mode_ignores_braced_values(self):
+        """Test that Authentication= inside a braced value is not detected."""
+        result = DatabaseWrapper._get_authentication_mode(
+            'Application Name={foo;Authentication=SqlPassword};Encrypt=yes'
+        )
+        self.assertIsNone(result)
+
+    def test_get_authentication_mode_none_extra_params(self):
+        """Test that _get_authentication_mode handles None gracefully."""
+        self.assertIsNone(DatabaseWrapper._get_authentication_mode(None))
+
+    def test_connection_string_active_directory_interactive_no_user(self):
+        """Test ActiveDirectoryInteractive without USER skips Trusted_Connection."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryInteractive"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertNotIn("Trusted_Connection=", result)
+        self.assertNotIn("Integrated Security=", result)
+
+    def test_connection_string_active_directory_service_principal_keeps_pwd(self):
+        """Test that PWD is still included with Authentication=ActiveDirectoryServicePrincipal."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "USER": "app-id",
+            "PASSWORD": "client-secret",
+            "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryServicePrincipal"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertIn("UID=app-id", result)
+        self.assertIn("PWD=client-secret", result)
+
+    def test_connection_string_extra_params_none(self):
+        """Test that extra_params=None does not crash."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "OPTIONS": {"extra_params": None},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertIn("Trusted_Connection=yes", result)
+
 
 class TestCursorWrapperAsSqlType(SimpleTestCase):
     """Tests for CursorWrapper._as_sql_type method."""

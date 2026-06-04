@@ -308,9 +308,36 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     @staticmethod
     def _get_authentication_mode(extra_params):
-        """Return the normalized Authentication mode from extra_params, or None."""
-        match = re.search(r'(?i)(?:^|;)\s*Authentication\s*=\s*([^;]+)', extra_params)
-        return match.group(1).strip().lower() if match else None
+        """Return the normalized Authentication mode from extra_params, or None.
+
+        Parses semicolon-delimited key=value pairs while skipping content
+        inside braced values ({...}), which may contain literal semicolons
+        per the ODBC connection string spec (MS-ODBCSTR).
+
+        NOTE: this is a minimal parser sufficient for extracting a single
+        key. For a full spec-compliant ODBC connection string parser with
+        brace escaping, duplicate detection, and validation, see
+        mssql-python's ``connection_string_parser._ConnectionStringParser``.
+        """
+        if not extra_params:
+            return None
+        depth = 0
+        start = 0
+        for i, ch in enumerate(extra_params):
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth = max(0, depth - 1)
+            elif ch == ';' and depth == 0:
+                key, _, value = extra_params[start:i].partition('=')
+                if key.strip().lower() == 'authentication':
+                    return value.strip().lower()
+                start = i + 1
+        # last segment (no trailing semicolon)
+        key, _, value = extra_params[start:].partition('=')
+        if key.strip().lower() == 'authentication':
+            return value.strip().lower()
+        return None
 
     def _build_connection_string(self, conn_params, driver):
         """Build ODBC connection string for the given driver."""
@@ -323,7 +350,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         options = conn_params.get('OPTIONS', {})
         dsn = options.get('dsn', None)
-        options_extra_params = options.get('extra_params', '')
+        options_extra_params = options.get('extra_params') or ''
         auth_mode = self._get_authentication_mode(options_extra_params)
 
         # Microsoft driver names assumed here are:
