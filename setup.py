@@ -11,7 +11,6 @@ CLASSIFIERS = [
     "Operating System :: Microsoft :: Windows",
     'Programming Language :: Python',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
@@ -49,7 +48,6 @@ setup(
     install_requires=[
         'django>=3.2,<6.1',
         'pyodbc>=3.0',
-        'pytz',
     ],
     extras_require={
         'test': ['unittest-xml-reporting>=3.2.0'],
