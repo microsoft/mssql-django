@@ -5,7 +5,12 @@ import datetime
 import uuid
 import warnings
 import sys
-import zoneinfo
+
+try:
+    import zoneinfo
+except ImportError:
+    # Python 3.8 fallback
+    from backports import zoneinfo
 
 from django.conf import settings
 from django.db import NotSupportedError

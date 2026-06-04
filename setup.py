@@ -11,6 +11,7 @@ CLASSIFIERS = [
     "Operating System :: Microsoft :: Windows",
     'Programming Language :: Python',
     'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
@@ -45,13 +46,15 @@ setup(
     },
     license='BSD',
     packages=find_packages(exclude=['testapp', 'testapp.*']),
-    python_requires='>=3.9',
+    python_requires='>=3.8',
     install_requires=[
         'django>=3.2,<6.1',
         'pyodbc>=3.0',
-        # zoneinfo (used in mssql/operations.py) needs an IANA tz
-        # database. Windows has none, so always install tzdata there.
-        # also pull it in on any platform that lacks system tz data.
+        # zoneinfo (used in mssql/operations.py) is stdlib on 3.9+;
+        # use backports.zoneinfo on 3.8.
+        'backports.zoneinfo; python_version < "3.9"',
+        # zoneinfo needs an IANA tz database at runtime. Windows
+        # ships without one, so always install tzdata there.
         'tzdata; sys_platform == "win32"',
     ],
     extras_require={
