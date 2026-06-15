@@ -660,3 +660,30 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         with self.assertRaises(NotSupportedError):
             _ = wrapper.sql_server_version
         self._clear_caches(wrapper)
+
+
+class TestDatabaseWrapperSubclass(SimpleTestCase):
+    """Regression test for #531: subclassing DatabaseWrapper must not crash."""
+
+    def test_subclass_server_properties_no_keyerror(self):
+        """Accessing sql_server_version on a subclass should not raise KeyError."""
+
+        class SubWrapper(DatabaseWrapper):
+            pass
+
+        wrapper = object.__new__(SubWrapper)
+        wrapper.alias = "test_subclass"
+
+        mock_cursor = mock.MagicMock()
+        mock_cursor.fetchone.return_value = ("16.0.4135.4", 3)
+        mock_ctx = mock.MagicMock()
+        mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
+        mock_ctx.__exit__ = mock.MagicMock(return_value=False)
+        wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
+
+        self.assertEqual(wrapper.sql_server_version, 2022)
+        self.assertFalse(wrapper.to_azure_sql_db)
+        self.assertEqual(wrapper.temporary_connection.call_count, 1)
+
+        DatabaseWrapper._known_versions.pop("test_subclass", None)
+        DatabaseWrapper._known_azures.pop("test_subclass", None)
