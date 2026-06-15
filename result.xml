@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+	<testsuite name="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString-20260615051125" tests="37" file="testapp/tests/test_base.py" time="0.006" timestamp="2026-06-15T05:11:25" failures="0" errors="0" skipped="0">
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_basic_connection_string" time="0.001" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="254">
+			<!--Test basic connection string building.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_active_directory_default_no_trusted_connection" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="397">
+			<!--Test that Trusted_Connection is not injected with ActiveDirectoryDefault.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_active_directory_integrated_no_trusted_connection" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="365">
+			<!--Test that Trusted_Connection is not injected with ActiveDirectoryIntegrated.
+
+Regression test for #529: Authentication=ActiveDirectoryIntegrated
+without USER or TOKEN must not get Trusted_Connection=yes appended,
+as the ODBC driver rejects that combination (FA001).
+-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_active_directory_interactive" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="349">
+			<!--Test that PASSWORD is not included with ActiveDirectoryInteractive auth.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_active_directory_interactive_no_user" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="608">
+			<!--Test ActiveDirectoryInteractive without USER skips Trusted_Connection.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_active_directory_msi_no_trusted_connection" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="384">
+			<!--Test that Trusted_Connection is not injected with ActiveDirectoryMsi.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_active_directory_password_keeps_pwd" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="426">
+			<!--Test that PWD is still included with Authentication=ActiveDirectoryPassword.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_active_directory_service_principal_keeps_pwd" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="621">
+			<!--Test that PWD is still included with Authentication=ActiveDirectoryServicePrincipal.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_auth_keyword_case_insensitive" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="441">
+			<!--Test that Authentication= is detected case-insensitively.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_auth_with_other_extra_params" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="454">
+			<!--Test Authentication= detection alongside other extra_params.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_extra_params_none" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="636">
+			<!--Test that extra_params=None does not crash.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_freetds" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="331">
+			<!--Test connection string building for FreeTDS driver.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_freetds_auth_no_sspi" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="469">
+			<!--Test that FreeTDS also skips Integrated Security=SSPI when Authentication= is present.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_sql_password_auth_keeps_pwd" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="410">
+			<!--Test that PWD is still included with Authentication=SqlPassword.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_trusted_connection" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="302">
+			<!--Test connection string with trusted connection (no user/password).-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_with_dsn" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="288">
+			<!--Test connection string with DSN.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_with_extra_params" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="316">
+			<!--Test connection string with extra parameters.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_connection_string_with_port" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="272">
+			<!--Test connection string with port number.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_get_authentication_mode_braced_auth_value" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="514">
+			<!--Test that braced Authentication value is correctly unbraced and stripped.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_get_authentication_mode_braced_auth_value_with_whitespace" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="521">
+			<!--Test that whitespace inside braced Authentication value is stripped.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_get_authentication_mode_case_insensitive" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="496">
+			<!--Test that _get_authentication_mode is case-insensitive on the keyword.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_get_authentication_mode_empty_auth_value" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="528">
+			<!--Test that Authentication= with empty value returns empty string, not None.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_get_authentication_mode_ignores_braced_values" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="503">
+			<!--Test that Authentication= inside a braced value is not detected.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_get_authentication_mode_none_extra_params" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="510">
+			<!--Test that _get_authentication_mode handles None gracefully.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_get_authentication_mode_parses_value" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="489">
+			<!--Test that _get_authentication_mode extracts and normalizes the auth mode.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_get_authentication_mode_returns_none_for_empty" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="485">
+			<!--Test that _get_authentication_mode returns None for empty extra_params.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_braced_value_with_semicolon" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="542">
+			<!--Test that semicolons inside braced values are not treated as delimiters.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_empty_string" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="571">
+			<!--Test that empty string returns empty dict.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_equals_in_braced_value" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="564">
+			<!--Test that = inside a braced value does not split key/value.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_escaped_closing_brace" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="550">
+			<!--Test that }} inside a braced value is unescaped to }.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_first_key_wins" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="601">
+			<!--Test that first occurrence of a key wins (setdefault semantics).-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_none" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="575">
+			<!--Test that None returns empty dict.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_open_brace_in_braced_value" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="557">
+			<!--Test that { inside a braced value is kept as-is per MS-ODBCSTR spec.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_simple" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="535">
+			<!--Test basic key=value parsing.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_trailing_semicolons" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="579">
+			<!--Test that trailing semicolons are handled gracefully.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_unclosed_brace_skipped" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="593">
+			<!--Test that unclosed braced value is silently consumed without crashing.-->
+		</testcase>
+		<testcase classname="testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString" name="test_parse_extra_params_whitespace_around_equals" time="0.000" timestamp="2026-06-15T05:11:25" file="testapp/tests/test_base.py" line="586">
+			<!--Test that whitespace around key and value is stripped.-->
+		</testcase>
+	</testsuite>
+</testsuites>

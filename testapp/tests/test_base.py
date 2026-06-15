@@ -512,9 +512,16 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
         self.assertIsNone(DatabaseWrapper._get_authentication_mode(None))
 
     def test_get_authentication_mode_braced_auth_value(self):
-        """Test that braced Authentication value is correctly unbraced."""
+        """Test that braced Authentication value is correctly unbraced and stripped."""
         result = DatabaseWrapper._get_authentication_mode(
             'Authentication={ActiveDirectoryIntegrated}'
+        )
+        self.assertEqual(result, 'activedirectoryintegrated')
+
+    def test_get_authentication_mode_braced_auth_value_with_whitespace(self):
+        """Test that whitespace inside braced Authentication value is stripped."""
+        result = DatabaseWrapper._get_authentication_mode(
+            'Authentication={ ActiveDirectoryIntegrated }'
         )
         self.assertEqual(result, 'activedirectoryintegrated')
 

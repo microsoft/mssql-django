@@ -316,9 +316,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         - Escaped closing braces: ``}}`` → ``}``
         - Opening braces inside a braced value need no escaping
 
-        Parsing is lenient: malformed segments (missing ``=``, unclosed
-        braces) are silently skipped so that ``extra_params`` from Django
-        settings never causes an unexpected crash.
+        Parsing is lenient: segments with a missing ``=`` are silently
+        skipped.  An unclosed braced value consumes to end-of-string and
+        is stored as-is (no crash, no silent discard) so that
+        ``extra_params`` from Django settings never causes an unexpected
+        exception.
 
         Adapted from *mssql-python*'s ``_ConnectionStringParser._parse``
         (MIT-licensed, Microsoft Corporation) which has 59+ unit tests
@@ -413,7 +415,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         value = params.get('authentication')
         if value is None:
             return None
-        return value.lower()
+        return value.strip().lower()
 
     def _build_connection_string(self, conn_params, driver):
         """Build ODBC connection string for the given driver."""
