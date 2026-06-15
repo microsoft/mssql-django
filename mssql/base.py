@@ -307,37 +307,113 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     })
 
     @staticmethod
+    def _parse_extra_params(extra_params):
+        """Parse an ODBC extra_params string into a ``{key: value}`` dict.
+
+        Implements the tokenisation rules from the MS-ODBCSTR specification:
+        - Semicolon-separated ``key=value`` pairs
+        - Braced values: ``{value}`` (may contain semicolons and ``=``)
+        - Escaped closing braces: ``}}`` → ``}``
+        - Opening braces inside a braced value need no escaping
+
+        Parsing is lenient: malformed segments (missing ``=``, unclosed
+        braces) are silently skipped so that ``extra_params`` from Django
+        settings never causes an unexpected crash.
+
+        Adapted from *mssql-python*'s ``_ConnectionStringParser._parse``
+        (MIT-licensed, Microsoft Corporation) which has 59+ unit tests
+        against the full MS-ODBCSTR spec.  Validation, keyword allow-list,
+        and duplicate detection were removed because ``extra_params`` is an
+        unstructured escape hatch where the user is responsible for
+        correctness.
+
+        Reference:
+            https://learn.microsoft.com/en-us/openspecs/sql_server_protocols/ms-odbcstr
+        """
+        if not extra_params:
+            return {}
+
+        params = {}
+        pos = 0
+        length = len(extra_params)
+
+        while pos < length:
+            # skip whitespace and semicolons between pairs
+            while pos < length and extra_params[pos] in ' \t;':
+                pos += 1
+            if pos >= length:
+                break
+
+            # --- key ---
+            key_start = pos
+            while pos < length and extra_params[pos] not in '=;':
+                pos += 1
+
+            if pos >= length or extra_params[pos] != '=':
+                # no '=' found — skip to next semicolon
+                while pos < length and extra_params[pos] != ';':
+                    pos += 1
+                continue
+
+            key = extra_params[key_start:pos].strip().lower()
+            pos += 1  # skip '='
+
+            if not key:
+                while pos < length and extra_params[pos] != ';':
+                    pos += 1
+                continue
+
+            # --- value ---
+            # skip whitespace before value
+            while pos < length and extra_params[pos] in ' \t':
+                pos += 1
+
+            if pos >= length:
+                params.setdefault(key, '')
+                break
+
+            if extra_params[pos] == '{':
+                # braced value
+                pos += 1  # skip opening '{'
+                value_chars = []
+                while pos < length:
+                    ch = extra_params[pos]
+                    if ch == '}':
+                        if pos + 1 < length and extra_params[pos + 1] == '}':
+                            value_chars.append('}')
+                            pos += 2
+                        else:
+                            pos += 1  # skip closing '}'
+                            break
+                    else:
+                        value_chars.append(ch)
+                        pos += 1
+                params.setdefault(key, ''.join(value_chars))
+            else:
+                # simple value — read until semicolon or end
+                value_start = pos
+                while pos < length and extra_params[pos] != ';':
+                    pos += 1
+                params.setdefault(key, extra_params[value_start:pos].rstrip())
+
+        return params
+
+    @staticmethod
     def _get_authentication_mode(extra_params):
         """Return the normalized Authentication mode from extra_params, or None.
 
-        Parses semicolon-delimited key=value pairs while skipping content
-        inside braced values ({...}), which may contain literal semicolons
-        per the ODBC connection string spec (MS-ODBCSTR).
-
-        NOTE: this is a minimal parser sufficient for extracting a single
-        key. For a full spec-compliant ODBC connection string parser with
-        brace escaping, duplicate detection, and validation, see
-        mssql-python's ``connection_string_parser._ConnectionStringParser``.
+        Returns ``None`` when the ``Authentication`` key is absent.
+        Returns ``''`` (empty string) when the key is present with an empty
+        value — callers can distinguish "not specified" from "explicitly
+        cleared".
         """
         if not extra_params:
             return None
-        depth = 0
-        start = 0
-        for i, ch in enumerate(extra_params):
-            if ch == '{':
-                depth += 1
-            elif ch == '}':
-                depth = max(0, depth - 1)
-            elif ch == ';' and depth == 0:
-                key, _, value = extra_params[start:i].partition('=')
-                if key.strip().lower() == 'authentication':
-                    return value.strip().lower()
-                start = i + 1
-        # last segment (no trailing semicolon)
-        key, _, value = extra_params[start:].partition('=')
-        if key.strip().lower() == 'authentication':
-            return value.strip().lower()
-        return None
+        params = DatabaseWrapper._parse_extra_params(extra_params)
+        value = params.get('authentication')
+        if value is None:
+            return None
+        return value.lower()
 
     def _build_connection_string(self, conn_params, driver):
         """Build ODBC connection string for the given driver."""
