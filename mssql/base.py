@@ -216,6 +216,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         17: 2025,
     }
 
+    _known_versions = {}
+    _known_azures = {}
+
     # https://azure.microsoft.com/en-us/documentation/articles/sql-database-develop-csharp-retry-windows/
     _transient_error_numbers = (
         '4060',
@@ -648,7 +651,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 return cursor.execute('SELECT SYSDATETIME()').fetchone()[0]
 
     @cached_property
-    def sql_server_version(self, _known_versions={}):
+    def sql_server_version(self):
         """
         Get the SQL Server version.
 
@@ -656,37 +659,32 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         populating both this cache and the to_azure_sql_db cache to avoid
         extra round trips.
 
-        The _known_versions default dictionary is created on the class. This is
-        intentional - it allows us to cache this property's value across instances.
-        Therefore, when Django creates a new database connection using the same
-        alias, we won't need query the server again.
+        Results are cached in the class-level _known_versions dict so that
+        when Django creates a new connection using the same alias, we don't
+        query the server again.
         """
-        if self.alias not in _known_versions:
+        if self.alias not in self._known_versions:
             self._fetch_server_properties()
-        return _known_versions[self.alias]
+        return self._known_versions[self.alias]
 
     @cached_property
-    def to_azure_sql_db(self, _known_azures={}):
+    def to_azure_sql_db(self):
         """
         Whether this connection is to a Microsoft Azure database server.
 
-        The _known_azures default dictionary is created on the class. This is
-        intentional - it allows us to cache this property's value across instances.
-        Therefore, when Django creates a new database connection using the same
-        alias, we won't need query the server again.
+        Results are cached in the class-level _known_azures dict so that
+        when Django creates a new connection using the same alias, we don't
+        query the server again.
         """
-        if self.alias not in _known_azures:
+        if self.alias not in self._known_azures:
             self._fetch_server_properties()
-        return _known_azures[self.alias]
+        return self._known_azures[self.alias]
 
     def _fetch_server_properties(self):
         """
         Fetch ProductVersion and EngineEdition in a single query and populate
         both sql_server_version and to_azure_sql_db caches.
         """
-        _known_versions = type(self).__dict__['sql_server_version'].func.__defaults__[0]
-        _known_azures = type(self).__dict__['to_azure_sql_db'].func.__defaults__[0]
-
         with self.temporary_connection() as cursor:
             cursor.execute(
                 "SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar), "
@@ -695,13 +693,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             product_version, edition = cursor.fetchone()
 
         is_azure = edition in _AZURE_EDITIONS
-        _known_azures[self.alias] = is_azure
+        self._known_azures[self.alias] = is_azure
 
         if edition == EDITION_AZURE_SQL_FABRIC:
             # Fabric reports ProductVersion numbers that don't correspond to
             # on-premises SQL Server releases but has modern capabilities.
             # Treat it as the latest supported version.
-            _known_versions[self.alias] = max(self._sql_server_versions.values())
+            self._known_versions[self.alias] = max(self._sql_server_versions.values())
         else:
             # For on-prem and Azure SQL DB/Managed Instance, use ProductVersion
             # to determine version. Azure SQL DB/MI report ProductVersion 12.x
@@ -710,7 +708,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             ver = int(product_version.split('.')[0])
             if ver not in self._sql_server_versions:
                 raise NotSupportedError('SQL Server v%d is not supported.' % ver)
-            _known_versions[self.alias] = self._sql_server_versions[ver]
+            self._known_versions[self.alias] = self._sql_server_versions[ver]
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
