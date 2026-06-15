@@ -53,9 +53,14 @@ setup(
         # zoneinfo (used in mssql/operations.py) is stdlib on 3.9+;
         # use backports.zoneinfo on 3.8.
         'backports.zoneinfo; python_version < "3.9"',
-        # zoneinfo needs an IANA tz database at runtime. Windows
-        # ships without one, so always install tzdata there.
-        'tzdata; sys_platform == "win32"',
+        # zoneinfo needs an IANA tz database at runtime. system
+        # tzdata is not guaranteed (Windows ships without one;
+        # minimal Linux images like alpine/distroless/scratch and
+        # slim Lambda layers strip it). always installing the
+        # tzdata pip package guarantees consistent behavior across
+        # all hosts. it is ~340KB and zoneinfo prefers system tz
+        # data when present, so it's a no-op on full Linux/macOS.
+        'tzdata',
     ],
     extras_require={
         'test': ['unittest-xml-reporting>=3.2.0'],
