@@ -535,13 +535,9 @@ class TestEditionDetection(SimpleTestCase):
 
     def _clear_caches(self, wrapper):
         """Clear both class-level and instance-level caches."""
-        # Clear class-level mutable default dict caches
-        azure_cache = DatabaseWrapper.__dict__["to_azure_sql_db"].func.__defaults__[0]
-        azure_cache.pop(wrapper.alias, None)
-        version_cache = DatabaseWrapper.__dict__[
-            "sql_server_version"
-        ].func.__defaults__[0]
-        version_cache.pop(wrapper.alias, None)
+        # Clear class-level caches
+        DatabaseWrapper._known_azures.pop(wrapper.alias, None)
+        DatabaseWrapper._known_versions.pop(wrapper.alias, None)
         # Clear instance-level cached_property values
         wrapper.__dict__.pop("to_azure_sql_db", None)
         wrapper.__dict__.pop("sql_server_version", None)
@@ -615,12 +611,8 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
 
     def _clear_caches(self, wrapper):
-        azure_cache = DatabaseWrapper.__dict__["to_azure_sql_db"].func.__defaults__[0]
-        azure_cache.pop(wrapper.alias, None)
-        version_cache = DatabaseWrapper.__dict__[
-            "sql_server_version"
-        ].func.__defaults__[0]
-        version_cache.pop(wrapper.alias, None)
+        DatabaseWrapper._known_azures.pop(wrapper.alias, None)
+        DatabaseWrapper._known_versions.pop(wrapper.alias, None)
         wrapper.__dict__.pop("to_azure_sql_db", None)
         wrapper.__dict__.pop("sql_server_version", None)
 
@@ -668,3 +660,30 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         with self.assertRaises(NotSupportedError):
             _ = wrapper.sql_server_version
         self._clear_caches(wrapper)
+
+
+class TestDatabaseWrapperSubclass(SimpleTestCase):
+    """Regression test for #531: subclassing DatabaseWrapper must not crash."""
+
+    def test_subclass_server_properties_no_keyerror(self):
+        """Accessing sql_server_version on a subclass should not raise KeyError."""
+
+        class SubWrapper(DatabaseWrapper):
+            pass
+
+        wrapper = object.__new__(SubWrapper)
+        wrapper.alias = "test_subclass"
+
+        mock_cursor = mock.MagicMock()
+        mock_cursor.fetchone.return_value = ("16.0.4135.4", 3)
+        mock_ctx = mock.MagicMock()
+        mock_ctx.__enter__ = mock.MagicMock(return_value=mock_cursor)
+        mock_ctx.__exit__ = mock.MagicMock(return_value=False)
+        wrapper.temporary_connection = mock.MagicMock(return_value=mock_ctx)
+
+        self.assertEqual(wrapper.sql_server_version, 2022)
+        self.assertFalse(wrapper.to_azure_sql_db)
+        self.assertEqual(wrapper.temporary_connection.call_count, 1)
+
+        DatabaseWrapper._known_versions.pop("test_subclass", None)
+        DatabaseWrapper._known_azures.pop("test_subclass", None)
