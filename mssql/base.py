@@ -712,8 +712,15 @@ class CursorWrapper(object):
         return sql
 
     def format_group_by_params(self, query, params):
-        # Prepare query for string formatting
-        query = re.sub(r'%\w+', '{}', query)
+        # Prepare query for string formatting. Match the literal '%%' escape
+        # first so it is preserved verbatim, otherwise a '%%abc%%' literal
+        # (e.g. inside a LIKE pattern) would be misparsed as a parameter
+        # placeholder (issue #476). Only '%s' is a real placeholder here;
+        # format_sql() below uses %-formatting with a tuple of '?' strings.
+        def _placeholder_sub(match):
+            token = match.group(0)
+            return token if token == '%%' else '{}'
+        query = re.sub(r'%%|%s', _placeholder_sub, query)
 
         if params:
             # Insert None params directly into the query

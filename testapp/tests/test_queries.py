@@ -43,6 +43,51 @@ class TestBinaryfieldGroupby(TestCase):
             cursor.execute(f"SELECT binary FROM {BinaryData._meta.db_table} WHERE binary = %s GROUP BY binary", [bytes("ABC", 'utf-8')])
 
 
+class TestGroupByEscapedPercent(TestCase):
+    """Regression test for issue #476.
+
+    A raw SQL query that combines a GROUP BY clause, an escaped %% literal
+    (e.g. inside a LIKE pattern), and a positional parameter used to raise
+    IndexError because format_group_by_params treated the escaped %% as a
+    parameter placeholder.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        Author.objects.bulk_create([
+            Author(name='%abc%'),
+            Author(name='xyz'),
+            Author(name='%abc%'),
+        ])
+
+    def test_like_with_escaped_percent_and_group_by(self):
+        table = Author._meta.db_table
+        sql = (
+            f"SELECT name, COUNT(*) FROM {table} "
+            f"WHERE name LIKE '%%abc%%' AND id >= %s "
+            f"GROUP BY name"
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(sql, [1])
+            rows = sorted(cursor.fetchall())
+        self.assertEqual(rows, [('%abc%', 2)])
+
+    def test_escaped_percent_with_placeholder_outside_literal(self):
+        # '%%' as a SQL-Server literal '%' concatenated with a real %s
+        # placeholder. Exercises the '%%' + '%s' adjacency without putting
+        # the placeholder inside a string literal.
+        table = Author._meta.db_table
+        sql = (
+            f"SELECT name, COUNT(*) FROM {table} "
+            f"WHERE name = '%%' + %s "
+            f"GROUP BY name"
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(sql, ['abc%'])
+            rows = sorted(cursor.fetchall())
+        self.assertEqual(rows, [('%abc%', 2)])
+
+
 @skipUnlessDBFeature("supports_expression_defaults")
 class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
     """Regression tests for Django 6.0 db_default bulk insert alignment.
