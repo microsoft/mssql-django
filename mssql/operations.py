@@ -48,16 +48,28 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def _get_utcoffset(self, tzname):
         """
-        Returns UTC offset for given time zone in seconds
+        Returns the standard (non-DST) UTC offset for given time zone
+        in seconds.
         """
         # SQL Server has no built-in support for tz database, see:
         # http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
+        # the compiled SQL bakes in a single offset and reuses it
+        # across queries, so DST cannot be tracked. pick the
+        # standard (non-DST) offset by probing both January and
+        # July and using the one where dst() is zero. this is
+        # stable across the year and across negative-DST zones
+        # like Europe/Dublin where the old pytz formula returned
+        # different values depending on when it was called.
         zone = zoneinfo.ZoneInfo(tzname)
-        # no way to take DST into account at this point, so use the
-        # standard (non-DST) offset of the zone
-        now = datetime.datetime.now(tz=zone)
-        offset = now.utcoffset() - (now.dst() or datetime.timedelta(0))
-        return int(offset.total_seconds())
+        year = datetime.datetime.now().year
+        for month in (1, 7):
+            probe = datetime.datetime(year, month, 15, 12, tzinfo=zone)
+            if (probe.dst() or datetime.timedelta(0)) == datetime.timedelta(0):
+                return int(probe.utcoffset().total_seconds())
+        # zone has DST year-round (not seen in real IANA data);
+        # fall back to January's offset.
+        january = datetime.datetime(year, 1, 15, 12, tzinfo=zone)
+        return int(january.utcoffset().total_seconds())
 
     def bulk_batch_size(self, fields, objs):
         """
