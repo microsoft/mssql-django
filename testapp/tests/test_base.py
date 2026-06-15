@@ -362,6 +362,290 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
         self.assertNotIn("PWD=", result)
 
 
+    def test_connection_string_active_directory_integrated_no_trusted_connection(self):
+        """Test that Trusted_Connection is not injected with ActiveDirectoryIntegrated.
+
+        Regression test for #529: Authentication=ActiveDirectoryIntegrated
+        without USER or TOKEN must not get Trusted_Connection=yes appended,
+        as the ODBC driver rejects that combination (FA001).
+        """
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryIntegrated"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertNotIn("Trusted_Connection=", result)
+        self.assertNotIn("Integrated Security=", result)
+        self.assertIn("Authentication=ActiveDirectoryIntegrated", result)
+
+    def test_connection_string_active_directory_msi_no_trusted_connection(self):
+        """Test that Trusted_Connection is not injected with ActiveDirectoryMsi."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryMsi"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertNotIn("Trusted_Connection=", result)
+        self.assertNotIn("Integrated Security=", result)
+
+    def test_connection_string_active_directory_default_no_trusted_connection(self):
+        """Test that Trusted_Connection is not injected with ActiveDirectoryDefault."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryDefault"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertNotIn("Trusted_Connection=", result)
+        self.assertNotIn("Integrated Security=", result)
+
+    def test_connection_string_sql_password_auth_keeps_pwd(self):
+        """Test that PWD is still included with Authentication=SqlPassword."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "USER": "sqluser",
+            "PASSWORD": "secret",
+            "OPTIONS": {"extra_params": "Authentication=SqlPassword"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertIn("UID=sqluser", result)
+        self.assertIn("PWD=secret", result)
+        self.assertNotIn("Trusted_Connection=", result)
+
+    def test_connection_string_active_directory_password_keeps_pwd(self):
+        """Test that PWD is still included with Authentication=ActiveDirectoryPassword."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "USER": "user@domain.com",
+            "PASSWORD": "secret",
+            "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryPassword"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertIn("UID=user@domain.com", result)
+        self.assertIn("PWD=secret", result)
+
+    def test_connection_string_auth_keyword_case_insensitive(self):
+        """Test that Authentication= is detected case-insensitively."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "OPTIONS": {"extra_params": "authentication=ActiveDirectoryIntegrated"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertNotIn("Trusted_Connection=", result)
+        self.assertNotIn("Integrated Security=", result)
+
+    def test_connection_string_auth_with_other_extra_params(self):
+        """Test Authentication= detection alongside other extra_params."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "OPTIONS": {
+                "extra_params": "Encrypt=yes;Authentication=ActiveDirectoryIntegrated;TrustServerCertificate=yes",
+            },
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertNotIn("Trusted_Connection=", result)
+        self.assertIn("Encrypt=yes", result)
+
+    def test_connection_string_freetds_auth_no_sspi(self):
+        """Test that FreeTDS also skips Integrated Security=SSPI when Authentication= is present."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "myserver",
+            "OPTIONS": {
+                "host_is_server": True,
+                "extra_params": "Authentication=ActiveDirectoryIntegrated",
+            },
+        }
+        driver = "FreeTDS"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertNotIn("Integrated Security=", result)
+        self.assertNotIn("Trusted_Connection=", result)
+
+    def test_get_authentication_mode_returns_none_for_empty(self):
+        """Test that _get_authentication_mode returns None for empty extra_params."""
+        self.assertIsNone(DatabaseWrapper._get_authentication_mode(''))
+
+    def test_get_authentication_mode_parses_value(self):
+        """Test that _get_authentication_mode extracts and normalizes the auth mode."""
+        result = DatabaseWrapper._get_authentication_mode(
+            'Encrypt=yes;Authentication=ActiveDirectoryIntegrated;Foo=bar'
+        )
+        self.assertEqual(result, 'activedirectoryintegrated')
+
+    def test_get_authentication_mode_case_insensitive(self):
+        """Test that _get_authentication_mode is case-insensitive on the keyword."""
+        result = DatabaseWrapper._get_authentication_mode(
+            'authentication=SqlPassword'
+        )
+        self.assertEqual(result, 'sqlpassword')
+
+    def test_get_authentication_mode_ignores_braced_values(self):
+        """Test that Authentication= inside a braced value is not detected."""
+        result = DatabaseWrapper._get_authentication_mode(
+            'Application Name={foo;Authentication=SqlPassword};Encrypt=yes'
+        )
+        self.assertIsNone(result)
+
+    def test_get_authentication_mode_none_extra_params(self):
+        """Test that _get_authentication_mode handles None gracefully."""
+        self.assertIsNone(DatabaseWrapper._get_authentication_mode(None))
+
+    def test_get_authentication_mode_braced_auth_value(self):
+        """Test that braced Authentication value is correctly unbraced and stripped."""
+        result = DatabaseWrapper._get_authentication_mode(
+            'Authentication={ActiveDirectoryIntegrated}'
+        )
+        self.assertEqual(result, 'activedirectoryintegrated')
+
+    def test_get_authentication_mode_braced_auth_value_with_whitespace(self):
+        """Test that whitespace inside braced Authentication value is stripped."""
+        result = DatabaseWrapper._get_authentication_mode(
+            'Authentication={ ActiveDirectoryIntegrated }'
+        )
+        self.assertEqual(result, 'activedirectoryintegrated')
+
+    def test_get_authentication_mode_empty_auth_value(self):
+        """Test that Authentication= with empty value returns empty string, not None."""
+        result = DatabaseWrapper._get_authentication_mode(
+            'Authentication=;Server=localhost'
+        )
+        self.assertEqual(result, '')
+
+    def test_parse_extra_params_simple(self):
+        """Test basic key=value parsing."""
+        result = DatabaseWrapper._parse_extra_params(
+            'Encrypt=yes;TrustServerCertificate=yes'
+        )
+        self.assertEqual(result, {'encrypt': 'yes', 'trustservercertificate': 'yes'})
+
+    def test_parse_extra_params_braced_value_with_semicolon(self):
+        """Test that semicolons inside braced values are not treated as delimiters."""
+        result = DatabaseWrapper._parse_extra_params(
+            'Application Name={my;app};Encrypt=yes'
+        )
+        self.assertEqual(result['application name'], 'my;app')
+        self.assertEqual(result['encrypt'], 'yes')
+
+    def test_parse_extra_params_escaped_closing_brace(self):
+        """Test that }} inside a braced value is unescaped to }."""
+        result = DatabaseWrapper._parse_extra_params(
+            'PWD={p}}w}'
+        )
+        self.assertEqual(result['pwd'], 'p}w')
+
+    def test_parse_extra_params_open_brace_in_braced_value(self):
+        """Test that { inside a braced value is kept as-is per MS-ODBCSTR spec."""
+        result = DatabaseWrapper._parse_extra_params(
+            'App={foo{bar}'
+        )
+        self.assertEqual(result['app'], 'foo{bar')
+
+    def test_parse_extra_params_equals_in_braced_value(self):
+        """Test that = inside a braced value does not split key/value."""
+        result = DatabaseWrapper._parse_extra_params(
+            'App={key=val};Encrypt=yes'
+        )
+        self.assertEqual(result['app'], 'key=val')
+
+    def test_parse_extra_params_empty_string(self):
+        """Test that empty string returns empty dict."""
+        self.assertEqual(DatabaseWrapper._parse_extra_params(''), {})
+
+    def test_parse_extra_params_none(self):
+        """Test that None returns empty dict."""
+        self.assertEqual(DatabaseWrapper._parse_extra_params(None), {})
+
+    def test_parse_extra_params_trailing_semicolons(self):
+        """Test that trailing semicolons are handled gracefully."""
+        result = DatabaseWrapper._parse_extra_params(
+            'Encrypt=yes;;;'
+        )
+        self.assertEqual(result, {'encrypt': 'yes'})
+
+    def test_parse_extra_params_whitespace_around_equals(self):
+        """Test that whitespace around key and value is stripped."""
+        result = DatabaseWrapper._parse_extra_params(
+            '  Authentication = ActiveDirectoryIntegrated '
+        )
+        self.assertEqual(result['authentication'], 'ActiveDirectoryIntegrated')
+
+    def test_parse_extra_params_unclosed_brace_skipped(self):
+        """Test that unclosed braced value is silently consumed without crashing."""
+        result = DatabaseWrapper._parse_extra_params(
+            'App={unclosed;Authentication=SqlPassword'
+        )
+        # unclosed brace consumes to end of string; Authentication is inside it
+        self.assertNotIn('authentication', result)
+
+    def test_parse_extra_params_first_key_wins(self):
+        """Test that first occurrence of a key wins (setdefault semantics)."""
+        result = DatabaseWrapper._parse_extra_params(
+            'Encrypt=yes;Encrypt=no'
+        )
+        self.assertEqual(result['encrypt'], 'yes')
+
+    def test_connection_string_active_directory_interactive_no_user(self):
+        """Test ActiveDirectoryInteractive without USER skips Trusted_Connection."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryInteractive"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertNotIn("Trusted_Connection=", result)
+        self.assertNotIn("Integrated Security=", result)
+
+    def test_connection_string_active_directory_service_principal_keeps_pwd(self):
+        """Test that PWD is still included with Authentication=ActiveDirectoryServicePrincipal."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "USER": "app-id",
+            "PASSWORD": "client-secret",
+            "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryServicePrincipal"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertIn("UID=app-id", result)
+        self.assertIn("PWD=client-secret", result)
+
+    def test_connection_string_extra_params_none(self):
+        """Test that extra_params=None does not crash."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "OPTIONS": {"extra_params": None},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertIn("Trusted_Connection=yes", result)
+
+
 class TestCursorWrapperAsSqlType(SimpleTestCase):
     """Tests for CursorWrapper._as_sql_type method."""
 
