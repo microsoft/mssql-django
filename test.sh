@@ -18,7 +18,7 @@ if python -c "import django; exit(0 if django.VERSION >= (5, 2) else 1)"; then
     COMPOSITE_PK_TESTS="composite_pk"
 fi
 
-PYTHONPATH=.. coverage run tests/runtests.py --settings=testapp.settings --noinput \
+PYTHONPATH=.. coverage run --append tests/runtests.py --settings=testapp.settings --noinput \
     aggregation \
     aggregation_regress \
     annotations \
