@@ -1,0 +1,288 @@
+name: PR Code Coverage
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  coverage-report:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup git for diff-cover
+        run: |
+          git fetch origin dev:dev
+          echo "Available branches:"
+          git branch -a
+          git show-ref --verify refs/heads/dev || echo "Warning: dev branch not found"
+
+      - name: Wait for ADO build to start
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          PR_SHA=${{ github.event.pull_request.head.sha }}
+          API_URL="https://dev.azure.com/sqlclientdrivers/public/_apis/build/builds?definitions=2195&queryOrder=queueTimeDescending&%24top=30&api-version=7.1-preview.7"
+
+          echo "Waiting for Azure DevOps build to start for PR #$PR_NUMBER (SHA: $PR_SHA)..."
+
+          for i in {1..30}; do
+            echo "Attempt $i/30: Checking if build has started..."
+
+            API_RESPONSE=$(curl --fail --silent --show-error "$API_URL")
+
+            if ! echo "$API_RESPONSE" | jq . >/dev/null 2>&1; then
+              echo "❌ Invalid JSON response from Azure DevOps API"
+              echo "Response received: $API_RESPONSE"
+              exit 1
+            fi
+
+            # Match on both PR number and source SHA for accuracy
+            BUILD_INFO=$(echo "$API_RESPONSE" | jq -c --arg PR "$PR_NUMBER" --arg SHA "$PR_SHA" \
+              '[.value[]? | select(.triggerInfo["pr.number"]?==$PR and (.triggerInfo["pr.sourceSha"]?==$SHA or .sourceVersion?==$SHA))] | .[0] // empty' 2>/dev/null)
+
+            # Fall back to PR number only if SHA match fails (e.g. ADO hasn't updated triggerInfo yet)
+            if [[ -z "$BUILD_INFO" || "$BUILD_INFO" == "null" || "$BUILD_INFO" == "empty" ]]; then
+              BUILD_INFO=$(echo "$API_RESPONSE" | jq -c --arg PR "$PR_NUMBER" \
+                '[.value[]? | select(.triggerInfo["pr.number"]?==$PR)] | sort_by(.id) | reverse | .[0] // empty' 2>/dev/null)
+            fi
+
+            if [[ -n "$BUILD_INFO" && "$BUILD_INFO" != "null" && "$BUILD_INFO" != "empty" ]]; then
+              STATUS=$(echo "$BUILD_INFO" | jq -r '.status // "unknown"')
+              RESULT=$(echo "$BUILD_INFO" | jq -r '.result // "unknown"')
+              BUILD_ID=$(echo "$BUILD_INFO" | jq -r '.id // "unknown"')
+              WEB_URL=$(echo "$BUILD_INFO" | jq -r '._links.web.href // "unknown"')
+
+              echo "✅ Found build: ID=$BUILD_ID, Status=$STATUS, Result=$RESULT"
+              echo "🔗 Build URL: $WEB_URL"
+              echo "ADO_URL=$WEB_URL" >> $GITHUB_ENV
+              echo "BUILD_ID=$BUILD_ID" >> $GITHUB_ENV
+
+              if [[ "$STATUS" == "completed" && "$RESULT" == "failed" ]]; then
+                echo "❌ Azure DevOps build $BUILD_ID failed early"
+                exit 1
+              fi
+
+              echo "🚀 Build has started, proceeding to poll for coverage artifacts..."
+              break
+            else
+              echo "⏳ No build found for PR #$PR_NUMBER yet... (attempt $i/30)"
+            fi
+
+            if [[ $i -eq 30 ]]; then
+              echo "❌ Timeout: No build found for PR #$PR_NUMBER after 30 attempts"
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+      - name: Download and parse coverage report
+        run: |
+          BUILD_ID=${{ env.BUILD_ID }}
+          ARTIFACTS_URL="https://dev.azure.com/sqlclientdrivers/public/_apis/build/builds/$BUILD_ID/artifacts?api-version=7.1-preview.5"
+
+          echo "📥 Polling for coverage artifacts for build $BUILD_ID..."
+
+          COVERAGE_ARTIFACT=""
+          for i in {1..60}; do
+            echo "Attempt $i/60: Checking for coverage artifacts..."
+
+            ARTIFACTS_RESPONSE=$(curl --fail --silent --show-error "$ARTIFACTS_URL")
+
+            if ! echo "$ARTIFACTS_RESPONSE" | jq . >/dev/null 2>&1; then
+              echo "⚠️ Invalid JSON response from artifacts API (attempt $i/60)"
+              if [[ $i -eq 60 ]]; then
+                echo "❌ Persistent API issues after 60 attempts"
+                exit 1
+              fi
+              sleep 30
+              continue
+            fi
+
+            echo "🔍 Available artifacts:"
+            echo "$ARTIFACTS_RESPONSE" | jq -r '.value[]?.name // "No artifacts found"'
+
+            COVERAGE_ARTIFACT=$(echo "$ARTIFACTS_RESPONSE" | jq -r '.value[]? | select(.name | test("Code Coverage Report")) | .resource.downloadUrl // empty' 2>/dev/null)
+
+            if [[ -n "$COVERAGE_ARTIFACT" && "$COVERAGE_ARTIFACT" != "null" && "$COVERAGE_ARTIFACT" != "empty" ]]; then
+              echo "✅ Found coverage artifact on attempt $i!"
+              break
+            else
+              echo "⏳ Coverage report not ready yet (attempt $i/60)..."
+              if [[ $i -eq 60 ]]; then
+                echo "❌ Timeout: Coverage report artifact not found after 60 attempts"
+                exit 1
+              fi
+              sleep 30
+            fi
+          done
+
+          echo "📊 Downloading coverage report..."
+          if ! curl -L "$COVERAGE_ARTIFACT" -o coverage-report.zip --fail --silent; then
+            echo "❌ Failed to download coverage report from Azure DevOps"
+            exit 1
+          fi
+
+          if ! unzip -o -q coverage-report.zip; then
+            echo "❌ Failed to extract coverage artifacts"
+            exit 1
+          fi
+
+          # Find coverage.xml (Cobertura format from coverage.py)
+          COVERAGE_FILE=$(find . -name "coverage.xml" -path "*/Code Coverage Report*" | head -1)
+
+          if [[ -z "$COVERAGE_FILE" ]]; then
+            COVERAGE_FILE=$(find . -name "*coverage*.xml" -type f | head -1)
+          fi
+
+          if [[ -z "$COVERAGE_FILE" ]]; then
+            echo "❌ No coverage XML file found in artifacts"
+            find . -type f | head -20
+            exit 1
+          fi
+
+          echo "✅ Found coverage file: $COVERAGE_FILE"
+          cp "$COVERAGE_FILE" ./coverage.xml
+
+          # Parse Cobertura XML directly (much simpler than HTML parsing)
+          python3 << 'PYEOF'
+          import xml.etree.ElementTree as ET, os, re
+
+          root = ET.parse("coverage.xml").getroot()
+          covered = root.get("lines-covered", "0")
+          total = root.get("lines-valid", "0")
+          rate = float(root.get("line-rate", "0"))
+          pct = f"{rate * 100:.2f}%"
+
+          print(f"Overall: {pct} ({covered}/{total} lines)")
+
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"COVERAGE_PERCENTAGE={pct}\n")
+              env.write(f"COVERED_LINES={covered}\n")
+              env.write(f"TOTAL_LINES={total}\n")
+
+          # Regex to strip ADO agent workspace prefixes
+          agent_prefix_re = re.compile(r"^(/mnt/vss/_work/\d+/s/|/home/vsts/work/\d+/s/|[A-Z]:\\\\.*?\\\\s\\\\|\\./)(.*)$")
+
+          files = []
+          for cls in root.iter("class"):
+              fname = cls.get("filename", cls.get("name", "unknown"))
+              match = agent_prefix_re.match(fname)
+              if match:
+                  fname = match.group(2)
+              lr = float(cls.get("line-rate", "0"))
+              lines_elem = cls.find("lines")
+              line_count = len(lines_elem.findall("line")) if lines_elem is not None else 0
+              files.append((fname, lr * 100, line_count))
+
+          files.sort(key=lambda x: x[1])
+          low_cov = "\n".join(
+              f"- {f}: {p:.1f}%  ({l} lines)" for f, p, l in files[:10]
+          )
+          print(f"\nLowest coverage files:\n{low_cov}")
+
+          import uuid
+          delim = f"DELIM_{uuid.uuid4().hex}"
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"LOW_COVERAGE_FILES<<{delim}\n{low_cov}\n{delim}\n")
+          PYEOF
+
+          echo "✅ Coverage data extracted successfully"
+
+      - name: Generate patch coverage report
+        run: |
+          pip install diff-cover
+
+          if [[ ! -f coverage.xml ]]; then
+            echo "❌ coverage.xml not found"
+            exit 1
+          fi
+
+          echo "✅ coverage.xml found, size: $(wc -c < coverage.xml) bytes"
+
+          # Generate diff coverage against dev branch
+          diff-cover coverage.xml \
+            --compare-branch=origin/dev \
+            --json-report patch-coverage.json \
+            --markdown-report patch-coverage.md || {
+              echo "⚠️ diff-cover failed, continuing with empty patch coverage"
+            }
+
+          if [[ -f patch-coverage.json ]]; then
+            PATCH_COVERAGE=$(jq -r '.total_percent_covered // "N/A"' patch-coverage.json)
+            echo "✅ Patch coverage: ${PATCH_COVERAGE}%"
+            echo "PATCH_COVERAGE_PCT=${PATCH_COVERAGE}%" >> $GITHUB_ENV
+          else
+            echo "PATCH_COVERAGE_PCT=N/A" >> $GITHUB_ENV
+          fi
+
+          if [[ -f patch-coverage.md ]]; then
+            DELIM="DELIM_$(uuidgen | tr -d '-')"
+            {
+              echo "PATCH_COVERAGE_SUMMARY<<${DELIM}"
+              cat patch-coverage.md
+              echo "${DELIM}"
+            } >> $GITHUB_ENV
+          else
+            echo "PATCH_COVERAGE_SUMMARY=Patch coverage report could not be generated." >> $GITHUB_ENV
+          fi
+
+      - name: Save coverage data for comment
+        run: |
+          mkdir -p coverage-comment-data
+          jq -n \
+            --arg pr_number "${{ github.event.pull_request.number }}" \
+            --arg coverage_percentage "${{ env.COVERAGE_PERCENTAGE }}" \
+            --arg covered_lines "${{ env.COVERED_LINES }}" \
+            --arg total_lines "${{ env.TOTAL_LINES }}" \
+            --arg patch_coverage_pct "${{ env.PATCH_COVERAGE_PCT }}" \
+            --arg low_coverage_files "$LOW_COVERAGE_FILES" \
+            --arg patch_coverage_summary "$PATCH_COVERAGE_SUMMARY" \
+            --arg ado_url "${{ env.ADO_URL }}" \
+            '{
+              pr_number: $pr_number,
+              coverage_percentage: $coverage_percentage,
+              covered_lines: $covered_lines,
+              total_lines: $total_lines,
+              patch_coverage_pct: $patch_coverage_pct,
+              low_coverage_files: $low_coverage_files,
+              patch_coverage_summary: $patch_coverage_summary,
+              ado_url: $ado_url
+            }' > coverage-comment-data/pr-info.json
+
+          echo "✅ JSON validation:"
+          jq . coverage-comment-data/pr-info.json > /dev/null || {
+            echo "❌ Invalid JSON generated"
+            cat coverage-comment-data/pr-info.json
+            exit 1
+          }
+          cat coverage-comment-data/pr-info.json
+
+      - name: Upload coverage comment data
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-comment-data
+          path: coverage-comment-data/
+          retention-days: 7
+
+      - name: Comment coverage summary on PR
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: ./.github/actions/post-coverage-comment
+        with:
+          pr_number: ${{ github.event.pull_request.number }}
+          coverage_percentage: ${{ env.COVERAGE_PERCENTAGE }}
+          covered_lines: ${{ env.COVERED_LINES }}
+          total_lines: ${{ env.TOTAL_LINES }}
+          patch_coverage_pct: ${{ env.PATCH_COVERAGE_PCT }}
+          low_coverage_files: ${{ env.LOW_COVERAGE_FILES }}
+          patch_coverage_summary: ${{ env.PATCH_COVERAGE_SUMMARY }}
+          ado_url: ${{ env.ADO_URL }}
