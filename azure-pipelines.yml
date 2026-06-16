@@ -27,99 +27,6 @@ jobs:
         Python3.14 - Django 6.0:
           python.version: '3.14'
           tox.env: 'py314-django60'
-        # TEMP-SKIP: Python3.13 - Django 6.0:
-        # TEMP-SKIP: python.version: '3.13'
-        # TEMP-SKIP: tox.env: 'py313-django60'
-        # TEMP-SKIP: Python3.12 - Django 6.0:
-        # TEMP-SKIP: python.version: '3.12'
-        # TEMP-SKIP: tox.env: 'py312-django60'
-        # TEMP-SKIP: 
-        # TEMP-SKIP: Python3.13 - Django 5.2:
-        # TEMP-SKIP: python.version: '3.13'
-        # TEMP-SKIP: tox.env: 'py313-django52'
-        # TEMP-SKIP: Python3.12 - Django 5.2:
-        # TEMP-SKIP: python.version: '3.12'
-        # TEMP-SKIP: tox.env: 'py312-django52'
-        # TEMP-SKIP: Python3.11 - Django 5.2:
-        # TEMP-SKIP: python.version: '3.11'
-        # TEMP-SKIP: tox.env: 'py311-django52'
-        # TEMP-SKIP: Python3.10 - Django 5.2:
-        # TEMP-SKIP: python.version: '3.10'
-        # TEMP-SKIP: tox.env: 'py310-django52'
-        # TEMP-SKIP: 
-        # TEMP-SKIP: Python3.13 - Django 5.1:
-        # TEMP-SKIP: python.version: '3.13'
-        # TEMP-SKIP: tox.env: 'py313-django51'
-        # TEMP-SKIP: Python3.12 - Django 5.1:
-        # TEMP-SKIP: python.version: '3.12'
-        # TEMP-SKIP: tox.env: 'py312-django51'
-        # TEMP-SKIP: Python3.11 - Django 5.1:
-        # TEMP-SKIP: python.version: '3.11'
-        # TEMP-SKIP: tox.env: 'py311-django51'
-        # TEMP-SKIP: Python3.10 - Django 5.1:
-        # TEMP-SKIP: python.version: '3.10'
-        # TEMP-SKIP: tox.env: 'py310-django51'
-        # TEMP-SKIP: 
-        # TEMP-SKIP: Python3.12 - Django 5.0:
-        # TEMP-SKIP: python.version: '3.12'
-        # TEMP-SKIP: tox.env: 'py312-django50'
-        # TEMP-SKIP: Python3.11 - Django 5.0:
-        # TEMP-SKIP: python.version: '3.11'
-        # TEMP-SKIP: tox.env: 'py311-django50'
-        # TEMP-SKIP: Python3.10 - Django 5.0:
-        # TEMP-SKIP: python.version: '3.10'
-        # TEMP-SKIP: tox.env: 'py310-django50'
-        # TEMP-SKIP: 
-        # TEMP-SKIP: Python3.11 - Django 4.2:
-        # TEMP-SKIP: python.version: '3.11'
-        # TEMP-SKIP: tox.env: 'py311-django42'
-        # TEMP-SKIP: Python3.10 - Django 4.2:
-        # TEMP-SKIP: python.version: '3.10'
-        # TEMP-SKIP: tox.env: 'py310-django42'
-        # TEMP-SKIP: Python 3.9 - Django 4.2:
-        # TEMP-SKIP: python.version: '3.9'
-        # TEMP-SKIP: tox.env: 'py39-django42'
-        # TEMP-SKIP: Python 3.8 - Django 4.2:
-        # TEMP-SKIP: python.version: '3.8'
-        # TEMP-SKIP: tox.env: 'py38-django42'
-        # TEMP-SKIP: 
-        # TEMP-SKIP: Python3.11 - Django 4.1:
-        # TEMP-SKIP: python.version: '3.11'
-        # TEMP-SKIP: tox.env: 'py311-django41'
-        # TEMP-SKIP: Python3.10 - Django 4.1:
-        # TEMP-SKIP: python.version: '3.10'
-        # TEMP-SKIP: tox.env: 'py310-django41'
-        # TEMP-SKIP: Python 3.9 - Django 4.1:
-        # TEMP-SKIP: python.version: '3.9'
-        # TEMP-SKIP: tox.env: 'py39-django41'
-        # TEMP-SKIP: Python 3.8 - Django 4.1:
-        # TEMP-SKIP: python.version: '3.8'
-        # TEMP-SKIP: tox.env: 'py38-django41'
-        # TEMP-SKIP: 
-        # TEMP-SKIP: Python3.11 - Django 4.0:
-        # TEMP-SKIP: python.version: '3.11'
-        # TEMP-SKIP: tox.env: 'py311-django40'
-        # TEMP-SKIP: Python3.10 - Django 4.0:
-        # TEMP-SKIP: python.version: '3.10'
-        # TEMP-SKIP: tox.env: 'py310-django40'
-        # TEMP-SKIP: Python 3.9 - Django 4.0:
-        # TEMP-SKIP: python.version: '3.9'
-        # TEMP-SKIP: tox.env: 'py39-django40'
-        # TEMP-SKIP: Python 3.8 - Django 4.0:
-        # TEMP-SKIP: python.version: '3.8'
-        # TEMP-SKIP: tox.env: 'py38-django40'
-        # TEMP-SKIP: 
-        # TEMP-SKIP: Python3.11 - Django 3.2:
-        # TEMP-SKIP: python.version: '3.11'
-        # TEMP-SKIP: tox.env: 'py311-django32'
-        # TEMP-SKIP: Python 3.9 - Django 3.2:
-        # TEMP-SKIP: python.version: '3.9'
-        # TEMP-SKIP: tox.env: 'py39-django32'
-        # TEMP-SKIP: Python 3.8 - Django 3.2:
-        # TEMP-SKIP: python.version: '3.8'
-        # TEMP-SKIP: tox.env: 'py38-django32'
-        # TEMP-SKIP: 
-        # TEMP-SKIP: 
     steps:
       - task: CredScan@3
         inputs:
@@ -163,253 +70,160 @@ jobs:
         env:
           MSSQL_PASSWORD: $(TestAppPassword)
 
-  # TEMP-SKIP:   - job: Linux
-  # TEMP-SKIP:     pool:
-  # TEMP-SKIP:       name: Django-1ES-pool
-  # TEMP-SKIP:       demands:
-  # TEMP-SKIP:       - imageOverride -equals Ubuntu22.04-AzurePipelines
-  # TEMP-SKIP:     timeoutInMinutes: 120
-  # TEMP-SKIP: 
-  # TEMP-SKIP:     strategy:
-  # TEMP-SKIP:       matrix:
-  # TEMP-SKIP:         Python3.14 - Django 6.0:
-  # TEMP-SKIP:           python.version: '3.14'
-  # TEMP-SKIP:           tox.env: 'py314-django60'
-  # TEMP-SKIP:         Python3.13 - Django 6.0:
-  # TEMP-SKIP:           python.version: '3.13'
-  # TEMP-SKIP:           tox.env: 'py313-django60'
-  # TEMP-SKIP:         Python3.12 - Django 6.0:
-  # TEMP-SKIP:           python.version: '3.12'
-  # TEMP-SKIP:           tox.env: 'py312-django60'
-  # TEMP-SKIP: 
-  # TEMP-SKIP:         Python3.13 - Django 5.2:
-  # TEMP-SKIP:           python.version: '3.13'
-  # TEMP-SKIP:           tox.env: 'py313-django52'
-  # TEMP-SKIP:         Python3.12 - Django 5.2:
-  # TEMP-SKIP:           python.version: '3.12'
-  # TEMP-SKIP:           tox.env: 'py312-django52'
-  # TEMP-SKIP:         Python3.11 - Django 5.2:
-  # TEMP-SKIP:           python.version: '3.11'
-  # TEMP-SKIP:           tox.env: 'py311-django52'
-  # TEMP-SKIP:         Python3.10 - Django 5.2:
-  # TEMP-SKIP:           python.version: '3.10'
-  # TEMP-SKIP:           tox.env: 'py310-django52'
-  # TEMP-SKIP: 
-  # TEMP-SKIP:         Python3.13 - Django 5.1:
-  # TEMP-SKIP:           python.version: '3.13'
-  # TEMP-SKIP:           tox.env: 'py313-django51'
-  # TEMP-SKIP:         Python3.12 - Django 5.1:
-  # TEMP-SKIP:           python.version: '3.12'
-  # TEMP-SKIP:           tox.env: 'py312-django51'
-  # TEMP-SKIP:         Python3.11 - Django 5.1:
-  # TEMP-SKIP:           python.version: '3.11'
-  # TEMP-SKIP:           tox.env: 'py311-django51'
-  # TEMP-SKIP:         Python3.10 - Django 5.1:
-  # TEMP-SKIP:           python.version: '3.10'
-  # TEMP-SKIP:           tox.env: 'py310-django51'
-  # TEMP-SKIP: 
-  # TEMP-SKIP:         Python3.12 - Django 5.0:
-  # TEMP-SKIP:           python.version: '3.12'
-  # TEMP-SKIP:           tox.env: 'py312-django50'
-  # TEMP-SKIP:         Python3.11 - Django 5.0:
-  # TEMP-SKIP:           python.version: '3.11'
-  # TEMP-SKIP:           tox.env: 'py311-django50'
-  # TEMP-SKIP:         Python3.10 - Django 5.0:
-  # TEMP-SKIP:           python.version: '3.10'
-  # TEMP-SKIP:           tox.env: 'py310-django50'
-  # TEMP-SKIP: 
-  # TEMP-SKIP:         Python3.11 - Django 4.2:
-  # TEMP-SKIP:           python.version: '3.11'
-  # TEMP-SKIP:           tox.env: 'py311-django42'
-  # TEMP-SKIP:         Python3.10 - Django 4.2:
-  # TEMP-SKIP:           python.version: '3.10'
-  # TEMP-SKIP:           tox.env: 'py310-django42'
-  # TEMP-SKIP:         Python 3.9 - Django 4.2:
-  # TEMP-SKIP:           python.version: '3.9'
-  # TEMP-SKIP:           tox.env: 'py39-django42'
-  # TEMP-SKIP:         Python 3.8 - Django 4.2:
-  # TEMP-SKIP:           python.version: '3.8'
-  # TEMP-SKIP:           tox.env: 'py38-django42'
-  # TEMP-SKIP: 
-  # TEMP-SKIP:         Python3.11 - Django 4.1:
-  # TEMP-SKIP:           python.version: '3.11'
-  # TEMP-SKIP:           tox.env: 'py311-django41'
-  # TEMP-SKIP:         Python3.10 - Django 4.1:
-  # TEMP-SKIP:           python.version: '3.10'
-  # TEMP-SKIP:           tox.env: 'py310-django41'
-  # TEMP-SKIP:         Python 3.9 - Django 4.1:
-  # TEMP-SKIP:           python.version: '3.9'
-  # TEMP-SKIP:           tox.env: 'py39-django41'
-  # TEMP-SKIP:         Python 3.8 - Django 4.1:
-  # TEMP-SKIP:           python.version: '3.8'
-  # TEMP-SKIP:           tox.env: 'py38-django41'
-  # TEMP-SKIP: 
-  # TEMP-SKIP:         Python3.11 - Django 4.0:
-  # TEMP-SKIP:           python.version: '3.11'
-  # TEMP-SKIP:           tox.env: 'py311-django40'
-  # TEMP-SKIP:         Python3.10 - Django 4.0:
-  # TEMP-SKIP:           python.version: '3.10'
-  # TEMP-SKIP:           tox.env: 'py310-django40'
-  # TEMP-SKIP:         Python 3.9 - Django 4.0:
-  # TEMP-SKIP:           python.version: '3.9'
-  # TEMP-SKIP:           tox.env: 'py39-django40'
-  # TEMP-SKIP:         Python 3.8 - Django 4.0:
-  # TEMP-SKIP:           python.version: '3.8'
-  # TEMP-SKIP:           tox.env: 'py38-django40'
-  # TEMP-SKIP: 
-  # TEMP-SKIP:         Python3.11 - Django 3.2:
-  # TEMP-SKIP:           python.version: '3.11'
-  # TEMP-SKIP:           tox.env: 'py311-django32'
-  # TEMP-SKIP:         Python 3.9 - Django 3.2:
-  # TEMP-SKIP:           python.version: '3.9'
-  # TEMP-SKIP:           tox.env: 'py39-django32'
-  # TEMP-SKIP:         Python 3.8 - Django 3.2:
-  # TEMP-SKIP:           python.version: '3.8'
-  # TEMP-SKIP:           tox.env: 'py38-django32'
-  # TEMP-SKIP: 
-  # TEMP-SKIP:     steps:
-  # TEMP-SKIP:       - task: UsePythonVersion@0
-  # TEMP-SKIP:         inputs:
-  # TEMP-SKIP:           versionSpec: "$(python.version)"
-  # TEMP-SKIP:         displayName: Use Python $(python.version)
-  # TEMP-SKIP: 
-  # TEMP-SKIP:       - script: |
-  # TEMP-SKIP:           docker version
-  # TEMP-SKIP:           docker pull mcr.microsoft.com/mssql/server:2025-latest
-  # TEMP-SKIP:           docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2025-latest
-  # TEMP-SKIP:           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-  # TEMP-SKIP:           curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
-  # TEMP-SKIP:           
-  # TEMP-SKIP:           # Wait for SQL Server to be ready with increased timeout
-  # TEMP-SKIP:           echo "Waiting for SQL Server to start..."
-  # TEMP-SKIP:           
-  # TEMP-SKIP:           # Extended wait for the container to be running and SQL Server service to be listening
-  # TEMP-SKIP:           for i in {1..60}; do
-  # TEMP-SKIP:             if docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest) 2>&1 | grep -q "SQL Server is now ready for client connections"; then
-  # TEMP-SKIP:               echo "SQL Server service is ready after $i attempts ($(($i * 3)) seconds)"
-  # TEMP-SKIP:               break
-  # TEMP-SKIP:             fi
-  # TEMP-SKIP:             echo "Attempt $i: Waiting for SQL Server service to be ready, checking again in 3 seconds..."
-  # TEMP-SKIP:             sleep 3
-  # TEMP-SKIP:           done
-  # TEMP-SKIP:           
-  # TEMP-SKIP:           # Increased wait to ensure full initialization for database operations
-  # TEMP-SKIP:           echo "Waiting additional 60 seconds for full SQL Server initialization..."
-  # TEMP-SKIP:           sleep 60
-  # TEMP-SKIP:           
-  # TEMP-SKIP:           # Verify we can connect using a simple network test first
-  # TEMP-SKIP:           echo "Testing SQL Server connectivity..."
-  # TEMP-SKIP:           if ! timeout 30 bash -c 'until echo > /dev/tcp/localhost/1433; do sleep 1; done'; then
-  # TEMP-SKIP:             echo "Cannot connect to SQL Server on port 1433"
-  # TEMP-SKIP:             docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
-  # TEMP-SKIP:             exit 1
-  # TEMP-SKIP:           fi
-  # TEMP-SKIP:           
-  # TEMP-SKIP:           echo "SQL Server is ready and accepting connections"
-  # TEMP-SKIP:         displayName: Install SQL Server
-  # TEMP-SKIP: 
-  # TEMP-SKIP:       - script: |
-  # TEMP-SKIP:           curl -sSL -O https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb
-  # TEMP-SKIP:           sudo dpkg -i packages-microsoft-prod.deb
-  # TEMP-SKIP:           rm packages-microsoft-prod.deb
-  # TEMP-SKIP: 
-  # TEMP-SKIP:           # Add retry logic for handling dpkg lock
-  # TEMP-SKIP:           for i in {1..30}; do
-  # TEMP-SKIP:             echo "Attempt $i of 30 to update packages..."
-  # TEMP-SKIP:             if sudo apt-get update; then
-  # TEMP-SKIP:               break
-  # TEMP-SKIP:             fi
-  # TEMP-SKIP:             echo "Waiting for dpkg lock to be released..."
-  # TEMP-SKIP:             sleep 10
-  # TEMP-SKIP:           done
-  # TEMP-SKIP:           if ! sudo apt-get update; then
-  # TEMP-SKIP:             echo "Failed to update packages after 30 attempts. Exiting."
-  # TEMP-SKIP:             exit 1
-  # TEMP-SKIP:           fi
-  # TEMP-SKIP: 
-  # TEMP-SKIP:           # Add retry logic for installing package
-  # TEMP-SKIP:           for i in {1..30}; do
-  # TEMP-SKIP:             echo "Attempt $i of 30 to install ODBC driver..."
-  # TEMP-SKIP:             if sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17; then
-  # TEMP-SKIP:               break
-  # TEMP-SKIP:             fi
-  # TEMP-SKIP:             echo "Waiting for dpkg lock to be released..."
-  # TEMP-SKIP:             sleep 10
-  # TEMP-SKIP:           done
-  # TEMP-SKIP:           # Exit with a non-zero status if installation fails after all retries
-  # TEMP-SKIP:           if ! sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17; then
-  # TEMP-SKIP:             echo "Failed to install ODBC driver after 30 attempts. Exiting."
-  # TEMP-SKIP:             exit 1
-  # TEMP-SKIP:           fi
-  # TEMP-SKIP:         displayName: Install ODBC Driver
-  # TEMP-SKIP: 
-  # TEMP-SKIP:       - script: |
-  # TEMP-SKIP:           # Install mssql-tools to get sqlcmd
-  # TEMP-SKIP:           sudo ACCEPT_EULA=Y apt-get install -y mssql-tools
-  # TEMP-SKIP:           
-  # TEMP-SKIP:           # Wait for SQL Server authentication to be ready (retry loop)
-  # TEMP-SKIP:           echo "Waiting for SQL Server authentication to be ready..."
-  # TEMP-SKIP:           export PATH="$PATH:/opt/mssql-tools/bin"
-  # TEMP-SKIP:           
-  # TEMP-SKIP:           # Retry authentication until SQL Server finishes its internal upgrade process
-  # TEMP-SKIP:           for i in {1..30}; do
-  # TEMP-SKIP:             echo "Authentication attempt $i of 30..."
-  # TEMP-SKIP:             # Force IPv4 TCP to avoid potential localhost/IPv6 resolution issues on agents
-  # TEMP-SKIP:             if sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10 >/dev/null 2>&1; then
-  # TEMP-SKIP:               echo "✅ SQL Server authentication successful after $i attempts!"
-  # TEMP-SKIP:               break
-  # TEMP-SKIP:             else
-  # TEMP-SKIP:               if [ $i -eq 30 ]; then
-  # TEMP-SKIP:                 echo "❌ SQL Server authentication FAILED after 30 attempts!"
-  # TEMP-SKIP:                 echo "Final attempt with verbose output:"
-  # TEMP-SKIP:                 sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10
-  # TEMP-SKIP:                 echo ""
-  # TEMP-SKIP:                 echo "Container logs:"
-  # TEMP-SKIP:                 docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
-  # TEMP-SKIP:                 exit 1
-  # TEMP-SKIP:               else
-  # TEMP-SKIP:                 echo "Authentication failed (attempt $i), waiting 10 seconds before retry..."
-  # TEMP-SKIP:                 echo "This is normal - SQL Server may still be upgrading internal databases..."
-  # TEMP-SKIP:                 sleep 10
-  # TEMP-SKIP:               fi
-  # TEMP-SKIP:             fi
-  # TEMP-SKIP:           done
-  # TEMP-SKIP:           
-  # TEMP-SKIP:           echo "SQL Server is fully ready for authentication!"
-  # TEMP-SKIP:         displayName: Wait for SQL Server Authentication
-  # TEMP-SKIP: 
-  # TEMP-SKIP:       - script: |
-  # TEMP-SKIP:           # Since pylibmc isn't supported for Python 3.12+ 
-  # TEMP-SKIP:           # We need to install libmemcached-dev to build it - dependency for Django test suite
-  # TEMP-SKIP:           # https://github.com/django/django/blob/1a744343999c9646912cee76ba0a2fa6ef5e6240/.github/workflows/schedule_tests.yml#L50
-  # TEMP-SKIP:           PYTHON_MINOR=$(python -c "import sys; print(sys.version_info.minor)")
-  # TEMP-SKIP:           if [[ "$PYTHON_MINOR" -ge 12 ]]; then
-  # TEMP-SKIP:             echo "Installing libmemcached-dev for Python 3.12+"
-  # TEMP-SKIP:             sudo apt-get install -y libmemcached-dev
-  # TEMP-SKIP:           fi
-  # TEMP-SKIP:         displayName: Install libmemcached for Python 3.12+
-  # TEMP-SKIP: 
-  # TEMP-SKIP:       - script: |
-  # TEMP-SKIP:           python -m pip install --upgrade pip wheel setuptools
-  # TEMP-SKIP:           pip install tox
-  # TEMP-SKIP:           git clone https://github.com/django/django.git
-  # TEMP-SKIP:         displayName: Install Python requirements
-  # TEMP-SKIP: 
-  # TEMP-SKIP:       - script: tox -e $(tox.env)
-  # TEMP-SKIP:         displayName: Run tox
-  # TEMP-SKIP:         env:
-  # TEMP-SKIP:           MSSQL_PASSWORD: $(TestAppPassword)
-  # TEMP-SKIP:           MSSQL_HOST: 127.0.0.1
-  # TEMP-SKIP: 
-  # TEMP-SKIP:       - task: PublishCodeCoverageResults@1
-  # TEMP-SKIP:         inputs:
-  # TEMP-SKIP:           codeCoverageTool: 'Cobertura'
-  # TEMP-SKIP:           summaryFileLocation: 'django/coverage.xml'
-  # TEMP-SKIP: 
-  # TEMP-SKIP:       - task: PublishTestResults@2
-  # TEMP-SKIP:         displayName: Publish test results via jUnit
-  # TEMP-SKIP:         inputs:
-  # TEMP-SKIP:           testResultsFormat: 'JUnit'
-  # TEMP-SKIP:           testResultsFiles: 'django/result.xml'
-  # TEMP-SKIP:           testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
-  # TEMP-SKIP: 
+  - job: Linux
+    pool:
+      name: Django-1ES-pool
+      demands:
+      - imageOverride -equals Ubuntu22.04-AzurePipelines
+    timeoutInMinutes: 120
+
+    strategy:
+      matrix:
+        Python3.14 - Django 6.0:
+          python.version: '3.14'
+          tox.env: 'py314-django60'
+    steps:
+      - task: UsePythonVersion@0
+        inputs:
+          versionSpec: "$(python.version)"
+        displayName: Use Python $(python.version)
+
+      - script: |
+          docker version
+          docker pull mcr.microsoft.com/mssql/server:2025-latest
+          docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2025-latest
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          
+          # Wait for SQL Server to be ready with increased timeout
+          echo "Waiting for SQL Server to start..."
+          
+          # Extended wait for the container to be running and SQL Server service to be listening
+          for i in {1..60}; do
+            if docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest) 2>&1 | grep -q "SQL Server is now ready for client connections"; then
+              echo "SQL Server service is ready after $i attempts ($(($i * 3)) seconds)"
+              break
+            fi
+            echo "Attempt $i: Waiting for SQL Server service to be ready, checking again in 3 seconds..."
+            sleep 3
+          done
+          
+          # Increased wait to ensure full initialization for database operations
+          echo "Waiting additional 60 seconds for full SQL Server initialization..."
+          sleep 60
+          
+          # Verify we can connect using a simple network test first
+          echo "Testing SQL Server connectivity..."
+          if ! timeout 30 bash -c 'until echo > /dev/tcp/localhost/1433; do sleep 1; done'; then
+            echo "Cannot connect to SQL Server on port 1433"
+            docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
+            exit 1
+          fi
+          
+          echo "SQL Server is ready and accepting connections"
+        displayName: Install SQL Server
+
+      - script: |
+          curl -sSL -O https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb
+          sudo dpkg -i packages-microsoft-prod.deb
+          rm packages-microsoft-prod.deb
+
+          # Add retry logic for handling dpkg lock
+          for i in {1..30}; do
+            echo "Attempt $i of 30 to update packages..."
+            if sudo apt-get update; then
+              break
+            fi
+            echo "Waiting for dpkg lock to be released..."
+            sleep 10
+          done
+          if ! sudo apt-get update; then
+            echo "Failed to update packages after 30 attempts. Exiting."
+            exit 1
+          fi
+
+          # Add retry logic for installing package
+          for i in {1..30}; do
+            echo "Attempt $i of 30 to install ODBC driver..."
+            if sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17; then
+              break
+            fi
+            echo "Waiting for dpkg lock to be released..."
+            sleep 10
+          done
+          # Exit with a non-zero status if installation fails after all retries
+          if ! sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17; then
+            echo "Failed to install ODBC driver after 30 attempts. Exiting."
+            exit 1
+          fi
+        displayName: Install ODBC Driver
+
+      - script: |
+          # Install mssql-tools to get sqlcmd
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools
+          
+          # Wait for SQL Server authentication to be ready (retry loop)
+          echo "Waiting for SQL Server authentication to be ready..."
+          export PATH="$PATH:/opt/mssql-tools/bin"
+          
+          # Retry authentication until SQL Server finishes its internal upgrade process
+          for i in {1..30}; do
+            echo "Authentication attempt $i of 30..."
+            # Force IPv4 TCP to avoid potential localhost/IPv6 resolution issues on agents
+            if sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10 >/dev/null 2>&1; then
+              echo "✅ SQL Server authentication successful after $i attempts!"
+              break
+            else
+              if [ $i -eq 30 ]; then
+                echo "❌ SQL Server authentication FAILED after 30 attempts!"
+                echo "Final attempt with verbose output:"
+                sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10
+                echo ""
+                echo "Container logs:"
+                docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
+                exit 1
+              else
+                echo "Authentication failed (attempt $i), waiting 10 seconds before retry..."
+                echo "This is normal - SQL Server may still be upgrading internal databases..."
+                sleep 10
+              fi
+            fi
+          done
+          
+          echo "SQL Server is fully ready for authentication!"
+        displayName: Wait for SQL Server Authentication
+
+      - script: |
+          # Since pylibmc isn't supported for Python 3.12+ 
+          # We need to install libmemcached-dev to build it - dependency for Django test suite
+          # https://github.com/django/django/blob/1a744343999c9646912cee76ba0a2fa6ef5e6240/.github/workflows/schedule_tests.yml#L50
+          PYTHON_MINOR=$(python -c "import sys; print(sys.version_info.minor)")
+          if [[ "$PYTHON_MINOR" -ge 12 ]]; then
+            echo "Installing libmemcached-dev for Python 3.12+"
+            sudo apt-get install -y libmemcached-dev
+          fi
+        displayName: Install libmemcached for Python 3.12+
+
+      - script: |
+          python -m pip install --upgrade pip wheel setuptools
+          pip install tox
+          git clone https://github.com/django/django.git
+        displayName: Install Python requirements
+
+      - script: tox -e $(tox.env)
+        displayName: Run tox
+        env:
+          MSSQL_PASSWORD: $(TestAppPassword)
+          MSSQL_HOST: 127.0.0.1
+
+      - task: PublishCodeCoverageResults@1
+        inputs:
+          codeCoverageTool: 'Cobertura'
+          summaryFileLocation: 'django/coverage.xml'
+
+      - task: PublishTestResults@2
+        displayName: Publish test results via jUnit
+        inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: 'django/result.xml'
+          testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
