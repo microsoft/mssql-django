@@ -13,6 +13,8 @@ from django.db.backends.base.introspection import TableInfo as BaseTableInfo
 from django.db.models.indexes import Index
 from django.conf import settings
 
+from mssql.parser import parse_multipart_identifier, build_multipart_name
+
 SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 SQL_SMALLAUTOFIELD = -777333
@@ -31,10 +33,9 @@ def get_table_name_with_schema(table_name):
     # db_table = '[schema].[table_name]'
     # is supported
     
+    _, _, schema_name, table_name = parse_multipart_identifier(table_name)
 
-    if '[' in table_name and ']' in table_name and '.' in table_name:
-        table_name = table_name.replace('[', '').replace(']', '')
-        schema_name, table_name = table_name.split('.', 1)
+    if schema_name is not None:
         return f"'{schema_name}'", table_name
 
     return getattr(settings, 'SCHEMA_TO_INSPECT', 'SCHEMA_NAME()'), table_name
@@ -112,13 +113,20 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
 
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
+        rows = cursor.fetchall()
+
+        def create_table_name(schema, table_name):
+            if schema == 'dbo':
+                return build_multipart_name(table_name)
+            return build_multipart_name(schema, table_name)
+
         if VERSION >= (4, 2) and self.connection.features.supports_comments:
-            return [TableInfo(f'[{row[0]}].[{row[1]}]' if row[0] != 'dbo' else row[1], types.get(row[2]), row[3])
-                    for row in cursor.fetchall()
+            return [TableInfo(create_table_name(row[0], row[1]), types.get(row[2]), row[3])
+                    for row in rows
                     if row[1] not in self.ignored_tables]
         else:
-            return [BaseTableInfo(f'[{row[0]}].[{row[1]}]' if row[0] != 'dbo' else row[1], types.get(row[2]))
-                    for row in cursor.fetchall()
+            return [BaseTableInfo(create_table_name(row[0], row[1]), types.get(row[2]))
+                    for row in rows
                     if row[1] not in self.ignored_tables]
 
     def identifier_converter(self, name):
