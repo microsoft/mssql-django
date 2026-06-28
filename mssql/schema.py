@@ -26,12 +26,15 @@ from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_str
 
+from mssql.parser import parse_multipart_identifier, escape_identifier
+
 if django_version >= (4, 0):
     from django.db.models.sql import Query
     from django.db.backends.ddl_references import Expressions
 # Import CompositePrimaryKey only if Django version is 5.2 or higher
 if django_version >= (5, 2):    
     from django.db.models.fields.composite import CompositePrimaryKey
+
 class Statement(DjStatement):
     def __hash__(self):
         return hash((self.template, str(self.parts['name'])))
@@ -1499,11 +1502,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
           constraints.insert(0, composite_pk_sql)
         
         # Make the table schema
-        if '.' in model._meta.db_table:
-            schema_name, _ = model._meta.db_table.split('.', 1)
+        _, _, schema_name, _ = parse_multipart_identifier(model._meta.db_table)
 
+        if schema_name != 'dbo' and schema_name is not None:
+            # Only create the schema is it isn't [dbo] and not None
             sql = self.sql_create_schema % {
-                'schema': schema_name.strip('[').strip(']')
+                'schema': escape_identifier(schema_name)
             }
 
             self.execute(sql, None)

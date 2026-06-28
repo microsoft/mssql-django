@@ -285,3 +285,9 @@ class DboSchema(models.Model):
 
     class Meta:
         db_table = '[dbo].[DefaultNameTable]'
+
+class UnusualSchema(models.Model):
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = '[unusual]]schema].[Unusual]]Table]'

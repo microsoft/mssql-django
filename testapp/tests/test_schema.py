@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.db import connections
 from django.core.management import call_command
 
-from ..models import ParentSchema, DboSchema
+from ..models import ParentSchema, DboSchema, UnusualSchema
 
 class NonDefaultSchemaTests(TestCase):
 
@@ -33,7 +33,8 @@ class NonDefaultSchemaTests(TestCase):
     def test_inspectdb(self):
         connection = connections['default']
 
-        descs = connection.introspection.get_table_description(cursor=connection.cursor(), table_name='[events].[ParentSchema]')
+        with connection.cursor() as cursor:
+            descs = connection.introspection.get_table_description(cursor=cursor, table_name='[events].[ParentSchema]')
 
         self.assertEqual(len(descs), 2, msg="Unable to get both columns on table")
         self.assertEqual( [ desc.name for desc in descs ], ['id', 'name'], msg="Unable to get both columns on table")
@@ -52,3 +53,26 @@ class NonDefaultSchemaTests(TestCase):
 
         num_schema = DboSchema.objects.all().count()
         self.assertEqual(num_schema, 0, msg="DboSchema model was not flushed")
+
+    def test_unusual_schema_flush(self):
+        UnusualSchema.objects.all().delete()
+
+        UnusualSchema.objects.create(
+            name='Test'
+        )
+
+        num_schema = UnusualSchema.objects.all().count()
+        self.assertEqual(num_schema, 1, msg="UnusualSchema model was not inserted to")
+
+        self.__do_flush()
+
+        num_schema = UnusualSchema.objects.all().count()
+        self.assertEqual(num_schema, 0, msg="UnusualSchema model was not flushed")
+
+    def test_unusual_schema_correct(self):
+        connection = connections['default']
+
+        with connection.cursor() as cursor:
+            descs = connection.introspection.get_table_description(cursor=cursor, table_name='[unusual]]schema].[Unusual]]Table]')
+
+            # TODO !!
