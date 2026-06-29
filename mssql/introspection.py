@@ -116,6 +116,15 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         rows = cursor.fetchall()
 
         def create_table_name(schema, table_name):
+            # Why do we do this?
+            # We only use the table name (ie `[table_1]` or `table_1`)
+            # if the schema is `dbo` because this package defaults to 
+            # dbo for its schema. Therefore django models without a
+            # specified schema (eg `django_migrations`) will fall in 
+            # `dbo`. However django expects the found table name 
+            # to be `django_migrations` NOT `dbo.django_migrations`
+            # For the same reason, `build_multipart_name` only adds
+            # braces when brace escaping is used
             if schema == 'dbo':
                 return build_multipart_name(table_name)
             return build_multipart_name(schema, table_name)
@@ -169,8 +178,8 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
 
         # map pyodbc's cursor.columns to db-api cursor description
-        _schema_name, table_name = get_table_name_with_schema(table_name=table_name)
-        columns = [[c[3], c[4], c[6], c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+        columns = [[c[3], c[4], c[6], c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name, schema=schema_name[1:-1])]
 
         if not columns:
             raise DatabaseError(f"Table {table_name} does not exist.")
