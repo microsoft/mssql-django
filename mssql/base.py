@@ -216,6 +216,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         17: 2025,
     }
 
+    _known_versions = {}
+    _known_azures = {}
+
     # https://azure.microsoft.com/en-us/documentation/articles/sql-database-develop-csharp-retry-windows/
     _transient_error_numbers = (
         '4060',
@@ -296,6 +299,127 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             conn_params['NAME'] = 'master'
         return conn_params
 
+    # Authentication modes where the ODBC driver handles credential
+    # acquisition, so the backend must not inject PWD.
+    _AUTH_MODES_WITHOUT_PASSWORD = frozenset({
+        'activedirectoryintegrated',
+        'activedirectoryinteractive',
+        'activedirectorymsi',
+        'activedirectorydefault',
+        'activedirectorydeviceflow',
+    })
+
+    @staticmethod
+    def _parse_extra_params(extra_params):
+        """Parse an ODBC extra_params string into a ``{key: value}`` dict.
+
+        Implements the tokenisation rules from the MS-ODBCSTR specification:
+        - Semicolon-separated ``key=value`` pairs
+        - Braced values: ``{value}`` (may contain semicolons and ``=``)
+        - Escaped closing braces: ``}}`` → ``}``
+        - Opening braces inside a braced value need no escaping
+
+        Parsing is lenient: segments with a missing ``=`` are silently
+        skipped.  An unclosed braced value consumes to end-of-string and
+        is stored as-is (no crash, no silent discard) so that
+        ``extra_params`` from Django settings never causes an unexpected
+        exception.
+
+        Adapted from *mssql-python*'s ``_ConnectionStringParser._parse``
+        (MIT-licensed, Microsoft Corporation) which has 59+ unit tests
+        against the full MS-ODBCSTR spec.  Validation, keyword allow-list,
+        and duplicate detection were removed because ``extra_params`` is an
+        unstructured escape hatch where the user is responsible for
+        correctness.
+
+        Reference:
+            https://learn.microsoft.com/en-us/openspecs/sql_server_protocols/ms-odbcstr
+        """
+        if not extra_params:
+            return {}
+
+        params = {}
+        pos = 0
+        length = len(extra_params)
+
+        while pos < length:
+            # skip whitespace and semicolons between pairs
+            while pos < length and extra_params[pos] in ' \t;':
+                pos += 1
+            if pos >= length:
+                break
+
+            # --- key ---
+            key_start = pos
+            while pos < length and extra_params[pos] not in '=;':
+                pos += 1
+
+            if pos >= length or extra_params[pos] != '=':
+                # no '=' found — skip to next semicolon
+                while pos < length and extra_params[pos] != ';':
+                    pos += 1
+                continue
+
+            key = extra_params[key_start:pos].strip().lower()
+            pos += 1  # skip '='
+
+            if not key:
+                while pos < length and extra_params[pos] != ';':
+                    pos += 1
+                continue
+
+            # --- value ---
+            # skip whitespace before value
+            while pos < length and extra_params[pos] in ' \t':
+                pos += 1
+
+            if pos >= length:
+                params.setdefault(key, '')
+                break
+
+            if extra_params[pos] == '{':
+                # braced value
+                pos += 1  # skip opening '{'
+                value_chars = []
+                while pos < length:
+                    ch = extra_params[pos]
+                    if ch == '}':
+                        if pos + 1 < length and extra_params[pos + 1] == '}':
+                            value_chars.append('}')
+                            pos += 2
+                        else:
+                            pos += 1  # skip closing '}'
+                            break
+                    else:
+                        value_chars.append(ch)
+                        pos += 1
+                params.setdefault(key, ''.join(value_chars))
+            else:
+                # simple value — read until semicolon or end
+                value_start = pos
+                while pos < length and extra_params[pos] != ';':
+                    pos += 1
+                params.setdefault(key, extra_params[value_start:pos].rstrip())
+
+        return params
+
+    @staticmethod
+    def _get_authentication_mode(extra_params):
+        """Return the normalized Authentication mode from extra_params, or None.
+
+        Returns ``None`` when the ``Authentication`` key is absent.
+        Returns ``''`` (empty string) when the key is present with an empty
+        value — callers can distinguish "not specified" from "explicitly
+        cleared".
+        """
+        if not extra_params:
+            return None
+        params = DatabaseWrapper._parse_extra_params(extra_params)
+        value = params.get('authentication')
+        if value is None:
+            return None
+        return value.strip().lower()
+
     def _build_connection_string(self, conn_params, driver):
         """Build ODBC connection string for the given driver."""
         database = conn_params['NAME']
@@ -307,7 +431,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         options = conn_params.get('OPTIONS', {})
         dsn = options.get('dsn', None)
-        options_extra_params = options.get('extra_params', '')
+        options_extra_params = options.get('extra_params') or ''
+        auth_mode = self._get_authentication_mode(options_extra_params)
 
         # Microsoft driver names assumed here are:
         # * SQL Server Native Client 10.0/11.0
@@ -341,10 +466,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         if user:
             cstr_parts['UID'] = user
-            if 'Authentication=ActiveDirectoryInteractive' not in options_extra_params:
+            if auth_mode not in self._AUTH_MODES_WITHOUT_PASSWORD:
                 cstr_parts['PWD'] = password
         elif 'TOKEN' not in conn_params:
-            if ms_drivers.match(driver) and 'Authentication=ActiveDirectoryMsi' not in options_extra_params:
+            if auth_mode is not None:
+                # User supplied an explicit Authentication= keyword;
+                # do not inject Trusted_Connection or Integrated Security
+                # as the ODBC driver rejects that combination (FA001).
+                pass
+            elif ms_drivers.match(driver):
                 cstr_parts['Trusted_Connection'] = trusted_connection
             else:
                 cstr_parts['Integrated Security'] = 'SSPI'
@@ -521,7 +651,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 return cursor.execute('SELECT SYSDATETIME()').fetchone()[0]
 
     @cached_property
-    def sql_server_version(self, _known_versions={}):
+    def sql_server_version(self):
         """
         Get the SQL Server version.
 
@@ -529,37 +659,32 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         populating both this cache and the to_azure_sql_db cache to avoid
         extra round trips.
 
-        The _known_versions default dictionary is created on the class. This is
-        intentional - it allows us to cache this property's value across instances.
-        Therefore, when Django creates a new database connection using the same
-        alias, we won't need query the server again.
+        Results are cached in the class-level _known_versions dict so that
+        when Django creates a new connection using the same alias, we don't
+        query the server again.
         """
-        if self.alias not in _known_versions:
+        if self.alias not in self._known_versions:
             self._fetch_server_properties()
-        return _known_versions[self.alias]
+        return self._known_versions[self.alias]
 
     @cached_property
-    def to_azure_sql_db(self, _known_azures={}):
+    def to_azure_sql_db(self):
         """
         Whether this connection is to a Microsoft Azure database server.
 
-        The _known_azures default dictionary is created on the class. This is
-        intentional - it allows us to cache this property's value across instances.
-        Therefore, when Django creates a new database connection using the same
-        alias, we won't need query the server again.
+        Results are cached in the class-level _known_azures dict so that
+        when Django creates a new connection using the same alias, we don't
+        query the server again.
         """
-        if self.alias not in _known_azures:
+        if self.alias not in self._known_azures:
             self._fetch_server_properties()
-        return _known_azures[self.alias]
+        return self._known_azures[self.alias]
 
     def _fetch_server_properties(self):
         """
         Fetch ProductVersion and EngineEdition in a single query and populate
         both sql_server_version and to_azure_sql_db caches.
         """
-        _known_versions = type(self).__dict__['sql_server_version'].func.__defaults__[0]
-        _known_azures = type(self).__dict__['to_azure_sql_db'].func.__defaults__[0]
-
         with self.temporary_connection() as cursor:
             cursor.execute(
                 "SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar), "
@@ -568,13 +693,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             product_version, edition = cursor.fetchone()
 
         is_azure = edition in _AZURE_EDITIONS
-        _known_azures[self.alias] = is_azure
+        self._known_azures[self.alias] = is_azure
 
         if edition == EDITION_AZURE_SQL_FABRIC:
             # Fabric reports ProductVersion numbers that don't correspond to
             # on-premises SQL Server releases but has modern capabilities.
             # Treat it as the latest supported version.
-            _known_versions[self.alias] = max(self._sql_server_versions.values())
+            self._known_versions[self.alias] = max(self._sql_server_versions.values())
         else:
             # For on-prem and Azure SQL DB/Managed Instance, use ProductVersion
             # to determine version. Azure SQL DB/MI report ProductVersion 12.x
@@ -583,7 +708,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             ver = int(product_version.split('.')[0])
             if ver not in self._sql_server_versions:
                 raise NotSupportedError('SQL Server v%d is not supported.' % ver)
-            _known_versions[self.alias] = self._sql_server_versions[ver]
+            self._known_versions[self.alias] = self._sql_server_versions[ver]
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
