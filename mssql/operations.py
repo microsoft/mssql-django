@@ -16,6 +16,11 @@ from django.utils.encoding import force_str
 from django import VERSION as django_version
 import pytz
 
+from mssql.parser import (
+    parse_multipart_identifier, build_multipart_name,
+    escape_identifier
+)
+
 DJANGO41 = django_version >= (4, 1)
 
 
@@ -409,9 +414,13 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         if not name:
             return name
-        if name.startswith('[') and name.endswith(']'):
-            return name  # Quoting once is enough.
-        return '[%s]' % name
+        # the name could be in the format 
+        # `[schema].[table]` or `table` or anything else
+        # or `column` or `[column]`
+        parts = parse_multipart_identifier(name)
+        
+        # escape
+        return build_multipart_name(*parts, force_wrap=True)
 
     def random_function_sql(self):
         """
