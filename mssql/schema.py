@@ -1506,8 +1506,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
         if schema_name != 'dbo' and schema_name is not None:
             # Only create the schema is it isn't [dbo] and not None
+            # We forcefully add the wrapping braces ([]) then remove them
+            # as the str sql_create_schema already has the braces in the correct place
             sql = self.sql_create_schema % {
-                'schema': escape_identifier(schema_name)
+                'schema': escape_identifier(schema_name, force_wrap=True)[1:-1]
             }
 
             self.execute(sql, None)
