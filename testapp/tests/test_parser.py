@@ -88,10 +88,12 @@ class ParserTests(TestCase):
 class EscapeTest(TestCase):
     
     def test_escape_identifier(self):
-        self.assertEqual(escape_identifier("MyTable"), "[MyTable]")
+        self.assertEqual(escape_identifier("MyTable"), "MyTable")
+        self.assertEqual(escape_identifier("MyTable", force_wrap=True), "[MyTable]")
         self.assertEqual(escape_identifier("My]Table"), "[My]]Table]")
         self.assertEqual(escape_identifier("My]]Table"), "[My]]]]Table]")
-        self.assertEqual(escape_identifier(""), "[]")
+        self.assertEqual(escape_identifier(""), "")
+        self.assertEqual(escape_identifier("", force_wrap=True), "[]")
     
 
     def test_escape_string_literal(self):

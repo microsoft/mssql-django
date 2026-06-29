@@ -20,14 +20,4 @@ class Migration(migrations.Migration):
                 'db_table': '[dbo].[DefaultNameTable]',
             },
         ),
-        migrations.CreateModel(
-            name='UnusualSchema',
-            fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=100)),
-            ],
-            options={
-                'db_table': '[unusual]]schema].[Unusual]]Table]',
-            },
-        ),
     ]

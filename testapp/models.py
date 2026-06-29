@@ -291,3 +291,15 @@ class UnusualSchema(models.Model):
 
     class Meta:
         db_table = '[unusual]]schema].[Unusual]]Table]'
+
+class UnusualSchema2(models.Model):
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = 'unusual]schema2.Unusual]Table2'
+
+class UnusualTable3(models.Model):
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = 'Unusual]Table3'

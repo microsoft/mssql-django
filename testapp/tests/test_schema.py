@@ -74,5 +74,28 @@ class NonDefaultSchemaTests(TestCase):
 
         with connection.cursor() as cursor:
             descs = connection.introspection.get_table_description(cursor=cursor, table_name='[unusual]]schema].[Unusual]]Table]')
+            
+            self.assertEqual(len(descs), 2)
+            self.assertEqual(descs[0].name, 'id')
+            self.assertEqual(descs[1].name, 'name')
+            self.assertEqual(descs[0].type_code, -5)
+            self.assertEqual(descs[1].type_code, -8)
 
-            # TODO !!
+    def test_introspection_table_names(self):
+        connection = connections['default']
+
+        with connection.cursor() as cursor:
+            tables = connection.introspection.table_names(cursor)
+
+            required_tables = [
+                'DefaultNameTable',
+                '[events].[ChildSchema]',
+                '[events].[ParentSchema]',
+                '[unusual]]schema].[Unusual]]Table]',
+                '[Unusual]]Table3]',
+                '[unusual]]schema2].[Unusual]]Table2]',
+            ]
+
+            for table in required_tables:
+                self.assertIn(table, tables)
+                self.assertEqual(tables.count(table), 1, msg=f'table {table} was created too {tables.count(table)} times, instead of once.')
