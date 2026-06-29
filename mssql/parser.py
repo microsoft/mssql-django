@@ -123,21 +123,25 @@ def parse_multipart_identifier(
 
     return result
 
-def escape_identifier(name):
+def escape_identifier(name, force_wrap = False):
+    if name is None or not isinstance(name, str):
+        return name
     name = name.replace(']', ']]').replace('"', '""')
-    if ']' in name:
+    if ']]' in name or force_wrap:
+        # only wrap when escaping
         return f'[{name}]'
     return name
 
 def escape_string_literal(name):
     return name.replace("'", "''")
 
-def build_multipart_name(*parts):
+def build_multipart_name(*parts, force_wrap = False):
     result = ''
+    force_wrap = len(parts) > 1 or force_wrap
 
     for part in parts:
         if len(result) != 0:
             result += '.'
-        result += escape_identifier(part)
+        result += escape_identifier(part, force_wrap=force_wrap) or ''
 
     return result
