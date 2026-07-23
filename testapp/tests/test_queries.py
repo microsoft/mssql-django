@@ -71,25 +71,27 @@ class TestGroupByEscapedPercent(TestCase):
     def test_like_with_escaped_percent_and_group_by(self):
         # Issue #476: escaped %% inside a LIKE pattern plus a real %s param.
         # The old regex mis-parsed %% and injected a phantom placeholder, so
-        # query.format() raised IndexError.
+        # query.format() raised IndexError. The %s param drives the DECLARE
+        # path in format_group_by_params; the predicate is tied to the data.
         table = Author._meta.db_table
         sql = (
             f"SELECT name, COUNT(*) FROM {table} "
-            f"WHERE name LIKE '%%abc%%' AND id >= %s "
+            f"WHERE name LIKE '%%abc%%' AND name <> %s "
             f"GROUP BY name"
         )
         with connection.cursor() as cursor:
-            cursor.execute(sql, [1])
+            cursor.execute(sql, ['xyz'])
             rows = sorted(cursor.fetchall())
         self.assertEqual(rows, [('%abc%', 2)])
 
     def test_unescaped_percent_pattern_no_params_preserved(self):
         # Issue #394: a GROUP BY query with an unescaped `%word` LIKE pattern
-        # and no params. The old `%\w+` regex rewrote `%abc` to `{}`, turning
-        # LIKE '%abc%' into LIKE '{}%' and silently returning zero rows. The
-        # narrowed regex leaves the pattern untouched, so the correct rows
-        # come back. This also guards the `%\w+` -> `%s` narrowing: a token
-        # that looks like a printf spec must no longer be treated as one.
+        # and no params. The old `%\w+` regex matched `%abc` and rewrote it to
+        # `{}`, turning LIKE '%abc%' into LIKE '{}%' and silently returning
+        # zero rows. The narrowed `%%|%s` regex no longer matches word chars
+        # after a `%`, so the pattern is left untouched and the correct rows
+        # come back. This is a no-param query, so it guards the regex narrowing
+        # itself, not the DECLARE path (that is covered above).
         table = Author._meta.db_table
         sql = (
             f"SELECT name, COUNT(*) FROM {table} "
