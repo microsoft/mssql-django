@@ -44,12 +44,20 @@ class TestBinaryfieldGroupby(TestCase):
 
 
 class TestGroupByEscapedPercent(TestCase):
-    """Regression test for issue #476.
+    """Regression tests for issue #476 and the over-matching behind #394.
 
-    A raw SQL query that combines a GROUP BY clause, an escaped %% literal
-    (e.g. inside a LIKE pattern), and a positional parameter used to raise
-    IndexError because format_group_by_params treated the escaped %% as a
-    parameter placeholder.
+    format_group_by_params rewrites parameter placeholders in any query that
+    contains a GROUP BY clause. The old ``re.sub(r'%\\w+', '{}', query)``
+    matched far more than real placeholders:
+
+    - it split escaped ``%%`` literals, injecting a phantom placeholder and
+      raising ``IndexError`` (issue #476, loud), and
+    - it swallowed unescaped ``%word`` patterns such as ``LIKE '%abc%'``,
+      rewriting them to ``LIKE '{}%'`` and silently returning the wrong rows
+      (issue #394, silent).
+
+    The fix narrows the match to ``%%`` (preserved verbatim) and ``%s`` (the
+    only real placeholder). These tests fail on ``dev`` and pass on the fix.
     """
 
     @classmethod
@@ -61,6 +69,9 @@ class TestGroupByEscapedPercent(TestCase):
         ])
 
     def test_like_with_escaped_percent_and_group_by(self):
+        # Issue #476: escaped %% inside a LIKE pattern plus a real %s param.
+        # The old regex mis-parsed %% and injected a phantom placeholder, so
+        # query.format() raised IndexError.
         table = Author._meta.db_table
         sql = (
             f"SELECT name, COUNT(*) FROM {table} "
@@ -72,18 +83,21 @@ class TestGroupByEscapedPercent(TestCase):
             rows = sorted(cursor.fetchall())
         self.assertEqual(rows, [('%abc%', 2)])
 
-    def test_escaped_percent_with_placeholder_outside_literal(self):
-        # '%%' as a SQL-Server literal '%' concatenated with a real %s
-        # placeholder. Exercises the '%%' + '%s' adjacency without putting
-        # the placeholder inside a string literal.
+    def test_unescaped_percent_pattern_no_params_preserved(self):
+        # Issue #394: a GROUP BY query with an unescaped `%word` LIKE pattern
+        # and no params. The old `%\w+` regex rewrote `%abc` to `{}`, turning
+        # LIKE '%abc%' into LIKE '{}%' and silently returning zero rows. The
+        # narrowed regex leaves the pattern untouched, so the correct rows
+        # come back. This also guards the `%\w+` -> `%s` narrowing: a token
+        # that looks like a printf spec must no longer be treated as one.
         table = Author._meta.db_table
         sql = (
             f"SELECT name, COUNT(*) FROM {table} "
-            f"WHERE name = '%%' + %s "
+            f"WHERE name LIKE '%abc%' "
             f"GROUP BY name"
         )
         with connection.cursor() as cursor:
-            cursor.execute(sql, ['abc%'])
+            cursor.execute(sql)
             rows = sorted(cursor.fetchall())
         self.assertEqual(rows, [('%abc%', 2)])
 
