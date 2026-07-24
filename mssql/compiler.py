@@ -400,7 +400,12 @@ class SQLCompiler(compiler.SQLCompiler):
                 # SQL Server requires an order-by clause for offsetting
                 if do_offset:
                     meta = self.query.get_meta()
-                    qn = self.quote_name_unless_alias
+                    # Django 6.1 deprecated SQLCompiler.quote_name_unless_alias()
+                    # in favour of .quote_name(); the latter doesn't exist before 6.1.
+                    if django.VERSION >= (6, 1):
+                        qn = self.quote_name
+                    else:
+                        qn = self.quote_name_unless_alias
                     offsetting_order_by = '%s.%s' % (qn(meta.db_table), qn(meta.pk.db_column or meta.pk.column))
                     if do_offset_emulation:
                         if order_by:
