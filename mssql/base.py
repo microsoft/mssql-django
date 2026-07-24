@@ -797,15 +797,15 @@ class CursorWrapper(object):
             elif length > 4000:
                 return 'NVARCHAR(max)'
             return 'NVARCHAR(%s)' % len(value)
-        elif typ == int:
+        elif isinstance(value, bool):
+            return 'BIT'
+        elif isinstance(value, int):
             if value < 0x7FFFFFFF and value > -0x7FFFFFFF:
                 return 'INT'
             else:
                 return 'BIGINT'
         elif typ == float:
             return 'DOUBLE PRECISION'
-        elif typ == bool:
-            return 'BIT'
         elif isinstance(value, Decimal):
             return 'NUMERIC'
         elif isinstance(value, datetime.datetime):

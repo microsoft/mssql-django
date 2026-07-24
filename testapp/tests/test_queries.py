@@ -104,6 +104,23 @@ class TestGroupByEscapedPercent(TestCase):
         self.assertEqual(rows, [('%abc%', 2)])
 
 
+class TestIntegerChoicesGroupby(TestCase):
+    # Regression test for #540: an IntegerChoices value (an int subclass) passed to a
+    # raw query containing GROUP BY raised NotImplementedError because _as_sql_type used
+    # an exact type check (typ == int) instead of isinstance.
+    def test_integerchoices_param(self):
+        class StatusChoices(models.IntegerChoices):
+            NOT_STARTED = 1
+            IN_PROGRESS = 2
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT id FROM {Author._meta.db_table} WHERE id <= %s GROUP BY id",
+                [StatusChoices.IN_PROGRESS],
+            )
+            cursor.fetchall()
+
+
 @skipUnlessDBFeature("supports_expression_defaults")
 class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
     """Regression tests for Django 6.0 db_default bulk insert alignment.
