@@ -15,6 +15,11 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_on_delete_db_cascade = False
     supports_on_delete_db_null = False
     supports_on_delete_db_default = False
+    # Django 6.1 added bitwise aggregations (BIT_AND / BIT_OR / BIT_XOR), defaulting
+    # supports_bit_aggregations to True. SQL Server has no native bitwise aggregate
+    # function, so BitAnd/BitOr/BitXor raise a clean NotSupportedError instead.
+    supports_bit_aggregations = False
+    supports_default_in_bit_aggregations = False
     allows_group_by_select_index = False
     allow_sliced_subqueries_with_in = False
     can_introspect_autofield = True
