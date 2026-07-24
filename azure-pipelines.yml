@@ -24,6 +24,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.14 - Django 6.1:
+          python.version: '3.14'
+          tox.env: 'py314-django61'
+        Python3.13 - Django 6.1:
+          python.version: '3.13'
+          tox.env: 'py313-django61'
+        Python3.12 - Django 6.1:
+          python.version: '3.12'
+          tox.env: 'py312-django61'
+
         Python3.14 - Django 6.0:
           python.version: '3.14'
           tox.env: 'py314-django60'
@@ -172,6 +182,16 @@ jobs:
 
     strategy:
       matrix:
+        Python3.14 - Django 6.1:
+          python.version: '3.14'
+          tox.env: 'py314-django61'
+        Python3.13 - Django 6.1:
+          python.version: '3.13'
+          tox.env: 'py313-django61'
+        Python3.12 - Django 6.1:
+          python.version: '3.12'
+          tox.env: 'py312-django61'
+
         Python3.14 - Django 6.0:
           python.version: '3.14'
           tox.env: 'py314-django60'
