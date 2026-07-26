@@ -1,0 +1,11 @@
+{
+    "codebaseName": "mssql-django_dev",
+    "notificationAliases": [
+        "mssqldjango@microsoft.com"
+    ],
+    "instanceUrl": "https://sqlclientdrivers.visualstudio.com",
+    "projectName": "mssql-django",
+    "areaPath": "mssql-django",
+    "allTools": true,
+    "template": "MSDATA_RevolutionR"
+}

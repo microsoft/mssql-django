@@ -1,0 +1,40 @@
+# Common variables shared across the mssql-django release pipelines
+# (build-release-package, official-release, dummy-release).
+# mssql-django is a pure-Python package, so there is no native/ODBC/symbol
+# machinery here — only the paths, package identity, and the regex_clr.dll
+# source coordinates.
+variables:
+  # Repository root
+  - name: REPO_ROOT
+    value: $(Build.SourcesDirectory)
+    readonly: true
+
+  # Artifact staging path
+  - name: ARTIFACT_PATH
+    value: $(Build.ArtifactStagingDirectory)
+    readonly: true
+
+  # Package identity
+  - name: PACKAGE_NAME
+    value: 'mssql-django'
+    readonly: true
+
+  # Azure Artifacts feed used for pip authentication during build
+  - name: PIP_FEED
+    value: 'mssql-django/mssql-django_PublicPackages'
+    readonly: true
+
+  # regex_clr.dll source (private, network-restricted storage account).
+  # Downloaded at build time with managed-identity auth (NOT anonymous wget)
+  # from the Django-1ES-pool, which is allow-listed on the account network.
+  # Storage account lives in sub "Magnitude Test 1"
+  # (654fffd0-d02d-4894-b1b7-e2dfbc44a665), RG "django", region westus3.
+  - name: REGEX_CLR_STORAGE_ACCOUNT
+    value: 'mssqldjangostorage'
+    readonly: true
+  - name: REGEX_CLR_CONTAINER
+    value: 'regexclr'
+    readonly: true
+  - name: REGEX_CLR_BLOB
+    value: 'regex_clr.dll'
+    readonly: true

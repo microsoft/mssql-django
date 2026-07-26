@@ -1,0 +1,8 @@
+schemaVersion: 0.0.1
+isProduction: true
+accountableOwners:
+  service: b8d5e8ab-2cb5-4d16-9517-50db0f76357d
+routing:
+  defaultAreaPath:
+    org: sqlclientdrivers
+    path: mssql-django
