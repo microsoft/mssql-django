@@ -162,6 +162,9 @@ jobs:
         displayName: Run tox
         env:
           MSSQL_PASSWORD: $(TestAppPassword)
+          # mssql-python bundles ODBC Driver 18 (Encrypt is mandatory by
+          # default), so the CI SQL Server's self-signed cert must be trusted.
+          MSSQL_EXTRA_PARAMS: TrustServerCertificate=yes
 
   - job: Linux
     pool:
@@ -400,6 +403,9 @@ jobs:
         env:
           MSSQL_PASSWORD: $(TestAppPassword)
           MSSQL_HOST: 127.0.0.1
+          # mssql-python bundles ODBC Driver 18 (Encrypt is mandatory by
+          # default), so the CI SQL Server's self-signed cert must be trusted.
+          MSSQL_EXTRA_PARAMS: TrustServerCertificate=yes
 
       - task: PublishCodeCoverageResults@1
         inputs:

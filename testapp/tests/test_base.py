@@ -208,44 +208,14 @@ class TestHandleDatetimeoffset(SimpleTestCase):
         self.assertEqual(result.utcoffset(), datetime.timedelta(0))
 
 
-class TestDatabaseWrapperIsDriverNotFoundError(SimpleTestCase):
-    """Tests for the _is_driver_not_found_error method."""
-
-    def setUp(self):
-        # Create a mock DatabaseWrapper to test the method
-        self.wrapper = object.__new__(DatabaseWrapper)
-
-    def test_driver_not_found_libsodbc(self):
-        """Test detection of 'can't open lib' error."""
-        exception = Exception("Can't open lib 'ODBC Driver 18 for SQL Server'")
-        self.assertTrue(self.wrapper._is_driver_not_found_error(exception))
-
-    def test_driver_not_found_dsn(self):
-        """Test detection of 'data source name not found' error."""
-        exception = Exception("[IM002] Data source name not found")
-        self.assertTrue(self.wrapper._is_driver_not_found_error(exception))
-
-    def test_driver_not_found_explicit(self):
-        """Test detection of 'driver not found' error."""
-        exception = Exception("Driver not found: ODBC Driver 18")
-        self.assertTrue(self.wrapper._is_driver_not_found_error(exception))
-
-    def test_driver_could_not_be_loaded(self):
-        """Test detection of 'specified driver could not be loaded' error."""
-        exception = Exception("The specified driver could not be loaded")
-        self.assertTrue(self.wrapper._is_driver_not_found_error(exception))
-
-    def test_other_error(self):
-        """Test that other errors are not detected as driver not found."""
-        exception = Exception("Connection timeout expired")
-        self.assertFalse(self.wrapper._is_driver_not_found_error(exception))
-
-        exception = Exception("Login failed for user")
-        self.assertFalse(self.wrapper._is_driver_not_found_error(exception))
-
-
 class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
-    """Tests for the _build_connection_string method."""
+    """Tests for the _build_connection_string method.
+
+    mssql-python bundles its own SQL Server driver and rejects the ODBC-only
+    DRIVER / DSN / MARS_Connection / Integrated Security keywords, so the
+    connection string never carries them. The bundled driver behaves like the
+    Microsoft ODBC driver, so SERVER always uses the host,port form.
+    """
 
     def setUp(self):
         # Create a mock DatabaseWrapper
@@ -260,17 +230,17 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "PASSWORD": "testpass",
             "OPTIONS": {},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
-        self.assertIn("DRIVER=ODBC Driver 18 for SQL Server", result)
+        # mssql-python controls the driver; DRIVER must never be emitted.
+        self.assertNotIn("DRIVER=", result)
         self.assertIn("SERVER=localhost", result)
         self.assertIn("DATABASE=testdb", result)
         self.assertIn("UID=testuser", result)
         self.assertIn("PWD=testpass", result)
 
     def test_connection_string_with_port(self):
-        """Test connection string with port number."""
+        """Test connection string with port number (host,port form)."""
         conn_params = {
             "NAME": "testdb",
             "HOST": "localhost",
@@ -279,25 +249,22 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "PASSWORD": "testpass",
             "OPTIONS": {},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
-        # Microsoft drivers use comma for port
+        # host and port are joined with a comma (Microsoft driver form)
         self.assertIn("SERVER=localhost,1433", result)
 
-    def test_connection_string_with_dsn(self):
-        """Test connection string with DSN."""
+    def test_connection_string_no_driver_or_dsn_keyword(self):
+        """mssql-python rejects DRIVER/DSN; neither may appear in the string."""
         conn_params = {
             "NAME": "testdb",
             "HOST": "localhost",
-            "OPTIONS": {"dsn": "MyDSN"},
+            "OPTIONS": {},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
-        self.assertIn("DSN=MyDSN", result)
-        # DRIVER should not be present when using DSN
         self.assertNotIn("DRIVER=", result)
+        self.assertNotIn("DSN=", result)
 
     def test_connection_string_trusted_connection(self):
         """Test connection string with trusted connection (no user/password)."""
@@ -306,8 +273,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "HOST": "localhost",
             "OPTIONS": {},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertIn("Trusted_Connection=yes", result)
         self.assertNotIn("UID=", result)
@@ -322,29 +288,10 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "PASSWORD": "testpass",
             "OPTIONS": {"extra_params": "Encrypt=yes;TrustServerCertificate=yes"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertIn("Encrypt=yes", result)
         self.assertIn("TrustServerCertificate=yes", result)
-
-    def test_connection_string_freetds(self):
-        """Test connection string building for FreeTDS driver."""
-        conn_params = {
-            "NAME": "testdb",
-            "HOST": "myserver",
-            "PORT": 1433,
-            "OPTIONS": {
-                "host_is_server": True,
-            },
-        }
-        driver = "FreeTDS"
-        result = self.wrapper._build_connection_string(conn_params, driver)
-
-        # FreeTDS uses PORT separately when host_is_server is True
-        self.assertIn("SERVER=myserver", result)
-        self.assertIn("PORT=1433", result)
-        self.assertIn("Integrated Security=SSPI", result)
 
     def test_connection_string_active_directory_interactive(self):
         """Test that PASSWORD is not included with ActiveDirectoryInteractive auth."""
@@ -355,27 +302,24 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "PASSWORD": "ignored",
             "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryInteractive"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertIn("UID=user@domain.com", result)
         self.assertNotIn("PWD=", result)
-
 
     def test_connection_string_active_directory_integrated_no_trusted_connection(self):
         """Test that Trusted_Connection is not injected with ActiveDirectoryIntegrated.
 
         Regression test for #529: Authentication=ActiveDirectoryIntegrated
         without USER or TOKEN must not get Trusted_Connection=yes appended,
-        as the ODBC driver rejects that combination (FA001).
+        as the driver rejects that combination (FA001).
         """
         conn_params = {
             "NAME": "testdb",
             "HOST": "server.database.windows.net",
             "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryIntegrated"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertNotIn("Trusted_Connection=", result)
         self.assertNotIn("Integrated Security=", result)
@@ -388,8 +332,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "HOST": "server.database.windows.net",
             "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryMsi"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertNotIn("Trusted_Connection=", result)
         self.assertNotIn("Integrated Security=", result)
@@ -401,8 +344,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "HOST": "server.database.windows.net",
             "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryDefault"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertNotIn("Trusted_Connection=", result)
         self.assertNotIn("Integrated Security=", result)
@@ -416,8 +358,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "PASSWORD": "secret",
             "OPTIONS": {"extra_params": "Authentication=SqlPassword"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertIn("UID=sqluser", result)
         self.assertIn("PWD=secret", result)
@@ -432,8 +373,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "PASSWORD": "secret",
             "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryPassword"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertIn("UID=user@domain.com", result)
         self.assertIn("PWD=secret", result)
@@ -445,8 +385,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "HOST": "server.database.windows.net",
             "OPTIONS": {"extra_params": "authentication=ActiveDirectoryIntegrated"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertNotIn("Trusted_Connection=", result)
         self.assertNotIn("Integrated Security=", result)
@@ -460,27 +399,10 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
                 "extra_params": "Encrypt=yes;Authentication=ActiveDirectoryIntegrated;TrustServerCertificate=yes",
             },
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertNotIn("Trusted_Connection=", result)
         self.assertIn("Encrypt=yes", result)
-
-    def test_connection_string_freetds_auth_no_sspi(self):
-        """Test that FreeTDS also skips Integrated Security=SSPI when Authentication= is present."""
-        conn_params = {
-            "NAME": "testdb",
-            "HOST": "myserver",
-            "OPTIONS": {
-                "host_is_server": True,
-                "extra_params": "Authentication=ActiveDirectoryIntegrated",
-            },
-        }
-        driver = "FreeTDS"
-        result = self.wrapper._build_connection_string(conn_params, driver)
-
-        self.assertNotIn("Integrated Security=", result)
-        self.assertNotIn("Trusted_Connection=", result)
 
     def test_get_authentication_mode_returns_none_for_empty(self):
         """Test that _get_authentication_mode returns None for empty extra_params."""
@@ -612,8 +534,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "HOST": "server.database.windows.net",
             "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryInteractive"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertNotIn("Trusted_Connection=", result)
         self.assertNotIn("Integrated Security=", result)
@@ -627,8 +548,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "PASSWORD": "client-secret",
             "OPTIONS": {"extra_params": "Authentication=ActiveDirectoryServicePrincipal"},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertIn("UID=app-id", result)
         self.assertIn("PWD=client-secret", result)
@@ -640,8 +560,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "HOST": "localhost",
             "OPTIONS": {"extra_params": None},
         }
-        driver = "ODBC Driver 18 for SQL Server"
-        result = self.wrapper._build_connection_string(conn_params, driver)
+        result = self.wrapper._build_connection_string(conn_params)
 
         self.assertIn("Trusted_Connection=yes", result)
 

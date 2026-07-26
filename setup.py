@@ -48,7 +48,7 @@ setup(
     packages=find_packages(exclude=['testapp', 'testapp.*']),
     install_requires=[
         'django>=3.2,<6.1',
-        'pyodbc>=3.0',
+        'mssql-python>=1.0',
         'pytz',
     ],
     extras_require={

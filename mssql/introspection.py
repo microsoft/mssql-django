@@ -2,7 +2,7 @@
 # Licensed under the BSD license.
 
 from django.db import DatabaseError
-import pyodbc as Database
+import mssql_python as Database
 
 from collections import namedtuple
 
@@ -17,6 +17,10 @@ SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 SQL_SMALLAUTOFIELD = -777333
 SQL_TIMESTAMP_WITH_TIMEZONE = -155
+# mssql-python does not export the SQL Server-specific SQL_SS_TIME2 code that
+# pyodbc did; the underlying ODBC value is -154 (returned by cursor.columns()
+# for time(n) columns).
+SQL_SS_TIME2 = getattr(Database, 'SQL_SS_TIME2', -154)
 
 FieldInfo = namedtuple("FieldInfo", BaseFieldInfo._fields + ("comment",))
 TableInfo = namedtuple("TableInfo", BaseTableInfo._fields + ("comment",))
@@ -45,7 +49,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Database.SQL_NUMERIC: 'DecimalField',
         Database.SQL_REAL: 'FloatField',
         Database.SQL_SMALLINT: 'SmallIntegerField',
-        Database.SQL_SS_TIME2: 'TimeField',
+        SQL_SS_TIME2: 'TimeField',
         Database.SQL_TINYINT: 'SmallIntegerField',
         Database.SQL_TYPE_DATE: 'DateField',
         Database.SQL_TYPE_TIME: 'TimeField',
