@@ -12,12 +12,12 @@
 #
 # Base state: the ADO repo is seeded once via an ADO "Import repository" from
 # https://github.com/microsoft/mssql-django (full history, no force). After
-# that, ADO main is always an ancestor of GitHub main, so each run is a plain
+# that, ADO dev is always an ancestor of GitHub dev, so each run is a plain
 # fast-forward push (ff != force) needing only Contribute on the repo.
 #
 # Prerequisites:
 # - Pipeline source repository = Azure DevOps sqlclientdrivers/mssql-django.
-# - Build Service identity has Contribute (push) on the repo; mirror `main`
+# - Build Service identity has Contribute (push) on the repo; mirror `dev`
 #   does not require PRs (it is a mirror, not a human dev branch).
 
 name: GitHub-Mirror-$(Date:yyyyMMdd)$(Rev:.r)
@@ -27,7 +27,7 @@ schedules:
   displayName: Daily GitHub -> ADO mirror
   branches:
     include:
-    - main
+    - dev
   always: true
 
 trigger: none
@@ -50,24 +50,24 @@ steps:
     git config user.email "sync@microsoft.com"
     git config user.name  "ADO Mirror Bot"
 
-    # Fetch GitHub main's real commits + tags. Public repo -> no auth, no
+    # Fetch GitHub dev's real commits + tags. Public repo -> no auth, no
     # service connection (keeps the pipeline source ADO-only for SDL).
     git remote add github https://github.com/microsoft/mssql-django.git
-    git fetch --tags github main
+    git fetch --tags github dev
 
     GH_SHA="$(git rev-parse FETCH_HEAD)"
     ADO_SHA="$(git rev-parse HEAD)"
-    echo "GitHub main: $GH_SHA"
-    echo "ADO   main: $ADO_SHA"
+    echo "GitHub dev: $GH_SHA"
+    echo "ADO   dev: $ADO_SHA"
 
     if [ "$GH_SHA" = "$ADO_SHA" ]; then
       echo "Already in sync. Nothing to do."
       exit 0
     fi
 
-    # Fast-forward ADO main to GitHub main's actual commit graph. History is
+    # Fast-forward ADO dev to GitHub dev's actual commit graph. History is
     # preserved (real commits, same SHAs) and this is NOT a force-push. A
     # non-fast-forward here means unexpected divergence and will fail loudly.
-    git push origin "$GH_SHA:refs/heads/main"
+    git push origin "$GH_SHA:refs/heads/dev"
     git push origin --tags
-  displayName: Mirror GitHub main -> ADO main (history preserved, no force)
+  displayName: Mirror GitHub dev -> ADO dev (history preserved, no force)
