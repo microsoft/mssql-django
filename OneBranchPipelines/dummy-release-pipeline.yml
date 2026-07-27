@@ -1,0 +1,107 @@
+# =============================================================================
+# OneBranch DUMMY / TEST Release pipeline for mssql-django.
+# WARNING: TEST ONLY -- never publishes to PyPI.
+# =============================================================================
+# Exercises the full download + ESRP release path against a Maven ContentType
+# (instead of PyPI) so the ESRP wiring can be validated WITHOUT any risk of a
+# real production release. Always NonOfficial.
+# =============================================================================
+
+name: $(Year:YY)$(DayOfYear)$(Rev:.r)-Dummy-Release
+
+trigger: none
+pr: none
+
+parameters:
+  - name: performDummyRelease
+    displayName: '[TEST] Perform Dummy ESRP Release (Maven - NOT PyPI)'
+    type: boolean
+    default: true    # Safe: Maven ContentType, never touches PyPI.
+
+variables:
+  - template: /OneBranchPipelines/variables/common-variables.yml@self
+  - template: /OneBranchPipelines/variables/onebranch-variables.yml@self
+  - group: 'ESRP Federated Creds (AME)'
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: 'OneBranch.Pipelines/GovernedTemplates'
+      ref: 'refs/heads/main'
+  pipelines:
+    - pipeline: buildPipeline
+      source: 'Build-Release-Package-Pipeline'
+      trigger: none
+
+extends:
+  template: 'v2/OneBranch.NonOfficial.CrossPlat.yml@templates'
+  parameters:
+    globalSdl:
+      sbom:
+        enabled: true
+      credscan:
+        enabled: true
+      policheck:
+        break: true
+
+    stages:
+      - stage: TestReleasePackage
+        displayName: '[TEST] Dummy Release - Validate ESRP Workflow'
+        jobs:
+
+          - job: PrepAndValidate
+            displayName: '[TEST] Download and Validate Artifact'
+            pool:
+              type: linux
+              isCustom: true
+              name: Django-1ES-pool
+              demands:
+              - imageOverride -equals Ubuntu22.04-AzurePipelines
+            variables:
+              ob_outputDirectory: '$(Build.ArtifactStagingDirectory)'
+            steps:
+              - download: buildPipeline
+                displayName: '[TEST] Download drop from Build pipeline'
+              - task: Bash@3
+                displayName: '[TEST] List artifact contents'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    set -euo pipefail
+                    DIST="$(Pipeline.Workspace)/buildPipeline/drop_build_build"
+                    echo "=== [TEST] artifact contents ==="
+                    ls -la "$DIST"
+
+          - ${{ if eq(parameters.performDummyRelease, true) }}:
+            - job: DummyRelease
+              displayName: '[TEST] Dummy ESRP Release (Maven)'
+              dependsOn: PrepAndValidate
+              templateContext:
+                type: releaseJob
+                isProduction: false
+              pool:
+                type: linux
+              variables:
+                ob_outputDirectory: '$(Build.ArtifactStagingDirectory)'
+              steps:
+                - download: buildPipeline
+                  displayName: '[TEST] Download drop from Build pipeline'
+                - task: EsrpRelease@9
+                  displayName: '[TEST] Dummy ESRP Release (Maven - NOT PyPI)'
+                  inputs:
+                    connectedservicename: '$(ESRPConnectedServiceName)'
+                    usemanagedidentity: true
+                    keyvaultname: '$(AuthAKVName)'
+                    signcertname: '$(AuthSignCertName)'
+                    clientid: '$(EsrpClientId)'
+                    Intent: 'PackageDistribution'
+                    ContentType: 'Maven'   # placeholder - deliberately NOT PyPI
+                    ContentSource: 'Folder'
+                    FolderLocation: '$(Pipeline.Workspace)/buildPipeline/drop_build_build'
+                    WaitForReleaseCompletion: true
+                    Owners: '$(owner)'
+                    Approvers: '$(approver)'
+                    ServiceEndpointUrl: 'https://api.esrp.microsoft.com'
+                    MainPublisher: 'ESRPRELPACMAN'
+                    DomainTenantId: '$(DomainTenantId)'
