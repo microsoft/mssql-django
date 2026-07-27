@@ -10,6 +10,7 @@
 #      sync branch -- never a direct push to main, never a force-push.
 #   3. Open a PR from the sync branch into main and auto-complete it as a MERGE
 #      (--squash false) so every individual commit + SHA is retained on main.
+#      Every sync PR links the tracking work item (46645, "GH<>ADO Sync PRs").
 #
 # Runs on windows-latest (Microsoft-hosted) where the Azure CLI is preinstalled,
 # so PR creation uses `az repos pr` -- same tooling as the mssql-python sync.
@@ -94,6 +95,7 @@ steps:
       --title "Sync GitHub dev -> main ($ghSha)" `
       --description "Automated history-preserving sync of GitHub microsoft/mssql-django dev into ADO main. Auto-completed as a MERGE (not squash) to retain individual commits and their SHAs." `
       --squash false `
+      --work-items 46645 `
       --delete-source-branch true `
       --auto-complete true `
       --output table
