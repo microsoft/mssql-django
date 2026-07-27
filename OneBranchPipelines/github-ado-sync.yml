@@ -1,0 +1,73 @@
+# GitHub -> Azure DevOps mirror sync for microsoft/mssql-django.
+#
+# GitHub is the source of truth. This pipeline keeps the Azure DevOps mirror
+# (sqlclientdrivers/mssql-django) identical to GitHub, PRESERVING FULL COMMIT
+# HISTORY (identical SHAs) by pushing GitHub's real commits -- never a squashed
+# single-diff commit, and never a force-push.
+#
+# SDL-friendly by design: this pipeline's SOURCE repository is the Azure DevOps
+# mssql-django repo (checkout: self), NOT GitHub. It performs only a plain,
+# unauthenticated `git fetch` of the PUBLIC GitHub repo inside the script -- no
+# GitHub service connection and no GitHub-sourced pipeline.
+#
+# Base state: the ADO repo is seeded once via an ADO "Import repository" from
+# https://github.com/microsoft/mssql-django (full history, no force). After
+# that, ADO main is always an ancestor of GitHub main, so each run is a plain
+# fast-forward push (ff != force) needing only Contribute on the repo.
+#
+# Prerequisites:
+# - Pipeline source repository = Azure DevOps sqlclientdrivers/mssql-django.
+# - Build Service identity has Contribute (push) on the repo; mirror `main`
+#   does not require PRs (it is a mirror, not a human dev branch).
+
+name: GitHub-Mirror-$(Date:yyyyMMdd)$(Rev:.r)
+
+schedules:
+- cron: "30 11 * * *"          # daily 17:00 IST (matches mssql-python's sync)
+  displayName: Daily GitHub -> ADO mirror
+  branches:
+    include:
+    - main
+  always: true
+
+trigger: none
+pr: none
+
+pool:
+  name: Django-1ES-pool
+  demands:
+  - imageOverride -equals MMSUbuntu20.04
+
+steps:
+- checkout: self               # Azure DevOps mssql-django mirror (source = ADO)
+  persistCredentials: true     # allows push back to ADO via System.AccessToken
+  fetchDepth: 0
+  fetchTags: true
+
+- script: |
+    set -euo pipefail
+
+    git config user.email "sync@microsoft.com"
+    git config user.name  "ADO Mirror Bot"
+
+    # Fetch GitHub main's real commits + tags. Public repo -> no auth, no
+    # service connection (keeps the pipeline source ADO-only for SDL).
+    git remote add github https://github.com/microsoft/mssql-django.git
+    git fetch --tags github main
+
+    GH_SHA="$(git rev-parse FETCH_HEAD)"
+    ADO_SHA="$(git rev-parse HEAD)"
+    echo "GitHub main: $GH_SHA"
+    echo "ADO   main: $ADO_SHA"
+
+    if [ "$GH_SHA" = "$ADO_SHA" ]; then
+      echo "Already in sync. Nothing to do."
+      exit 0
+    fi
+
+    # Fast-forward ADO main to GitHub main's actual commit graph. History is
+    # preserved (real commits, same SHAs) and this is NOT a force-push. A
+    # non-fast-forward here means unexpected divergence and will fail loudly.
+    git push origin "$GH_SHA:refs/heads/main"
+    git push origin --tags
+  displayName: Mirror GitHub main -> ADO main (history preserved, no force)
