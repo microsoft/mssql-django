@@ -1,11 +1,14 @@
 {
-    "codebaseName": "mssql-django_dev",
-    "notificationAliases": [
-        "mssqldjango@microsoft.com"
-    ],
-    "instanceUrl": "https://sqlclientdrivers.visualstudio.com",
-    "projectName": "mssql-django",
-    "areaPath": "mssql-django",
-    "allTools": true,
-    "template": "MSDATA_RevolutionR"
+  "instanceUrl": "https://sqlclientdrivers.visualstudio.com",
+  "projectName": "mssql-django",
+  "areaPath": "mssql-django",
+  "iterationPath": "mssql-django",
+  "notificationAliases": [
+    "mssqldjango@microsoft.com"
+  ],
+  "repositoryName": "mssql-django",
+  "codebaseName": "Django Backend for Microsoft SQL Server",
+  "allTools": true,
+  "includePathPatterns": "mssql/*, setup.py",
+  "excludePathPatterns": "testapp/*, django/*, OneBranchPipelines/*"
 }

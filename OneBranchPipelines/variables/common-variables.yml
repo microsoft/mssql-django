@@ -27,8 +27,6 @@ variables:
   # regex_clr.dll source (private, network-restricted storage account).
   # Downloaded at build time with managed-identity auth (NOT anonymous wget)
   # from the Django-1ES-pool, which is allow-listed on the account network.
-  # Storage account lives in sub "Magnitude Test 1"
-  # (654fffd0-d02d-4894-b1b7-e2dfbc44a665), RG "django", region westus3.
   - name: REGEX_CLR_STORAGE_ACCOUNT
     value: 'mssqldjangostorage'
     readonly: true

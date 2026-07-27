@@ -1,9 +1,17 @@
 {
-    "tool": "Credential Scanner",
-    "suppressions": [
-        {
-            "file": "CONTRIBUTING.md",
-            "_justification": "Example file showing users how to contribute to our project"
-        }
-    ]
+  "tool": "Credential Scanner",
+  "suppressions": [
+    {
+      "file": "CONTRIBUTING.md",
+      "justification": "Example file showing users how to contribute to our project"
+    },
+    {
+      "file": "testapp/*",
+      "justification": "Test app contains sample credentials and should be skipped"
+    },
+    {
+      "file": "OneBranchPipelines/*",
+      "justification": "OneBranch pipeline configuration files"
+    }
+  ]
 }
