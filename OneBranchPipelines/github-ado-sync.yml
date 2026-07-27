@@ -5,19 +5,25 @@
 # HISTORY (identical SHAs) by pushing GitHub's real commits -- never a squashed
 # single-diff commit, and never a force-push.
 #
+# Branch mapping: GitHub's default branch is `dev`; the Azure DevOps mirror's
+# default/stable branch is `main` (ADO/1ES conventions -- TSA, Ownership
+# Enforcer, OneBranch official builds -- expect `main`). Branch names need not
+# match across the two remotes, so we sync GitHub `dev` -> ADO `main`.
+#
 # SDL-friendly by design: this pipeline's SOURCE repository is the Azure DevOps
 # mssql-django repo (checkout: self), NOT GitHub. It performs only a plain,
 # unauthenticated `git fetch` of the PUBLIC GitHub repo inside the script -- no
 # GitHub service connection and no GitHub-sourced pipeline.
 #
 # Base state: the ADO repo is seeded once via an ADO "Import repository" from
-# https://github.com/microsoft/mssql-django (full history, no force). After
-# that, ADO dev is always an ancestor of GitHub dev, so each run is a plain
-# fast-forward push (ff != force) needing only Contribute on the repo.
+# https://github.com/microsoft/mssql-django (full history, no force), then its
+# `main` branch is set to GitHub dev's HEAD. After that, ADO main is always an
+# ancestor of GitHub dev, so each run is a plain fast-forward push (ff != force)
+# needing only Contribute on the repo.
 #
 # Prerequisites:
 # - Pipeline source repository = Azure DevOps sqlclientdrivers/mssql-django.
-# - Build Service identity has Contribute (push) on the repo; mirror `dev`
+# - Build Service identity has Contribute (push) on the repo; mirror `main`
 #   does not require PRs (it is a mirror, not a human dev branch).
 
 name: GitHub-Mirror-$(Date:yyyyMMdd)$(Rev:.r)
@@ -27,7 +33,7 @@ schedules:
   displayName: Daily GitHub -> ADO mirror
   branches:
     include:
-    - dev
+    - main                     # the ADO mirror branch this pipeline lives on
   always: true
 
 trigger: none
@@ -57,17 +63,17 @@ steps:
 
     GH_SHA="$(git rev-parse FETCH_HEAD)"
     ADO_SHA="$(git rev-parse HEAD)"
-    echo "GitHub dev: $GH_SHA"
-    echo "ADO   dev: $ADO_SHA"
+    echo "GitHub dev  : $GH_SHA"
+    echo "ADO    main : $ADO_SHA"
 
     if [ "$GH_SHA" = "$ADO_SHA" ]; then
       echo "Already in sync. Nothing to do."
       exit 0
     fi
 
-    # Fast-forward ADO dev to GitHub dev's actual commit graph. History is
+    # Fast-forward ADO main to GitHub dev's actual commit graph. History is
     # preserved (real commits, same SHAs) and this is NOT a force-push. A
     # non-fast-forward here means unexpected divergence and will fail loudly.
-    git push origin "$GH_SHA:refs/heads/dev"
+    git push origin "$GH_SHA:refs/heads/main"
     git push origin --tags
-  displayName: Mirror GitHub dev -> ADO dev (history preserved, no force)
+  displayName: Mirror GitHub dev -> ADO main (history preserved, no force)
