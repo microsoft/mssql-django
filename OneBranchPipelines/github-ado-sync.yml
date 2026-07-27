@@ -1,39 +1,38 @@
+# =============================================================================
 # GitHub -> Azure DevOps mirror sync for microsoft/mssql-django.
+# =============================================================================
+# Keeps the ADO mirror in step with GitHub using the PULL REQUEST mechanism
+# (same as mssql-python) while PRESERVING FULL COMMIT HISTORY -- real commits,
+# identical SHAs -- instead of python's squashed replace-all commit.
 #
-# GitHub is the source of truth. This pipeline keeps the Azure DevOps mirror
-# (sqlclientdrivers/mssql-django) identical to GitHub, PRESERVING FULL COMMIT
-# HISTORY (identical SHAs) by pushing GitHub's real commits -- never a squashed
-# single-diff commit, and never a force-push.
+#   1. Fetch GitHub dev's real commit graph.
+#   2. Push those actual commits (fast-forward) to a fresh intermediate ADO
+#      sync branch -- never a direct push to main, never a force-push.
+#   3. Open a PR from the sync branch into main, completed as a MERGE
+#      (--squash false) so every individual commit + SHA is retained.
 #
-# Branch mapping: GitHub's default branch is `dev`; the Azure DevOps mirror's
-# default/stable branch is `main` (ADO/1ES conventions -- TSA, Ownership
-# Enforcer, OneBranch official builds -- expect `main`). Branch names need not
-# match across the two remotes, so we sync GitHub `dev` -> ADO `main`.
+# No direct writes to main. No force. No ado-only hacks (this file mirrors to
+# GitHub like everything else).
 #
-# SDL-friendly by design: this pipeline's SOURCE repository is the Azure DevOps
-# mssql-django repo (checkout: self), NOT GitHub. It performs only a plain,
-# unauthenticated `git fetch` of the PUBLIC GitHub repo inside the script -- no
-# GitHub service connection and no GitHub-sourced pipeline.
+# SDL-clean: the pipeline SOURCE is the ADO mirror (checkout: self). It performs
+# only a plain, unauthenticated `git fetch` of the PUBLIC GitHub repo -- no
+# GitHub service connection.
 #
-# Base state: the ADO repo is seeded once via an ADO "Import repository" from
-# https://github.com/microsoft/mssql-django (full history, no force), then its
-# `main` branch is set to GitHub dev's HEAD. After that, ADO main is always an
-# ancestor of GitHub dev, so each run is a plain fast-forward push (ff != force)
-# needing only Contribute on the repo.
+# Branch mapping: GitHub `dev` -> ADO `main` (ADO/1ES conventions expect main).
 #
-# Prerequisites:
-# - Pipeline source repository = Azure DevOps sqlclientdrivers/mssql-django.
-# - Build Service identity has Contribute (push) on the repo; mirror `main`
-#   does not require PRs (it is a mirror, not a human dev branch).
+# Build Service (System.AccessToken) permissions required on this repo:
+#   - Contribute            (push the sync branch)
+#   - Contribute to PRs     (create + auto-complete the pull request)
+# =============================================================================
 
-name: GitHub-Mirror-$(Date:yyyyMMdd)$(Rev:.r)
+name: GitHub-Sync-$(Date:yyyyMMdd)$(Rev:.r)
 
 schedules:
-- cron: "30 11 * * *"          # daily 17:00 IST (matches mssql-python's sync)
+- cron: "30 11 * * *"           # daily 17:00 IST (matches mssql-python)
   displayName: Daily GitHub -> ADO mirror
   branches:
     include:
-    - main                     # the ADO mirror branch this pipeline lives on
+    - main
   always: true
 
 trigger: none
@@ -42,11 +41,11 @@ pr: none
 pool:
   name: Django-1ES-pool
   demands:
-  - imageOverride -equals MMSUbuntu20.04
+  - imageOverride -equals Ubuntu22.04-AzurePipelines
 
 steps:
-- checkout: self               # Azure DevOps mssql-django mirror (source = ADO)
-  persistCredentials: true     # allows push back to ADO via System.AccessToken
+- checkout: self                # Azure DevOps mssql-django mirror (source = ADO)
+  persistCredentials: true      # git push to ADO via System.AccessToken
   fetchDepth: 0
   fetchTags: true
 
@@ -56,24 +55,47 @@ steps:
     git config user.email "sync@microsoft.com"
     git config user.name  "ADO Mirror Bot"
 
-    # Fetch GitHub dev's real commits + tags. Public repo -> no auth, no
-    # service connection (keeps the pipeline source ADO-only for SDL).
+    # 1. Fetch GitHub dev's real commits (public repo -> no auth, SDL-clean).
     git remote add github https://github.com/microsoft/mssql-django.git
     git fetch --tags github dev
-
     GH_SHA="$(git rev-parse FETCH_HEAD)"
-    ADO_SHA="$(git rev-parse HEAD)"
-    echo "GitHub dev  : $GH_SHA"
-    echo "ADO    main : $ADO_SHA"
+    echo "GitHub dev is at $GH_SHA"
 
-    if [ "$GH_SHA" = "$ADO_SHA" ]; then
-      echo "Already in sync. Nothing to do."
+    git fetch origin main
+    MAIN_SHA="$(git rev-parse FETCH_HEAD)"
+    echo "ADO main is at $MAIN_SHA"
+
+    # No-op if main already contains GitHub dev's tip.
+    if git merge-base --is-ancestor "$GH_SHA" "$MAIN_SHA"; then
+      echo "ADO main already contains GitHub dev ($GH_SHA). Nothing to sync."
       exit 0
     fi
 
-    # Fast-forward ADO main to GitHub dev's actual commit graph. History is
-    # preserved (real commits, same SHAs) and this is NOT a force-push. A
-    # non-fast-forward here means unexpected divergence and will fail loudly.
-    git push origin "$GH_SHA:refs/heads/main"
-    git push origin --tags
-  displayName: Mirror GitHub dev -> ADO main (history preserved, no force)
+    # 2. Push GitHub dev's actual commit graph to a fresh sync branch. GitHub
+    #    history is append-only, so this is a fast-forward -- no force, and it
+    #    never touches main. History + SHAs are preserved exactly.
+    SYNC_BRANCH="sync/github-dev-$(date -u +%Y%m%d-%H%M%S)"
+    echo "Pushing GitHub dev commits to $SYNC_BRANCH"
+    git push origin "$GH_SHA:refs/heads/$SYNC_BRANCH"
+
+    # 3. Open a PR sync -> main, auto-completed as a MERGE (not squash) so the
+    #    individual commits are retained on main.
+    export AZURE_DEVOPS_EXT_PAT="$SYSTEM_ACCESSTOKEN"
+    az extension add --name azure-devops --only-show-errors || true
+
+    az repos pr create \
+      --organization "$SYSTEM_COLLECTIONURI" \
+      --project "$SYSTEM_TEAMPROJECT" \
+      --repository mssql-django \
+      --source-branch "$SYNC_BRANCH" \
+      --target-branch main \
+      --title "Sync GitHub dev -> main ($GH_SHA)" \
+      --description "Automated history-preserving sync of GitHub microsoft/mssql-django dev into ADO main. Completed as a MERGE (not squash) to retain individual commits and their SHAs." \
+      --squash false \
+      --delete-source-branch true \
+      --auto-complete true
+  displayName: Sync GitHub dev -> ADO main via PR (history preserved, no force)
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    SYSTEM_COLLECTIONURI: $(System.TeamFoundationCollectionUri)
+    SYSTEM_TEAMPROJECT: $(System.TeamProject)
