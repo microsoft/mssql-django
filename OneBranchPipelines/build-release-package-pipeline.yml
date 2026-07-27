@@ -1,0 +1,132 @@
+# =============================================================================
+# OneBranch Build & Package pipeline for mssql-django.
+# =============================================================================
+# Builds the pure-Python package (sdist + universal wheel via `python -m build`),
+# bundles the regex_clr.dll CLR assembly, generates an SBOM, and publishes the
+# OneBranch 'drop' artifact consumed by the Official-Release and Dummy-Release
+# pipelines.
+#
+# mssql-django is pure Python -> ONE universal wheel + sdist. There is no
+# platform matrix, no native compilation, no symbols (unlike mssql-python).
+#
+# regex_clr.dll: fetched at build time with AUTHENTICATED access (AzureCLI +
+# managed identity, `--auth-mode login`) from the private, network-restricted
+# storage account -- NOT the old anonymous wget (public access is Disabled).
+# The Django-1ES-pool is allow-listed on that storage account's network.
+#
+# Pipeline source = Azure DevOps mssql-django mirror (checkout: self), keeping
+# the pipeline source ADO-only for SDL.
+# =============================================================================
+
+name: $(Year:YY)$(DayOfYear)$(Rev:.r)
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+schedules:
+  - cron: "0 21 * * *"           # daily nightly build
+    displayName: Daily nightly build
+    branches:
+      include:
+        - main
+    always: true
+
+variables:
+  - template: /OneBranchPipelines/variables/common-variables.yml@self
+  - template: /OneBranchPipelines/variables/onebranch-variables.yml@self
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: 'OneBranch.Pipelines/GovernedTemplates'
+      ref: 'refs/heads/main'
+
+extends:
+  template: 'v2/OneBranch.Official.CrossPlat.yml@templates'
+  parameters:
+    globalSdl:
+      sbom:
+        enabled: true
+      credscan:
+        enabled: true
+        suppressionsFile: $(Build.SourcesDirectory)/.config/CredScanSuppressions.json
+      policheck:
+        break: true
+      tsa:
+        enabled: true
+        configFile: $(Build.SourcesDirectory)/.config/tsaoptions.json
+
+    stages:
+      - stage: build
+        displayName: 'Build mssql-django package'
+        jobs:
+          - job: build
+            displayName: 'Build sdist + wheel'
+
+            # Custom 1ES pool: allow-listed on the regex_clr storage network.
+            pool:
+              type: linux
+              isCustom: true
+              name: Django-1ES-pool
+              demands:
+              - imageOverride -equals Ubuntu22.04-AzurePipelines
+
+            variables:
+              # OneBranch auto-publishes this directory as the 'drop' artifact.
+              ob_outputDirectory: '$(Build.SourcesDirectory)/out'
+
+            steps:
+              - task: UsePythonVersion@0
+                displayName: 'Use Python 3.x'
+                inputs:
+                  versionSpec: '3.x'
+                  addToPath: true
+
+              - task: PipAuthenticate@1
+                displayName: 'Pip Authenticate'
+                inputs:
+                  artifactFeeds: '$(PIP_FEED)'
+
+              - task: AzureCLI@2
+                displayName: 'Fetch regex_clr.dll (authenticated, no anonymous wget)'
+                inputs:
+                  azureSubscription: '$(RegexClrServiceConnection)'
+                  scriptType: 'bash'
+                  scriptLocation: 'inlineScript'
+                  inlineScript: |
+                    set -euo pipefail
+                    az storage blob download \
+                      --account-name "$(REGEX_CLR_STORAGE_ACCOUNT)" \
+                      --container-name "$(REGEX_CLR_CONTAINER)" \
+                      --name "$(REGEX_CLR_BLOB)" \
+                      --file "$(Build.SourcesDirectory)/mssql/$(REGEX_CLR_BLOB)" \
+                      --auth-mode login
+                    ls -la "$(Build.SourcesDirectory)/mssql/$(REGEX_CLR_BLOB)"
+
+              - task: Bash@3
+                displayName: 'Build sdist + wheel'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    set -euo pipefail
+                    cd "$(Build.SourcesDirectory)"
+                    python -m pip install --upgrade pip build
+                    python -m build
+                    mkdir -p "$(Build.SourcesDirectory)/out"
+                    cp -v "$(Build.SourcesDirectory)"/dist/* "$(Build.SourcesDirectory)/out/"
+                    echo "=== packaged artifacts ==="
+                    ls -la "$(Build.SourcesDirectory)/out"
+
+              - task: ManifestGeneratorTask@0
+                displayName: 'Generate SBOM'
+                inputs:
+                  BuildDropPath: '$(Build.SourcesDirectory)/out'
+                  PackageName: '$(PACKAGE_NAME)'
