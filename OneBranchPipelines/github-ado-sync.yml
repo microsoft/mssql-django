@@ -8,8 +8,13 @@
 #   1. Fetch GitHub dev's real commit graph.
 #   2. Push those actual commits (fast-forward) to a fresh intermediate ADO
 #      sync branch -- never a direct push to main, never a force-push.
-#   3. Open a PR from the sync branch into main, completed as a MERGE
-#      (--squash false) so every individual commit + SHA is retained.
+#   3. Open a PR from the sync branch into main and auto-complete it with a
+#      MERGE commit (mergeStrategy=noFastForward) so every individual commit +
+#      SHA is retained.
+#
+# PR creation uses the Azure DevOps REST API via curl + System.AccessToken --
+# no dependency on the `az` CLI (the Django-1ES-pool Linux image does not ship
+# Azure CLI on PATH).
 #
 # No direct writes to main. No force. No ado-only hacks (this file mirrors to
 # GitHub like everything else).
@@ -78,22 +83,49 @@ steps:
     echo "Pushing GitHub dev commits to $SYNC_BRANCH"
     git push origin "$GH_SHA:refs/heads/$SYNC_BRANCH"
 
-    # 3. Open a PR sync -> main, auto-completed as a MERGE (not squash) so the
-    #    individual commits are retained on main.
-    export AZURE_DEVOPS_EXT_PAT="$SYSTEM_ACCESSTOKEN"
-    az extension add --name azure-devops --only-show-errors || true
+    # 3. Open a PR sync -> main via the ADO REST API (no az CLI dependency),
+    #    then auto-complete it as a MERGE (noFastForward) so individual commits
+    #    are retained on main.
+    API="${SYSTEM_COLLECTIONURI}${SYSTEM_TEAMPROJECT}/_apis/git/repositories/mssql-django"
 
-    az repos pr create \
-      --organization "$SYSTEM_COLLECTIONURI" \
-      --project "$SYSTEM_TEAMPROJECT" \
-      --repository mssql-django \
-      --source-branch "$SYNC_BRANCH" \
-      --target-branch main \
-      --title "Sync GitHub dev -> main ($GH_SHA)" \
-      --description "Automated history-preserving sync of GitHub microsoft/mssql-django dev into ADO main. Completed as a MERGE (not squash) to retain individual commits and their SHAs." \
-      --squash false \
-      --delete-source-branch true \
-      --auto-complete true
+    CREATE_PAYLOAD=$(cat <<JSON
+    {
+      "sourceRefName": "refs/heads/${SYNC_BRANCH}",
+      "targetRefName": "refs/heads/main",
+      "title": "Sync GitHub dev -> main (${GH_SHA})",
+      "description": "Automated history-preserving sync of GitHub microsoft/mssql-django dev into ADO main. Auto-completed as a MERGE (noFastForward) to retain individual commits and their SHAs."
+    }
+    JSON
+    )
+
+    echo "Creating pull request $SYNC_BRANCH -> main"
+    CREATE_RESP=$(curl -sf -X POST \
+      -H "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+      -H "Content-Type: application/json" \
+      "${API}/pullrequests?api-version=7.1" \
+      -d "${CREATE_PAYLOAD}")
+
+    PR_ID=$(echo "$CREATE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['pullRequestId'])")
+    CREATOR_ID=$(echo "$CREATE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['createdBy']['id'])")
+    echo "Created PR #${PR_ID} (createdBy ${CREATOR_ID})"
+
+    # Auto-complete with a merge commit + delete the source branch on completion.
+    COMPLETE_PAYLOAD=$(cat <<JSON
+    {
+      "autoCompleteSetBy": { "id": "${CREATOR_ID}" },
+      "completionOptions": { "mergeStrategy": "noFastForward", "deleteSourceBranch": true }
+    }
+    JSON
+    )
+
+    echo "Enabling auto-complete (merge) on PR #${PR_ID}"
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+      -H "Content-Type: application/json" \
+      "${API}/pullrequests/${PR_ID}?api-version=7.1" \
+      -d "${COMPLETE_PAYLOAD}" > /dev/null
+
+    echo "PR #${PR_ID} set to auto-complete (merge, no force). Sync done."
   displayName: Sync GitHub dev -> ADO main via PR (history preserved, no force)
   env:
     SYSTEM_ACCESSTOKEN: $(System.AccessToken)
