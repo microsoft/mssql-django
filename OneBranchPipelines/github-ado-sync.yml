@@ -8,20 +8,16 @@
 #   1. Fetch GitHub dev's real commit graph.
 #   2. Push those actual commits (fast-forward) to a fresh intermediate ADO
 #      sync branch -- never a direct push to main, never a force-push.
-#   3. Open a PR from the sync branch into main and auto-complete it with a
-#      MERGE commit (mergeStrategy=noFastForward) so every individual commit +
-#      SHA is retained.
+#   3. Open a PR from the sync branch into main and auto-complete it as a MERGE
+#      (--squash false) so every individual commit + SHA is retained on main.
 #
-# PR creation uses the Azure DevOps REST API via curl + System.AccessToken --
-# no dependency on the `az` CLI (the Django-1ES-pool Linux image does not ship
-# Azure CLI on PATH).
+# Runs on windows-latest (Microsoft-hosted) where the Azure CLI is preinstalled,
+# so PR creation uses `az repos pr` -- same tooling as the mssql-python sync.
 #
 # No direct writes to main. No force. No ado-only hacks (this file mirrors to
-# GitHub like everything else).
-#
-# SDL-clean: the pipeline SOURCE is the ADO mirror (checkout: self). It performs
-# only a plain, unauthenticated `git fetch` of the PUBLIC GitHub repo -- no
-# GitHub service connection.
+# GitHub like everything else). SDL-clean: the pipeline SOURCE is the ADO mirror
+# (checkout: self); it only does a plain, unauthenticated `git fetch` of the
+# PUBLIC GitHub repo -- no GitHub service connection.
 #
 # Branch mapping: GitHub `dev` -> ADO `main` (ADO/1ES conventions expect main).
 #
@@ -44,9 +40,7 @@ trigger: none
 pr: none
 
 pool:
-  name: Django-1ES-pool
-  demands:
-  - imageOverride -equals Ubuntu22.04-AzurePipelines
+  vmImage: 'windows-latest'
 
 steps:
 - checkout: self                # Azure DevOps mssql-django mirror (source = ADO)
@@ -54,8 +48,8 @@ steps:
   fetchDepth: 0
   fetchTags: true
 
-- script: |
-    set -euo pipefail
+- pwsh: |
+    $ErrorActionPreference = 'Stop'
 
     git config user.email "sync@microsoft.com"
     git config user.name  "ADO Mirror Bot"
@@ -63,71 +57,49 @@ steps:
     # 1. Fetch GitHub dev's real commits (public repo -> no auth, SDL-clean).
     git remote add github https://github.com/microsoft/mssql-django.git
     git fetch --tags github dev
-    GH_SHA="$(git rev-parse FETCH_HEAD)"
-    echo "GitHub dev is at $GH_SHA"
+    if ($LASTEXITCODE -ne 0) { throw "git fetch github dev failed" }
+    $ghSha = (git rev-parse FETCH_HEAD).Trim()
+    Write-Host "GitHub dev is at $ghSha"
 
     git fetch origin main
-    MAIN_SHA="$(git rev-parse FETCH_HEAD)"
-    echo "ADO main is at $MAIN_SHA"
+    $mainSha = (git rev-parse FETCH_HEAD).Trim()
+    Write-Host "ADO main is at $mainSha"
 
     # No-op if main already contains GitHub dev's tip.
-    if git merge-base --is-ancestor "$GH_SHA" "$MAIN_SHA"; then
-      echo "ADO main already contains GitHub dev ($GH_SHA). Nothing to sync."
+    git merge-base --is-ancestor $ghSha $mainSha
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "ADO main already contains GitHub dev ($ghSha). Nothing to sync."
       exit 0
-    fi
+    }
 
     # 2. Push GitHub dev's actual commit graph to a fresh sync branch. GitHub
     #    history is append-only, so this is a fast-forward -- no force, and it
     #    never touches main. History + SHAs are preserved exactly.
-    SYNC_BRANCH="sync/github-dev-$(date -u +%Y%m%d-%H%M%S)"
-    echo "Pushing GitHub dev commits to $SYNC_BRANCH"
-    git push origin "$GH_SHA:refs/heads/$SYNC_BRANCH"
+    $syncBranch = "sync/github-dev-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    Write-Host "Pushing GitHub dev commits to $syncBranch"
+    git push origin "$($ghSha):refs/heads/$syncBranch"
+    if ($LASTEXITCODE -ne 0) { throw "push to $syncBranch failed" }
 
-    # 3. Open a PR sync -> main via the ADO REST API (no az CLI dependency),
-    #    then auto-complete it as a MERGE (noFastForward) so individual commits
-    #    are retained on main.
-    API="${SYSTEM_COLLECTIONURI}${SYSTEM_TEAMPROJECT}/_apis/git/repositories/mssql-django"
+    # 3. Open a PR sync -> main and auto-complete as a MERGE (--squash false) so
+    #    the individual commits are retained on main.
+    $env:AZURE_DEVOPS_EXT_PAT = "$(System.AccessToken)"
+    az extension add --name azure-devops --only-show-errors
 
-    CREATE_PAYLOAD=$(cat <<JSON
-    {
-      "sourceRefName": "refs/heads/${SYNC_BRANCH}",
-      "targetRefName": "refs/heads/main",
-      "title": "Sync GitHub dev -> main (${GH_SHA})",
-      "description": "Automated history-preserving sync of GitHub microsoft/mssql-django dev into ADO main. Auto-completed as a MERGE (noFastForward) to retain individual commits and their SHAs."
-    }
-    JSON
-    )
+    az repos pr create `
+      --organization "$(System.TeamFoundationCollectionUri)" `
+      --project "$(System.TeamProject)" `
+      --repository mssql-django `
+      --source-branch "$syncBranch" `
+      --target-branch main `
+      --title "Sync GitHub dev -> main ($ghSha)" `
+      --description "Automated history-preserving sync of GitHub microsoft/mssql-django dev into ADO main. Auto-completed as a MERGE (not squash) to retain individual commits and their SHAs." `
+      --squash false `
+      --delete-source-branch true `
+      --auto-complete true `
+      --output table
+    if ($LASTEXITCODE -ne 0) { throw "az repos pr create failed" }
 
-    echo "Creating pull request $SYNC_BRANCH -> main"
-    CREATE_RESP=$(curl -sf -X POST \
-      -H "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
-      -H "Content-Type: application/json" \
-      "${API}/pullrequests?api-version=7.1" \
-      -d "${CREATE_PAYLOAD}")
-
-    PR_ID=$(echo "$CREATE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['pullRequestId'])")
-    CREATOR_ID=$(echo "$CREATE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['createdBy']['id'])")
-    echo "Created PR #${PR_ID} (createdBy ${CREATOR_ID})"
-
-    # Auto-complete with a merge commit + delete the source branch on completion.
-    COMPLETE_PAYLOAD=$(cat <<JSON
-    {
-      "autoCompleteSetBy": { "id": "${CREATOR_ID}" },
-      "completionOptions": { "mergeStrategy": "noFastForward", "deleteSourceBranch": true }
-    }
-    JSON
-    )
-
-    echo "Enabling auto-complete (merge) on PR #${PR_ID}"
-    curl -sf -X PATCH \
-      -H "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
-      -H "Content-Type: application/json" \
-      "${API}/pullrequests/${PR_ID}?api-version=7.1" \
-      -d "${COMPLETE_PAYLOAD}" > /dev/null
-
-    echo "PR #${PR_ID} set to auto-complete (merge, no force). Sync done."
+    Write-Host "PR created and set to auto-complete (merge, no force). Sync done."
   displayName: Sync GitHub dev -> ADO main via PR (history preserved, no force)
   env:
-    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
-    SYSTEM_COLLECTIONURI: $(System.TeamFoundationCollectionUri)
-    SYSTEM_TEAMPROJECT: $(System.TeamProject)
+    AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
