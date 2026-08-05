@@ -14,16 +14,71 @@ from ..models import TimeZone
 
 
 class TestDatabaseOperations(SimpleTestCase):
-
     @override_settings(USE_TZ=True)
     def test_adapt_datetimefield_value_uses_database_timezone(self):
         database_timezone = datetime.timezone(datetime.timedelta(hours=3))
-        operations = DatabaseOperations(SimpleNamespace(timezone=database_timezone))
+        operations = DatabaseOperations(
+            SimpleNamespace(
+                timezone=database_timezone,
+                timezone_name="Africa/Nairobi",
+            )
+        )
         value = datetime.datetime(2026, 1, 15, 12, tzinfo=datetime.timezone.utc)
 
         adapted = operations.adapt_datetimefield_value(value)
 
         self.assertEqual(adapted, datetime.datetime(2026, 1, 15, 15))
+
+    @override_settings(USE_TZ=True)
+    def test_datetime_sql_conversion_uses_database_timezone(self):
+        operations = DatabaseOperations(SimpleNamespace(timezone_name="Asia/Bangkok"))
+        expected_sql = "DATEADD(second, -14400, column)"
+
+        self.assertEqual(
+            operations._convert_field_to_tz("column", "Africa/Nairobi"),
+            expected_sql,
+        )
+        self.assertEqual(
+            operations._convert_sql_to_tz(
+                "column",
+                ("parameter",),
+                "Africa/Nairobi",
+            ),
+            (expected_sql, ("parameter",)),
+        )
+
+    @override_settings(USE_TZ=True)
+    def test_datetime_sql_conversion_from_utc(self):
+        expected_sql = "DATEADD(second, 10800, column)"
+
+        for timezone_name in (None, "UTC"):
+            with self.subTest(timezone_name=timezone_name):
+                operations = DatabaseOperations(
+                    SimpleNamespace(timezone_name=timezone_name)
+                )
+                self.assertEqual(
+                    operations._convert_field_to_tz("column", "Africa/Nairobi"),
+                    expected_sql,
+                )
+
+    @override_settings(USE_TZ=True)
+    def test_datetime_sql_conversion_skips_matching_timezone(self):
+        operations = DatabaseOperations(
+            SimpleNamespace(timezone_name="Africa/Nairobi")
+        )
+
+        self.assertEqual(
+            operations._convert_field_to_tz("column", "Africa/Nairobi"),
+            "column",
+        )
+        self.assertEqual(
+            operations._convert_sql_to_tz(
+                "column",
+                ("parameter",),
+                "Africa/Nairobi",
+            ),
+            ("column", ("parameter",)),
+        )
 
 
 class TestDateTimeField(TestCase):
