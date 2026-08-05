@@ -2,11 +2,29 @@
 # Licensed under the BSD license.
 
 import datetime
+from types import SimpleNamespace
+
 from django.db import connection
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.test.utils import override_settings
 
+from mssql.operations import DatabaseOperations
+
 from ..models import TimeZone
+
+
+class TestDatabaseOperations(SimpleTestCase):
+
+    @override_settings(USE_TZ=True)
+    def test_adapt_datetimefield_value_uses_database_timezone(self):
+        database_timezone = datetime.timezone(datetime.timedelta(hours=3))
+        operations = DatabaseOperations(SimpleNamespace(timezone=database_timezone))
+        value = datetime.datetime(2026, 1, 15, 12, tzinfo=datetime.timezone.utc)
+
+        adapted = operations.adapt_datetimefield_value(value)
+
+        self.assertEqual(adapted, datetime.datetime(2026, 1, 15, 15))
+
 
 class TestDateTimeField(TestCase):
 
