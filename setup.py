@@ -35,7 +35,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='mssql-django',
-    version='1.7.4',
+    version='1.8.0',
     description='Django backend for Microsoft SQL Server',
     long_description=long_description,
     long_description_content_type='text/markdown',
