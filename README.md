@@ -10,8 +10,8 @@ This project is the continuation and evolution of earlier community efforts, and
 
 | Component | Supported Versions |
 |---|---|
-| Django | 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0 |
-| Python | 3.8 – 3.14 (Django 6.0 requires 3.12+) |
+| Django | 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0, 6.1 |
+| Python | 3.8 – 3.14 (Django 6.0 and 6.1 require 3.12+) |
 | SQL Server | 2016, 2017, 2019, 2022, 2025 |
 | Azure SQL | Database, Managed Instance, SQL Database in Microsoft Fabric |
 | ODBC Driver | Microsoft ODBC Driver 17 or 18 for SQL Server |
@@ -114,6 +114,7 @@ The following limitations apply when using SQL Server with Django:
 | Django 5.1 | Minor limitations with composite primary key inspection via `inspectdb` |
 | Django 5.2 | Tuple lookups require Django 5.2.4+ for full support. Some JSONField bulk/CASE WHEN update edge cases. See [test exclusions](https://github.com/microsoft/mssql-django/blob/dev/testapp/settings.py) for details. |
 | Django 6.0 | Requires Python 3.12+. All 5.2 limitations apply. Backend handles all 6.0 API changes transparently. |
+| Django 6.1 | Requires Python 3.12+. All 6.0 limitations apply. Database-level referential actions (`DB_CASCADE`, `DB_SET_NULL`, `DB_SET_DEFAULT`) and bitwise aggregates (`BitAnd`, `BitOr`, `BitXor`) are not supported on SQL Server; a database-level `on_delete` raises a Django system check (`fields.E324`) pointing to the standard Django-level equivalent. See [test exclusions](https://github.com/microsoft/mssql-django/blob/dev/testapp/settings.py) for details. |
 
 JSONField lookups have additional limitations — see the [JSONField wiki page](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
