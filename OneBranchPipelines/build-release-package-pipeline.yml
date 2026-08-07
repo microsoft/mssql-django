@@ -1,0 +1,155 @@
+# =============================================================================
+# OneBranch Build & Package pipeline for mssql-django.
+# =============================================================================
+# Builds the pure-Python package (sdist + universal wheel via `python -m build`),
+# bundles the regex_clr.dll CLR assembly, generates an SBOM, and publishes the
+# OneBranch 'drop' artifact consumed by the Official-Release and Dummy-Release
+# pipelines.
+#
+# mssql-django is pure Python -> ONE universal wheel + sdist. There is no
+# platform matrix, no native compilation, no symbols (unlike mssql-python).
+#
+# regex_clr.dll: the SQL CLR assembly that backs REGEXP_LIKE. It is NOT checked
+# into the repo (Microsoft FCIB policy prohibits binaries in production repos).
+# It is stored as an Azure DevOps Secure File and pulled at build time with
+# DownloadSecureFile@1, then its SHA-256 is verified against the known-good
+# value before it is bundled into the package (setup.py package_data). A
+# checksum mismatch fails the build, so only the approved assembly can ship.
+#
+# Pipeline source = Azure DevOps mssql-django mirror (checkout: self), keeping
+# the pipeline source ADO-only for SDL.
+# =============================================================================
+
+name: $(Year:YY)$(DayOfYear)$(Rev:.r)
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+schedules:
+  - cron: "0 21 * * *"           # daily nightly build
+    displayName: Daily nightly build
+    branches:
+      include:
+        - main
+    always: true
+
+variables:
+  - template: /OneBranchPipelines/variables/common-variables.yml@self
+  - template: /OneBranchPipelines/variables/onebranch-variables.yml@self
+  # Non-secret build config (RegexClrSha256 = known-good regex_clr.dll SHA-256).
+  # Kept in the Library rather than in-repo so the hash doesn't trip
+  # high-entropy/secret scanners.
+  - group: 'mssql-django-build'
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: 'OneBranch.Pipelines/GovernedTemplates'
+      ref: 'refs/heads/main'
+
+extends:
+  template: 'v2/OneBranch.Official.CrossPlat.yml@templates'
+  parameters:
+    globalSdl:
+      sbom:
+        enabled: true
+      credscan:
+        enabled: true
+        suppressionsFile: $(Build.SourcesDirectory)/.config/CredScanSuppressions.json
+      policheck:
+        break: true
+      tsa:
+        enabled: true
+        configFile: $(Build.SourcesDirectory)/.config/tsaoptions.json
+
+    stages:
+      - stage: build
+        displayName: 'Build mssql-django package'
+        jobs:
+          - job: build
+            displayName: 'Build sdist + wheel'
+
+            pool:
+              type: linux
+              isCustom: true
+              name: Django-1ES-pool
+              demands:
+              - imageOverride -equals Ubuntu22.04-AzurePipelines
+
+            variables:
+              # Wheel + sdist are staged under $(ob_outputDirectory)/dist and published
+              # explicitly as the 'drop_build_build' artifact (see PublishPipelineArtifact
+              # below) so the release pipelines consume a known artifact name + path.
+              ob_outputDirectory: '$(Build.SourcesDirectory)/out'
+
+            steps:
+              - task: UsePythonVersion@0
+                displayName: 'Use Python 3.x'
+                inputs:
+                  versionSpec: '3.x'
+                  addToPath: true
+
+              - task: PipAuthenticate@1
+                displayName: 'Pip Authenticate'
+                inputs:
+                  artifactFeeds: '$(PIP_FEED)'
+
+              - task: DownloadSecureFile@1
+                name: regexClr
+                displayName: 'Download regex_clr.dll (Secure File)'
+                inputs:
+                  secureFile: 'regex_clr.dll'
+
+              - task: Bash@3
+                displayName: 'Verify regex_clr.dll checksum + stage into mssql/'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    set -euo pipefail
+                    EXPECTED='$(RegexClrSha256)'
+                    SRC="$(regexClr.secureFilePath)"
+                    ACTUAL="$(sha256sum "$SRC" | awk '{print $1}')"
+                    echo "expected SHA-256: $EXPECTED"
+                    echo "actual   SHA-256: $ACTUAL"
+                    if [ -z "$EXPECTED" ]; then
+                      echo "##[error]RegexClrSha256 variable is empty - check the 'mssql-django-build' variable group is linked."
+                      exit 1
+                    fi
+                    if [ "$ACTUAL" != "$EXPECTED" ]; then
+                      echo "##[error]regex_clr.dll checksum mismatch - refusing to package."
+                      exit 1
+                    fi
+                    cp -v "$SRC" "$(Build.SourcesDirectory)/mssql/regex_clr.dll"
+                    ls -la "$(Build.SourcesDirectory)/mssql/regex_clr.dll"
+
+              - task: Bash@3
+                displayName: 'Build sdist + wheel'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    set -euo pipefail
+                    cd "$(Build.SourcesDirectory)"
+                    python -m pip install --upgrade pip build
+                    python -m build
+                    mkdir -p "$(Build.SourcesDirectory)/out/dist"
+                    cp -v "$(Build.SourcesDirectory)"/dist/* "$(Build.SourcesDirectory)/out/dist/"
+                    echo "=== packaged artifacts ==="
+                    ls -la "$(Build.SourcesDirectory)/out/dist"
+
+              # Publish wheel + sdist as an explicitly-named artifact so the official/dummy
+              # release pipelines consume a known name + path ($(ob_outputDirectory)/dist).
+              # SBOM is generated automatically by the OneBranch Official template
+              # (globalSdl.sbom.enabled) - no explicit ManifestGeneratorTask needed.
+              - task: PublishPipelineArtifact@1
+                displayName: 'Publish drop_build_build'
+                inputs:
+                  targetPath: '$(ob_outputDirectory)'
+                  artifact: 'drop_build_build'
