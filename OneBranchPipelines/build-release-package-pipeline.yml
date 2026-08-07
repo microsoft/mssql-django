@@ -9,10 +9,12 @@
 # mssql-django is pure Python -> ONE universal wheel + sdist. There is no
 # platform matrix, no native compilation, no symbols (unlike mssql-python).
 #
-# regex_clr.dll: fetched at build time with AUTHENTICATED access (AzureCLI +
-# managed identity, `--auth-mode login`) from the private, network-restricted
-# storage account -- NOT the old anonymous wget (public access is Disabled).
-# The Django-1ES-pool is allow-listed on that storage account's network.
+# regex_clr.dll: the SQL CLR assembly that backs REGEXP_LIKE. It is NOT checked
+# into the repo (Microsoft FCIB policy prohibits binaries in production repos).
+# It is stored as an Azure DevOps Secure File and pulled at build time with
+# DownloadSecureFile@1, then its SHA-256 is verified against the known-good
+# value before it is bundled into the package (setup.py package_data). A
+# checksum mismatch fails the build, so only the approved assembly can ship.
 #
 # Pipeline source = Azure DevOps mssql-django mirror (checkout: self), keeping
 # the pipeline source ADO-only for SDL.
@@ -41,6 +43,10 @@ schedules:
 variables:
   - template: /OneBranchPipelines/variables/common-variables.yml@self
   - template: /OneBranchPipelines/variables/onebranch-variables.yml@self
+  # Non-secret build config (RegexClrSha256 = known-good regex_clr.dll SHA-256).
+  # Kept in the Library rather than in-repo so the hash doesn't trip
+  # high-entropy/secret scanners.
+  - group: 'mssql-django-build'
 
 resources:
   repositories:
@@ -71,7 +77,6 @@ extends:
           - job: build
             displayName: 'Build sdist + wheel'
 
-            # Custom 1ES pool: allow-listed on the regex_clr storage network.
             pool:
               type: linux
               isCustom: true
@@ -95,21 +100,33 @@ extends:
                 inputs:
                   artifactFeeds: '$(PIP_FEED)'
 
-              - task: AzureCLI@2
-                displayName: 'Fetch regex_clr.dll (authenticated, no anonymous wget)'
+              - task: DownloadSecureFile@1
+                name: regexClr
+                displayName: 'Download regex_clr.dll (Secure File)'
                 inputs:
-                  azureSubscription: '$(RegexClrServiceConnection)'
-                  scriptType: 'bash'
-                  scriptLocation: 'inlineScript'
-                  inlineScript: |
+                  secureFile: 'regex_clr.dll'
+
+              - task: Bash@3
+                displayName: 'Verify regex_clr.dll checksum + stage into mssql/'
+                inputs:
+                  targetType: 'inline'
+                  script: |
                     set -euo pipefail
-                    az storage blob download \
-                      --account-name "$(REGEX_CLR_STORAGE_ACCOUNT)" \
-                      --container-name "$(REGEX_CLR_CONTAINER)" \
-                      --name "$(REGEX_CLR_BLOB)" \
-                      --file "$(Build.SourcesDirectory)/mssql/$(REGEX_CLR_BLOB)" \
-                      --auth-mode login
-                    ls -la "$(Build.SourcesDirectory)/mssql/$(REGEX_CLR_BLOB)"
+                    EXPECTED='$(RegexClrSha256)'
+                    SRC="$(regexClr.secureFilePath)"
+                    ACTUAL="$(sha256sum "$SRC" | awk '{print $1}')"
+                    echo "expected SHA-256: $EXPECTED"
+                    echo "actual   SHA-256: $ACTUAL"
+                    if [ -z "$EXPECTED" ]; then
+                      echo "##[error]RegexClrSha256 variable is empty - check the 'mssql-django-build' variable group is linked."
+                      exit 1
+                    fi
+                    if [ "$ACTUAL" != "$EXPECTED" ]; then
+                      echo "##[error]regex_clr.dll checksum mismatch - refusing to package."
+                      exit 1
+                    fi
+                    cp -v "$SRC" "$(Build.SourcesDirectory)/mssql/regex_clr.dll"
+                    ls -la "$(Build.SourcesDirectory)/mssql/regex_clr.dll"
 
               - task: Bash@3
                 displayName: 'Build sdist + wheel'
