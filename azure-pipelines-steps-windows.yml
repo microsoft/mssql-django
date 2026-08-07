@@ -1,0 +1,47 @@
+# Shared build/test steps for the Windows leg of the mssql-django PR-validation pipeline.
+# Included by azure-pipelines.yml from both the Windows_Core (every PR/CI run) and
+# Windows_Legacy (nightly/manual only) jobs so the step definitions stay in one place.
+# The python.version and tox.env variables are supplied per leg by each job's matrix.
+
+steps:
+  - task: CredScan@3
+    inputs:
+      toolMajorVersion: 'V2'
+
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: "$(python.version)"
+    displayName: Use Python $(python.version)
+
+  - powershell: |
+      $IP=Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $(Get-NetConnectionProfile -IPv4Connectivity Internet | Select-Object -ExpandProperty InterfaceIndex) | Select-Object -ExpandProperty IPAddress
+
+      (Get-Content $pwd/testapp/settings.py).replace('localhost', $IP) | Set-Content $pwd/testapp/settings.py
+
+      Invoke-WebRequest https://download.microsoft.com/download/6/f/f/6ffefc73-39ab-4cc0-bb7c-4093d64c2669/en-US/17.10.5.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
+      msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
+      Get-OdbcDriver
+    displayName: Install ODBC
+
+  - powershell: |
+      Import-Module "sqlps"
+      Invoke-Sqlcmd @"
+          EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2
+          ALTER LOGIN [sa] ENABLE;
+          ALTER LOGIN [sa] WITH PASSWORD = '$(TestAppPassword)', CHECK_POLICY=OFF;
+      "@
+    displayName: Set up SQL Server
+
+  - powershell: |
+      Restart-Service -Name MSSQLSERVER -Force
+    displayName: Restart SQL Server
+
+  - powershell: |
+      python -m pip install --upgrade pip wheel setuptools
+      python -m pip install tox
+      git clone https://github.com/django/django.git
+
+      python -m tox -e $(tox.env)
+    displayName: Run tox
+    env:
+      MSSQL_PASSWORD: $(TestAppPassword)
