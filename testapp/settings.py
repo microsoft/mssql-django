@@ -341,9 +341,10 @@ if VERSION >= (6, 0):
 # tests. Good candidates for incremental fixes / community contributions.
 if VERSION >= (6, 1):
     EXCLUDED_TESTS.extend([
-        # SQL Server has no native boolean type (supports_comparing_boolean_expr=False),
-        # so a boolean annotation compiles to a CASE compared to a literal. 6.1 added
-        # assertions that such expressions omit the redundant "= True" comparison.
+        # SQL Server has no boolean literal usable in a predicate
+        # (supports_comparing_boolean_expr=False), so a boolean annotation compiles
+        # to a CASE compared to a literal. 6.1 added assertions that such expressions
+        # omit the redundant "= True" comparison.
         # TODO: strip the redundant boolean comparison in the compiler.
         'lookup.tests.LookupTests.test_exact_booleanfield_annotation',
 
