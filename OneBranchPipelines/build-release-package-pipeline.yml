@@ -85,7 +85,9 @@ extends:
               - imageOverride -equals Ubuntu22.04-AzurePipelines
 
             variables:
-              # OneBranch auto-publishes this directory as the 'drop' artifact.
+              # Wheel + sdist are staged under $(ob_outputDirectory)/dist and published
+              # explicitly as the 'drop_build_build' artifact (see PublishPipelineArtifact
+              # below) so the release pipelines consume a known artifact name + path.
               ob_outputDirectory: '$(Build.SourcesDirectory)/out'
 
             steps:
@@ -137,13 +139,17 @@ extends:
                     cd "$(Build.SourcesDirectory)"
                     python -m pip install --upgrade pip build
                     python -m build
-                    mkdir -p "$(Build.SourcesDirectory)/out"
-                    cp -v "$(Build.SourcesDirectory)"/dist/* "$(Build.SourcesDirectory)/out/"
+                    mkdir -p "$(Build.SourcesDirectory)/out/dist"
+                    cp -v "$(Build.SourcesDirectory)"/dist/* "$(Build.SourcesDirectory)/out/dist/"
                     echo "=== packaged artifacts ==="
-                    ls -la "$(Build.SourcesDirectory)/out"
+                    ls -la "$(Build.SourcesDirectory)/out/dist"
 
-              - task: ManifestGeneratorTask@0
-                displayName: 'Generate SBOM'
+              # Publish wheel + sdist as an explicitly-named artifact so the official/dummy
+              # release pipelines consume a known name + path ($(ob_outputDirectory)/dist).
+              # SBOM is generated automatically by the OneBranch Official template
+              # (globalSdl.sbom.enabled) - no explicit ManifestGeneratorTask needed.
+              - task: PublishPipelineArtifact@1
+                displayName: 'Publish drop_build_build'
                 inputs:
-                  BuildDropPath: '$(Build.SourcesDirectory)/out'
-                  PackageName: '$(PACKAGE_NAME)'
+                  targetPath: '$(ob_outputDirectory)'
+                  artifact: 'drop_build_build'
