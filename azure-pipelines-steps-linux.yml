@@ -138,6 +138,12 @@ steps:
       MSSQL_HOST: 127.0.0.1
 
   - task: PublishCodeCoverageResults@1
+    # Every Linux leg produces a django/coverage.xml and, without a guard,
+    # they all publish to the same artifact path so the posted number is a
+    # nondeterministic upload race across the matrix. Pin publishing to the
+    # newest supported stack (Python 3.14 / Django 6.0) so the number is
+    # deterministic and reflects the most backend code paths exercised.
+    condition: and(succeeded(), eq(variables['tox.env'], 'py314-django60'))
     inputs:
       codeCoverageTool: 'Cobertura'
       summaryFileLocation: 'django/coverage.xml'
