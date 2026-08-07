@@ -8,6 +8,10 @@ on:
 jobs:
   coverage-report:
     runs-on: ubuntu-latest
+    # The ADO build (definition 2195) that publishes the coverage artifact takes
+    # ~1 hour. The poll windows below wait up to ~65 min for it; bound the whole
+    # job at 90 min (well under GitHub's 6-hour hosted-runner job execution cap).
+    timeout-minutes: 90
     permissions:
       pull-requests: write
       contents: read
@@ -92,15 +96,17 @@ jobs:
           echo "📥 Polling for coverage artifacts for build $BUILD_ID..."
 
           COVERAGE_ARTIFACT=""
-          for i in {1..60}; do
-            echo "Attempt $i/60: Checking for coverage artifacts..."
+          # The ADO build takes ~1 hour to publish the coverage artifact, so poll
+          # up to ~65 min (130 * 30s) instead of giving up after 30 min.
+          for i in {1..130}; do
+            echo "Attempt $i/130: Checking for coverage artifacts..."
 
             ARTIFACTS_RESPONSE=$(curl --fail --silent --show-error "$ARTIFACTS_URL")
 
             if ! echo "$ARTIFACTS_RESPONSE" | jq . >/dev/null 2>&1; then
-              echo "⚠️ Invalid JSON response from artifacts API (attempt $i/60)"
-              if [[ $i -eq 60 ]]; then
-                echo "❌ Persistent API issues after 60 attempts"
+              echo "⚠️ Invalid JSON response from artifacts API (attempt $i/130)"
+              if [[ $i -eq 130 ]]; then
+                echo "❌ Persistent API issues after 130 attempts"
                 exit 1
               fi
               sleep 30
@@ -116,9 +122,9 @@ jobs:
               echo "✅ Found coverage artifact on attempt $i!"
               break
             else
-              echo "⏳ Coverage report not ready yet (attempt $i/60)..."
-              if [[ $i -eq 60 ]]; then
-                echo "❌ Timeout: Coverage report artifact not found after 60 attempts"
+              echo "⏳ Coverage report not ready yet (attempt $i/130)..."
+              if [[ $i -eq 130 ]]; then
+                echo "❌ Timeout: Coverage report artifact not found after 130 attempts"
                 exit 1
               fi
               sleep 30

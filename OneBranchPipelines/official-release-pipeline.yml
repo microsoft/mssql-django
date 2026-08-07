@@ -75,7 +75,7 @@ extends:
                   targetType: 'inline'
                   script: |
                     set -euo pipefail
-                    DIST="$(Pipeline.Workspace)/buildPipeline/drop_build_build"
+                    DIST="$(Pipeline.Workspace)/buildPipeline/drop_build_build/dist"
                     echo "=== artifact contents ==="
                     ls -la "$DIST"
                     test -n "$(find "$DIST" -name '*.whl' -o -name '*.tar.gz')" \
@@ -118,7 +118,7 @@ extends:
                     Intent: 'PackageDistribution'
                     ContentType: 'PyPI'
                     ContentSource: 'Folder'
-                    FolderLocation: '$(Pipeline.Workspace)/buildPipeline/drop_build_build'
+                    FolderLocation: '$(Pipeline.Workspace)/buildPipeline/drop_build_build/dist'
                     WaitForReleaseCompletion: true
                     Owners: '$(owner)'
                     Approvers: '$(approver)'

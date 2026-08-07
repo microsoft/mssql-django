@@ -8,6 +8,18 @@ from django import VERSION as django_version
 if django_version >= (5, 2):    
     from django.db.models.fields.composite import CompositePrimaryKey
 class DatabaseFeatures(BaseDatabaseFeatures):
+    # Django 6.1 added database-level ON DELETE pushdown (DB_CASCADE / DB_SET_NULL /
+    # DB_SET_DEFAULT), defaulting these flags to True in BaseDatabaseFeatures. SQL Server
+    # rejects FK graphs with multiple cascade paths to the same table (error 1785), which
+    # the new delete-app models trigger, so we don't support DB-level ON DELETE here.
+    supports_on_delete_db_cascade = False
+    supports_on_delete_db_null = False
+    supports_on_delete_db_default = False
+    # Django 6.1 added bitwise aggregations (BIT_AND / BIT_OR / BIT_XOR), defaulting
+    # supports_bit_aggregations to True. SQL Server has no native bitwise aggregate
+    # function, so BitAnd/BitOr/BitXor raise a clean NotSupportedError instead.
+    supports_bit_aggregations = False
+    supports_default_in_bit_aggregations = False
     allows_group_by_select_index = False
     allow_sliced_subqueries_with_in = False
     can_introspect_autofield = True

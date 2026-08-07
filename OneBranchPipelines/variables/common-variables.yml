@@ -24,15 +24,7 @@ variables:
     value: 'mssql-django/mssql-django_PublicPackages'
     readonly: true
 
-  # regex_clr.dll source (private, network-restricted storage account).
-  # Downloaded at build time with managed-identity auth (NOT anonymous wget)
-  # from the Django-1ES-pool, which is allow-listed on the account network.
-  - name: REGEX_CLR_STORAGE_ACCOUNT
-    value: 'mssqldjangostorage'
-    readonly: true
-  - name: REGEX_CLR_CONTAINER
-    value: 'regexclr'
-    readonly: true
-  - name: REGEX_CLR_BLOB
-    value: 'regex_clr.dll'
-    readonly: true
+  # regex_clr.dll (SQL CLR assembly backing REGEXP_LIKE) is NOT stored in the
+  # repo (FCIB policy) nor a storage account. It is an Azure DevOps Secure File
+  # named 'regex_clr.dll', pulled at build time via DownloadSecureFile@1 and
+  # checksum-verified in build-release-package-pipeline.yml.

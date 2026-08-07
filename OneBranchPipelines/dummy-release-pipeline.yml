@@ -69,7 +69,7 @@ extends:
                   targetType: 'inline'
                   script: |
                     set -euo pipefail
-                    DIST="$(Pipeline.Workspace)/buildPipeline/drop_build_build"
+                    DIST="$(Pipeline.Workspace)/buildPipeline/drop_build_build/dist"
                     echo "=== [TEST] artifact contents ==="
                     ls -la "$DIST"
 
@@ -98,7 +98,7 @@ extends:
                     Intent: 'PackageDistribution'
                     ContentType: 'Maven'   # placeholder - deliberately NOT PyPI
                     ContentSource: 'Folder'
-                    FolderLocation: '$(Pipeline.Workspace)/buildPipeline/drop_build_build'
+                    FolderLocation: '$(Pipeline.Workspace)/buildPipeline/drop_build_build/dist'
                     WaitForReleaseCompletion: true
                     Owners: '$(owner)'
                     Approvers: '$(approver)'
