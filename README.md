@@ -114,7 +114,7 @@ The following limitations apply when using SQL Server with Django:
 | Django 5.1 | Minor limitations with composite primary key inspection via `inspectdb` |
 | Django 5.2 | Tuple lookups require Django 5.2.4+ for full support. Some JSONField bulk/CASE WHEN update edge cases. See [test exclusions](https://github.com/microsoft/mssql-django/blob/dev/testapp/settings.py) for details. |
 | Django 6.0 | Requires Python 3.12+. All 5.2 limitations apply. Backend handles all 6.0 API changes transparently. |
-| Django 6.1 | Requires Python 3.12+. All 6.0 limitations apply. Database-level referential actions (`DB_CASCADE`, `DB_SET_NULL`, `DB_SET_DEFAULT`) and bitwise aggregates (`BitAnd`, `BitOr`, `BitXor`) are not supported on SQL Server; a database-level `on_delete` raises a Django system check (`fields.E324`) pointing to the standard Django-level equivalent. See [test exclusions](https://github.com/microsoft/mssql-django/blob/dev/testapp/settings.py) for details. |
+| Django 6.1 | Requires Python 3.12+. All 6.0 limitations apply. Two 6.1 additions are unavailable: database-level referential actions (`DB_CASCADE`, `DB_SET_NULL`, `DB_SET_DEFAULT`) are not supported because SQL Server disallows multiple cascade paths to the same table, so using one raises a Django system check (`fields.E324`) that points you to the standard Django-level `on_delete`; and bitwise aggregates (`BitAnd`, `BitOr`, `BitXor`) are not implemented by this backend and raise `NotSupportedError`. See [test exclusions](https://github.com/microsoft/mssql-django/blob/dev/testapp/settings.py) for details. |
 
 JSONField lookups have additional limitations — see the [JSONField wiki page](https://github.com/microsoft/mssql-django/wiki/JSONField).
 
