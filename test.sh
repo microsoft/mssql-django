@@ -18,7 +18,7 @@ if python -c "import django; exit(0 if django.VERSION >= (5, 2) else 1)"; then
     COMPOSITE_PK_TESTS="composite_pk"
 fi
 
-PYTHONPATH=.. coverage run tests/runtests.py --settings=testapp.settings --noinput \
+PYTHONPATH=.. coverage run --parallel-mode tests/runtests.py --settings=testapp.settings --noinput \
     aggregation \
     aggregation_regress \
     annotations \
@@ -118,5 +118,14 @@ PYTHONPATH=.. coverage run tests/runtests.py --settings=testapp.settings --noinp
     update \
     update_only_fields
 
-python -m coverage xml --include '*mssql*' --omit '*virtualenvs*' -o coverage.xml
+# Combine the testapp suite run (parallel data in the repo root) with the Django
+# suite run (parallel data here in django/), so mssql-django's own tests count
+# toward coverage instead of only Django's suite. Both runs record the same
+# absolute mssql/*.py paths, so combine simply unions their line hits.
+python -m coverage combine .. .
+# '*/mssql/*' matches a real path segment, so it captures the mssql backend
+# package under both CI (s/mssql/...) and a local checkout named mssql-django,
+# without accidentally pulling in testapp/ test files.
+python -m coverage xml --include '*/mssql/*' --omit '*virtualenvs*' -o coverage.xml
+python -m coverage report --include '*/mssql/*' || true
 
