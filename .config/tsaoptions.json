@@ -9,6 +9,7 @@
   "repositoryName": "mssql-django",
   "codebaseName": "Django Backend for Microsoft SQL Server",
   "allTools": true,
+  "template": "MSDATA_RevolutionR",
   "includePathPatterns": "mssql/*, setup.py",
   "excludePathPatterns": "testapp/*, django/*, OneBranchPipelines/*"
 }
