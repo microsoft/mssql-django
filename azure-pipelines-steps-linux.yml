@@ -1,0 +1,150 @@
+# Shared build/test steps for the Linux leg of the mssql-django PR-validation pipeline.
+# Included by azure-pipelines.yml from both the Linux_Core (every PR/CI run) and
+# Linux_Legacy (nightly/manual only) jobs so the step definitions stay in one place.
+# The python.version and tox.env variables are supplied per leg by each job's matrix.
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: "$(python.version)"
+    displayName: Use Python $(python.version)
+
+  - script: |
+      docker version
+      docker pull mcr.microsoft.com/mssql/server:2025-latest
+      docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=$(TestAppPassword)' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2025-latest
+      curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+      curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+      
+      # Wait for SQL Server to be ready with increased timeout
+      echo "Waiting for SQL Server to start..."
+      
+      # Extended wait for the container to be running and SQL Server service to be listening
+      for i in {1..60}; do
+        if docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest) 2>&1 | grep -q "SQL Server is now ready for client connections"; then
+          echo "SQL Server service is ready after $i attempts ($(($i * 3)) seconds)"
+          break
+        fi
+        echo "Attempt $i: Waiting for SQL Server service to be ready, checking again in 3 seconds..."
+        sleep 3
+      done
+      
+      # Increased wait to ensure full initialization for database operations
+      echo "Waiting additional 60 seconds for full SQL Server initialization..."
+      sleep 60
+      
+      # Verify we can connect using a simple network test first
+      echo "Testing SQL Server connectivity..."
+      if ! timeout 30 bash -c 'until echo > /dev/tcp/localhost/1433; do sleep 1; done'; then
+        echo "Cannot connect to SQL Server on port 1433"
+        docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
+        exit 1
+      fi
+      
+      echo "SQL Server is ready and accepting connections"
+    displayName: Install SQL Server
+
+  - script: |
+      curl -sSL -O https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb
+      sudo dpkg -i packages-microsoft-prod.deb
+      rm packages-microsoft-prod.deb
+
+      # Add retry logic for handling dpkg lock
+      for i in {1..30}; do
+        echo "Attempt $i of 30 to update packages..."
+        if sudo apt-get update; then
+          break
+        fi
+        echo "Waiting for dpkg lock to be released..."
+        sleep 10
+      done
+      if ! sudo apt-get update; then
+        echo "Failed to update packages after 30 attempts. Exiting."
+        exit 1
+      fi
+
+      # Add retry logic for installing package
+      for i in {1..30}; do
+        echo "Attempt $i of 30 to install ODBC driver..."
+        if sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17; then
+          break
+        fi
+        echo "Waiting for dpkg lock to be released..."
+        sleep 10
+      done
+      # Exit with a non-zero status if installation fails after all retries
+      if ! sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17; then
+        echo "Failed to install ODBC driver after 30 attempts. Exiting."
+        exit 1
+      fi
+    displayName: Install ODBC Driver
+
+  - script: |
+      # Install mssql-tools to get sqlcmd
+      sudo ACCEPT_EULA=Y apt-get install -y mssql-tools
+      
+      # Wait for SQL Server authentication to be ready (retry loop)
+      echo "Waiting for SQL Server authentication to be ready..."
+      export PATH="$PATH:/opt/mssql-tools/bin"
+      
+      # Retry authentication until SQL Server finishes its internal upgrade process
+      for i in {1..30}; do
+        echo "Authentication attempt $i of 30..."
+        # Force IPv4 TCP to avoid potential localhost/IPv6 resolution issues on agents
+        if sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10 >/dev/null 2>&1; then
+          echo "✅ SQL Server authentication successful after $i attempts!"
+          break
+        else
+          if [ $i -eq 30 ]; then
+            echo "❌ SQL Server authentication FAILED after 30 attempts!"
+            echo "Final attempt with verbose output:"
+            sqlcmd -S "tcp:127.0.0.1,1433" -U sa -P "$(TestAppPassword)" -Q "SELECT 1 AS test" -l 10
+            echo ""
+            echo "Container logs:"
+            docker logs $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2025-latest)
+            exit 1
+          else
+            echo "Authentication failed (attempt $i), waiting 10 seconds before retry..."
+            echo "This is normal - SQL Server may still be upgrading internal databases..."
+            sleep 10
+          fi
+        fi
+      done
+      
+      echo "SQL Server is fully ready for authentication!"
+    displayName: Wait for SQL Server Authentication
+
+  - script: |
+      # Since pylibmc isn't supported for Python 3.12+ 
+      # We need to install libmemcached-dev to build it - dependency for Django test suite
+      # https://github.com/django/django/blob/1a744343999c9646912cee76ba0a2fa6ef5e6240/.github/workflows/schedule_tests.yml#L50
+      PYTHON_MINOR=$(python -c "import sys; print(sys.version_info.minor)")
+      if [[ "$PYTHON_MINOR" -ge 12 ]]; then
+        echo "Installing libmemcached-dev for Python 3.12+"
+        sudo apt-get install -y libmemcached-dev
+      fi
+    displayName: Install libmemcached for Python 3.12+
+
+  - script: |
+      python -m pip install --upgrade pip wheel setuptools
+      pip install tox
+      git clone https://github.com/django/django.git
+    displayName: Install Python requirements
+
+  - script: tox -e $(tox.env)
+    displayName: Run tox
+    env:
+      MSSQL_PASSWORD: $(TestAppPassword)
+      MSSQL_HOST: 127.0.0.1
+
+  - task: PublishCodeCoverageResults@1
+    inputs:
+      codeCoverageTool: 'Cobertura'
+      summaryFileLocation: 'django/coverage.xml'
+
+  - task: PublishTestResults@2
+    displayName: Publish test results via jUnit
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: 'django/result.xml'
+      testRunTitle: 'junit-$(Agent.OS)-$(Agent.OSArchitecture)-$(tox.env)'
