@@ -196,8 +196,6 @@ EXCLUDED_TESTS = [
     # JSONFields
     'model_fields.test_jsonfield.TestQuerying.test_key_quoted_string',
     'model_fields.test_jsonfield.TestQuerying.test_isnull_key',
-    'model_fields.test_jsonfield.TestQuerying.test_none_key',
-    'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
     'model_fields.test_jsonfield.TestQuerying.test_key_escape',
     'expressions_window.tests.WindowFunctionTests.test_key_transform',
 
@@ -352,10 +350,6 @@ if VERSION >= (6, 1):
         # reference (F()) used as a LIKE pattern doesn't cover the bracket case.
         # TODO: escape []-wildcards for column-referencing __contains/__startswith.
         'expressions.tests.ExpressionsTests.test_patterns_escape',
-
-        # JSON key __iexact=None semantics (no native JSON null handling on SQL Server);
-        # sibling to the existing JSONField exclusions.
-        'model_fields.test_jsonfield.TestQuerying.test_key_iexact_none',
 
         # bulk_batch_size is capped for SQL Server's 2100-parameter limit, so the
         # "unlimited" (no-fields) case doesn't match Django's expected large batch size.

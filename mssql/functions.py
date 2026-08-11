@@ -396,15 +396,38 @@ def sqlserver_json_array(self, compiler, connection, **extra_context):
 
     return sql, params
 
+
 # Register for Django 5.2+ so that JSONArray uses this implementation on SQL Server
 if VERSION >= (5, 2):
     JSONArray.as_microsoft = sqlserver_json_array
+
 
 def json_KeyTransformExact_process_rhs(self, compiler, connection):
     rhs, rhs_params = key_transform_exact_process_rhs(self, compiler, connection)
     if connection.vendor == 'microsoft':
         rhs_params = unquote_json_rhs(rhs_params)
     return rhs, rhs_params
+
+
+def json_KeyTransformExact(self, compiler, connection):
+    """Match an existing JSON key whose value is the JSON null literal."""
+    if self.rhs is None and isinstance(self.lhs, KeyTransform):
+        lhs, lhs_params, key_transforms = self.lhs.preprocess_lhs(compiler, connection)
+        final_key = key_transforms.pop()
+
+        if key_transforms:
+            json_path = connection.ops.compile_json_path(key_transforms)
+            json_path = json_path.replace("'", "''")
+            openjson = "OPENJSON(%s, '%s')" % (lhs, json_path)
+        else:
+            openjson = "OPENJSON(%s)" % lhs
+
+        return (
+            "EXISTS (SELECT 1 FROM %s WHERE [key] = %%s AND [type] = 0)" % openjson,
+            tuple(lhs_params) + (final_key,),
+        )
+    return self.as_sql(compiler, connection)
+
 
 def json_KeyTransformIn(self, compiler, connection):
     lhs, _ = super(KeyTransformIn, self).process_lhs(compiler, connection)
@@ -736,6 +759,7 @@ in_split_parameter_list_as_sql = In.split_parameter_list_as_sql
 In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
     KeyTransformIn.as_microsoft = json_KeyTransformIn
+    KeyTransformExact.as_microsoft = json_KeyTransformExact
     # Need copy of old KeyTransformExact.process_rhs to call later
     key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
