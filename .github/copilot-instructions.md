@@ -22,7 +22,7 @@ mssql/                  # Core backend implementation (~4400 lines)
         └── install_regex_clr.py  # CLR assembly for REGEXP_LIKE support
 
 testapp/               # Unit tests for the backend
-├── tests/             # 42 unit tests across 11 test files
+├── tests/             # 214 tests across 15 test files
 ├── settings.py        # Test configuration with EXCLUDED_TESTS
 └── models.py          # Test models
 
@@ -59,7 +59,7 @@ django/                # NOT in repo — cloned at runtime by test.sh for full t
 
 **mssql/features.py** - Declares what SQL Server supports/doesn't support. Check here first when a test fails to see if it's a known limitation.
 
-**testapp/settings.py** - Contains `EXCLUDED_TESTS` list for Django tests that cannot pass due to SQL Server limitations (not bugs). Includes version-gated exclusions (e.g., ~75 tests excluded for Django 6.0).
+**testapp/settings.py** - Contains `EXCLUDED_TESTS` list for Django tests that cannot pass due to SQL Server limitations (not bugs). Includes version-gated blocks (`if VERSION >= (X, Y):`) spanning Django 3.1 through 6.1.
 
 ## Coding Patterns
 
@@ -101,7 +101,7 @@ EXCLUDED_TESTS = [
 
 ## Testing
 
-### Run mssql-django unit tests (42 tests)
+### Run mssql-django unit tests (214 tests)
 ```bash
 python manage.py test testapp.tests
 ```
@@ -120,7 +120,7 @@ cd django && python tests/runtests.py --settings=testapp.settings <module>
 
 ## Version Compatibility
 
-- **Django**: 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0
+- **Django**: 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0, 6.1
 - **Python**: 3.8 – 3.14
 - **SQL Server**: 2017, 2019, 2022, 2025; Azure SQL DB / Managed Instance
 - **ODBC Driver**: 17 or 18 for SQL Server
