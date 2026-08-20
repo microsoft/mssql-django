@@ -645,6 +645,91 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
 
         self.assertIn("Trusted_Connection=yes", result)
 
+    def test_extra_params_appended_verbatim(self):
+        """Test that extra_params is glued onto the connection string verbatim.
+
+        Regression test for #427: the reporter suspected extra_params was not
+        being applied. It is appended to the end of the connection string as-is
+        (no parsing, no re-encoding), so whatever the settings writer puts there
+        reaches the ODBC driver unchanged.
+        """
+        extra = "Encrypt=no;TrustServerCertificate=yes"
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {"extra_params": extra},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertTrue(result.endswith(";" + extra))
+
+    def test_extra_params_keyword_with_space_preserved(self):
+        """Test that an ODBC keyword containing a space survives verbatim.
+
+        Regression test for #427: a follow-up report claimed a space in an
+        extra_params keyword (e.g. ``Connection Timeout``) broke the connection.
+        extra_params is appended verbatim, so spaced keywords are passed through
+        to the driver unchanged and are not mangled or split.
+        """
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {"extra_params": "Encrypt=no;Connection Timeout=30"},
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertIn("Connection Timeout=30", result)
+
+    def test_spaced_keyword_alongside_authentication_skips_sspi(self):
+        """Test the realistic #427 scenario: spaced keyword next to Authentication.
+
+        Combines the two threads from #427: a spaced keyword
+        (``Connection Timeout``) alongside an explicit ``Authentication=`` mode.
+        The spaced keyword must be preserved verbatim, and the FA001 fix from
+        #529 must still hold (no Trusted_Connection / Integrated Security
+        injected when Authentication= is present and there is no USER).
+        """
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "OPTIONS": {
+                "extra_params": "Connection Timeout=30;Authentication=ActiveDirectoryIntegrated",
+            },
+        }
+        driver = "ODBC Driver 18 for SQL Server"
+        result = self.wrapper._build_connection_string(conn_params, driver)
+
+        self.assertIn("Connection Timeout=30", result)
+        self.assertIn("Authentication=ActiveDirectoryIntegrated", result)
+        self.assertNotIn("Trusted_Connection=", result)
+        self.assertNotIn("Integrated Security=", result)
+
+    def test_parse_extra_params_spaced_key_with_authentication(self):
+        """Test that auth-mode detection is robust to a spaced sibling keyword.
+
+        Regression test for #427: a spaced keyword such as ``Connection Timeout``
+        must not confuse the tokenizer that drives the #529 FA001 fix. The
+        Authentication mode is still detected, and the spaced key keeps its
+        interior space.
+        """
+        parsed = DatabaseWrapper._parse_extra_params(
+            "Connection Timeout=30;Authentication=ActiveDirectoryIntegrated"
+        )
+        self.assertEqual(parsed["connection timeout"], "30")
+        self.assertEqual(parsed["authentication"], "ActiveDirectoryIntegrated")
+        self.assertEqual(
+            DatabaseWrapper._get_authentication_mode(
+                "Connection Timeout=30;Authentication=ActiveDirectoryIntegrated"
+            ),
+            "activedirectoryintegrated",
+        )
+
 
 class TestCursorWrapperAsSqlType(SimpleTestCase):
     """Tests for CursorWrapper._as_sql_type method."""
