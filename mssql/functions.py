@@ -30,7 +30,7 @@ if VERSION >= (5, 2):
 
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
-        KeyTransform, KeyTransformIn, KeyTransformExact,
+        KeyTransform, KeyTransformIn, KeyTransformExact, KeyTransformIExact,
         HasKeyLookup)
     # compile_json_path was moved from django.db.models.fields.json to
     # connection.ops.compile_json_path() in Django 6.0
@@ -415,6 +415,34 @@ def json_KeyTransformExact(self, compiler, connection):
         lhs, lhs_params, key_transforms = self.lhs.preprocess_lhs(compiler, connection)
         final_key = key_transforms.pop()
 
+        try:
+            final_index = int(final_key)
+        except ValueError:
+            final_index = None
+
+        if final_index is not None:
+            # Compile the final transform independently to preserve the backend's
+            # numeric parsing and negative-index validation.
+            connection.ops.compile_json_path([final_key])
+
+            if key_transforms:
+                json_path = connection.ops.compile_json_path(key_transforms)
+                json_path = json_path.replace("'", "''")
+                parent_json = "JSON_QUERY(%s, '%s')" % (lhs, json_path)
+            else:
+                parent_json = "JSON_QUERY(%s)" % lhs
+
+            # OPENJSON exposes both array indexes and numeric object properties as
+            # string keys. Guard the parent shape so __0 follows Django's array-index
+            # semantics and doesn't also match an object property named "0".
+            return (
+                "EXISTS (SELECT 1 FROM (SELECT %s AS [json]) AS [parent] "
+                "CROSS APPLY OPENJSON([parent].[json]) AS [item] "
+                "WHERE LEFT(LTRIM([parent].[json]), 1) = '[' "
+                "AND [item].[key] = %%s AND [item].[type] = 0)" % parent_json,
+                tuple(lhs_params) + (str(final_index),),
+            )
+
         if key_transforms:
             json_path = connection.ops.compile_json_path(key_transforms)
             json_path = json_path.replace("'", "''")
@@ -427,6 +455,20 @@ def json_KeyTransformExact(self, compiler, connection):
             tuple(lhs_params) + (final_key,),
         )
     return self.as_sql(compiler, connection)
+
+
+def json_KeyTransformIExact_as_sql(self, compiler, connection):
+    """Backport Django 6.1's vendor-aware JSON null delegation."""
+    if self.rhs is None:
+        key_transform = KeyTransform(self.lhs.key_name, self.lhs.lhs)
+        exact_lookup = KeyTransformExact(key_transform, self.rhs)
+        vendor_method = getattr(
+            exact_lookup,
+            'as_%s' % connection.vendor,
+            exact_lookup.as_sql,
+        )
+        return vendor_method(compiler, connection)
+    return key_transform_iexact_as_sql(self, compiler, connection)
 
 
 def json_KeyTransformIn(self, compiler, connection):
@@ -760,6 +802,12 @@ In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
     KeyTransformIn.as_microsoft = json_KeyTransformIn
     KeyTransformExact.as_microsoft = json_KeyTransformExact
+    if VERSION < (6, 1):
+        # Django 6.1 added vendor-aware delegation upstream. Backport the full
+        # behavior so enabling None also remains correct on secondary databases.
+        KeyTransformIExact.can_use_none_as_rhs = True
+        key_transform_iexact_as_sql = KeyTransformIExact.as_sql
+        KeyTransformIExact.as_sql = json_KeyTransformIExact_as_sql
     # Need copy of old KeyTransformExact.process_rhs to call later
     key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs

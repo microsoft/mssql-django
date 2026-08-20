@@ -125,6 +125,35 @@ class TestJSONField(TestCase):
         )
 
     @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
+    def test_json_null_key_lookups(self):
+        present = JSONModel.objects.create(
+            value={"nullable": None, "nested": {"nullable": None}}
+        )
+        JSONModel.objects.create(value={"nullable": "value", "nested": {}})
+        JSONModel.objects.create(value={})
+
+        self.assertSequenceEqual(JSONModel.objects.filter(value__nullable=None), [present])
+        self.assertSequenceEqual(JSONModel.objects.filter(value__nullable__iexact=None), [present])
+        self.assertSequenceEqual(JSONModel.objects.filter(value__nested__nullable=None), [present])
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
+    def test_json_null_numeric_key_uses_array_index_semantics(self):
+        array_null = JSONModel.objects.create(value=[None])
+        nested_array_null = JSONModel.objects.create(value={"items": [None]})
+        JSONModel.objects.create(value={"0": None})
+        JSONModel.objects.create(value={"items": {"0": None}})
+        JSONModel.objects.create(value=["value"])
+
+        self.assertSequenceEqual(JSONModel.objects.filter(value__0=None), [array_null])
+        self.assertSequenceEqual(
+            JSONModel.objects.filter(value__items__0=None),
+            [nested_array_null],
+        )
+
+        with self.assertRaises(NotSupportedError):
+            list(JSONModel.objects.filter(**{"value__-1": None}))
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_ordering_by_numeric_json_key_ascending(self):
         # Regression coverage for compiler ORDER BY rewrite:
         # JSON key transforms should sort numerically (not lexicographically)
@@ -191,4 +220,3 @@ class TestJSONField(TestCase):
         # the same order clause is requested twice.
         select_sql = captured[-1]["sql"]
         self.assertEqual(select_sql.upper().count("TRY_CONVERT(FLOAT"), 1)
-
