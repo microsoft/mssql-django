@@ -636,6 +636,13 @@ class SQLCompiler(compiler.SQLCompiler):
                         result.append('ORDER BY X.rn')
                 else:
                     result.append(self.connection.ops.limit_offset_sql(self.query.low_mark, self.query.high_mark))
+            elif do_limit and self.qualify:
+                # The qualify branch above (get_qualify_sql()) bypasses the
+                # `TOP %d` insertion that plain SELECTs get further up, so a
+                # limit-only qualify query (low_mark == 0) would otherwise be
+                # emitted with no row limit at all. Emit the FETCH-only form
+                # of the offset/limit clause on the outer query instead.
+                result.append(self.connection.ops.limit_offset_sql(self.query.low_mark, self.query.high_mark))
 
             if self.query.subquery and extra_select:
                 # If the query is used as a subquery, the extra selects would
