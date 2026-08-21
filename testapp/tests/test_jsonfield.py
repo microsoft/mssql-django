@@ -129,12 +129,19 @@ class TestJSONField(TestCase):
         present = JSONModel.objects.create(
             value={"nullable": None, "nested": {"nullable": None}}
         )
-        JSONModel.objects.create(value={"nullable": "value", "nested": {}})
+        non_null = JSONModel.objects.create(
+            value={"nullable": "value", "nested": {"nullable": "value"}}
+        )
         JSONModel.objects.create(value={})
 
         self.assertSequenceEqual(JSONModel.objects.filter(value__nullable=None), [present])
         self.assertSequenceEqual(JSONModel.objects.filter(value__nullable__iexact=None), [present])
         self.assertSequenceEqual(JSONModel.objects.filter(value__nested__nullable=None), [present])
+        self.assertSequenceEqual(JSONModel.objects.exclude(value__nullable=None), [non_null])
+        self.assertSequenceEqual(
+            JSONModel.objects.exclude(value__nested__nullable=None),
+            [non_null],
+        )
 
     @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_json_null_numeric_key_uses_array_index_semantics(self):

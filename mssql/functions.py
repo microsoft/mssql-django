@@ -434,12 +434,15 @@ def json_KeyTransformExact(self, compiler, connection):
 
             # OPENJSON exposes both array indexes and numeric object properties as
             # string keys. Guard the parent shape so __0 follows Django's array-index
-            # semantics and doesn't also match an object property named "0".
+            # semantics and doesn't also match an object property named "0". MAX()
+            # returns SQL NULL when the index is missing, preserving Django's
+            # three-valued behavior when the lookup is negated by exclude().
             return (
-                "EXISTS (SELECT 1 FROM (SELECT %s AS [json]) AS [parent] "
+                "(SELECT MAX(CASE WHEN [item].[type] = 0 THEN 1 ELSE 0 END) "
+                "FROM (SELECT %s AS [json]) AS [parent] "
                 "CROSS APPLY OPENJSON([parent].[json]) AS [item] "
                 "WHERE LEFT(LTRIM([parent].[json]), 1) = '[' "
-                "AND [item].[key] = %%s AND [item].[type] = 0)" % parent_json,
+                "AND [item].[key] = %%s) = 1" % parent_json,
                 tuple(lhs_params) + (str(final_index),),
             )
 
@@ -451,7 +454,8 @@ def json_KeyTransformExact(self, compiler, connection):
             openjson = "OPENJSON(%s)" % lhs
 
         return (
-            "EXISTS (SELECT 1 FROM %s WHERE [key] = %%s AND [type] = 0)" % openjson,
+            "(SELECT MAX(CASE WHEN [type] = 0 THEN 1 ELSE 0 END) "
+            "FROM %s WHERE [key] = %%s) = 1" % openjson,
             tuple(lhs_params) + (final_key,),
         )
     return self.as_sql(compiler, connection)
