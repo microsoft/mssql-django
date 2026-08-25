@@ -15,5 +15,9 @@ class Command(inspectdb_Command):
 
     def handle(self, *args, **options):
         if options["schema"]:
-            settings.SCHEMA_TO_INSPECT = "'" + options["schema"] + "'"
+            # Wrap the schema name as a T-SQL string literal, doubling any
+            # embedded single quotes so names like O'Brien are preserved
+            # verbatim instead of terminating the literal early.
+            escaped_schema = options["schema"].replace("'", "''")
+            settings.SCHEMA_TO_INSPECT = "'" + escaped_schema + "'"
         return super().handle(*args, **options)
