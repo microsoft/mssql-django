@@ -599,18 +599,12 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     ),
                 )
 
-    @expectedFailure
     def test_index_from_meta_indexes_retained_after_rename_and_type_change(self):
         """
         Test that indexes from Meta.indexes are retained when a field is renamed
         AND has its type changed in the same migration.
 
-        This tests a known bug: the TYPE CHANGE PATH drops indexes, but the
-        RESTORE PHASE is skipped when column is renamed (old_field.column != new_field.column).
-
-        Additionally, _delete_indexes() fails with FieldDoesNotExist because it tries to
-        look up the index field by the old field name, but RenameField has already updated
-        the model state, so the old field name no longer exists.
+        Regression test for https://github.com/microsoft/mssql-django/issues/499
 
         Runs with both split and combined migrations
         """
@@ -830,18 +824,12 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     f"Expected unique_together to be retained."
                 )
 
-    @expectedFailure
     def test_index_from_meta_indexes_retained_after_rename_and_nullability_change(self):
         """
         Test that indexes from Meta.indexes are retained when a field is renamed
         AND has its nullability changed in the same migration.
 
-        This tests a known bug: the NULLABILITY CHANGE PATH drops indexes, but the
-        RESTORE PHASE is skipped when column is renamed (old_field.column != new_field.column).
-
-        Additionally, _delete_indexes() fails with FieldDoesNotExist because it tries to
-        look up the index field by the old field name, but RenameField has already updated
-        the model state, so the old field name no longer exists.
+        Regression test for https://github.com/microsoft/mssql-django/issues/499
 
         Runs with both split and combined migrations
         """
