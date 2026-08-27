@@ -959,10 +959,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     index_fields = [model._meta.get_field(field_name) for field_name, _ in index.fields_orders]
                     index_columns_list = [field.column for field in index_fields]
                 except FieldDoesNotExist:
-                    # A field name in index.fields is stale (from a preceding RenameField).
+                    # A field name in index.fields_orders is stale (from a preceding RenameField).
                     # Resolve columns individually, falling back to new_field.column.
                     index_columns_list = []
-                    for field_name in index.fields_orders:
+                    for field_name, _ in index.fields_orders:
                         try:
                             index_columns_list.append(model._meta.get_field(field_name).column)
                         except FieldDoesNotExist:
