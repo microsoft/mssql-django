@@ -58,6 +58,26 @@ _AZURE_EDITIONS = (
     EDITION_AZURE_SQL_FABRIC,
 )
 
+
+class BaseTokenManager:
+    invalidate_seconds = 600  # 10 minutes
+
+    _token = None
+    last_token_creation = datetime.datetime.now()
+
+    @property
+    def token(self):
+        td = datetime.timedelta(seconds=self.invalidate_seconds)
+        now = datetime.datetime.now()
+        if self._token is None or self.last_token_creation < now - td:
+            self._token = self.get_token()
+            self.last_token_creation = datetime.datetime.now()
+        return self._token
+
+    def get_token(self):
+        raise NotImplementedError("This method should be implemented!")
+
+
 def encode_connection_string(fields):
     """Encode dictionary of keys and values as an ODBC connection String.
 
@@ -527,8 +547,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             'timeout': timeout,
         }
         if 'TOKEN' in conn_params:
+            token = conn_params['TOKEN']
+            if isinstance(token, BaseTokenManager):
+                token_obj = token
+                token = token_obj.token
+
             args['attrs_before'] = {
-                1256: prepare_token_for_odbc(conn_params['TOKEN'])
+                1256: prepare_token_for_odbc(token)
             }
 
         # Track if we've attempted fallback to v17
