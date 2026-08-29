@@ -31,15 +31,20 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def _convert_field_to_tz(self, field_name, tzname):
         if tzname and settings.USE_TZ and self.connection.timezone_name != tzname:
-            offset = self._get_utcoffset(tzname)
+            offset = self._get_timezone_offset(tzname)
             field_name = 'DATEADD(second, %d, %s)' % (offset, field_name)
         return field_name
 
     def _convert_sql_to_tz(self, sql, params, tzname):
         if tzname and settings.USE_TZ and self.connection.timezone_name != tzname:
-            offset = self._get_utcoffset(tzname)
+            offset = self._get_timezone_offset(tzname)
             sql = 'DATEADD(second, %d, %s)' % (offset, sql)
         return sql, params
+
+    def _get_timezone_offset(self, tzname):
+        connection_tzname = self.connection.timezone_name
+        connection_offset = self._get_utcoffset(connection_tzname) if connection_tzname else 0
+        return self._get_utcoffset(tzname) - connection_offset
 
     def _get_utcoffset(self, tzname):
         """
@@ -614,10 +619,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
         if timezone.is_aware(value):
             if settings.USE_TZ:
-                # When support for time zones is enabled, Django stores datetime information
-                # in UTC in the database and uses time-zone-aware objects internally
-                # source: https://docs.djangoproject.com/en/dev/topics/i18n/timezones/#overview
-                value = value.astimezone(datetime.timezone.utc)
+                value = timezone.make_naive(value, self.connection.timezone)
             else:
                 # When USE_TZ is False, settings.TIME_ZONE is the time zone in
                 # which Django will store all datetimes
