@@ -4,6 +4,7 @@
 from django.test import TestCase
 
 from ..models import UUIDModel, Customer_name, Customer_address
+from django.db import connections
 
 
 class TestUUIDField(TestCase):
@@ -34,3 +35,15 @@ class TestOrderBy(TestCase):
             names.append(list(Customer_name.objects.order_by('?')))
 
         self.assertNotEqual(names.count(names[0]), 20)
+
+
+class TestSQLVariant(TestCase):
+    def test_sql_variant(self):
+        connection = connections['default']
+        with connection.cursor() as cursor:
+            cursor.execute("CREATE TABLE sqlVariantTest(targetCol sql_variant, colB INT)")
+            cursor.execute("INSERT INTO sqlVariantTest values (CAST(46279.1 as decimal(8,2)), 1689)")
+            cursor.execute("SELECT targetCol FROM sqlVariantTest")
+
+            rows = cursor.fetchall()
+            self.assertEqual(len(rows), 1)
