@@ -465,7 +465,7 @@ def json_KeyTransformIExact_as_sql(self, compiler, connection):
     """Backport Django 6.1's vendor-aware JSON null delegation."""
     if self.rhs is None:
         key_transform = KeyTransform(self.lhs.key_name, self.lhs.lhs)
-        exact_lookup = KeyTransformExact(key_transform, self.rhs)
+        exact_lookup = key_transform.get_lookup('exact')(key_transform, self.rhs)
         vendor_method = getattr(
             exact_lookup,
             'as_%s' % connection.vendor,

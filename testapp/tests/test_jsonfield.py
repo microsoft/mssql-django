@@ -1,10 +1,15 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 
+from types import SimpleNamespace
 from unittest import skipUnless
 
 from django import VERSION
 from django.db import NotSupportedError, connections
+from django.db.models import F, Lookup
+from django.db.models.fields.json import (
+    KeyTextTransform, KeyTransform, KeyTransformIExact,
+)
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 
@@ -142,6 +147,30 @@ class TestJSONField(TestCase):
             JSONModel.objects.exclude(value__nested__nullable=None),
             [non_null],
         )
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
+    def test_json_null_iexact_uses_registered_exact_lookup(self):
+        class CustomExact(Lookup):
+            lookup_name = 'exact'
+
+            def as_sql(self, compiler, connection):
+                return 'CUSTOM_JSON_EXACT', []
+
+        KeyTransform.register_lookup(CustomExact)
+        try:
+            lookup = KeyTransformIExact(
+                KeyTextTransform('nullable', F('value')),
+                None,
+            )
+            sql, params = lookup.as_sql(
+                compiler=None,
+                connection=SimpleNamespace(vendor='microsoft'),
+            )
+        finally:
+            KeyTransform._unregister_lookup(CustomExact)
+
+        self.assertEqual(sql, 'CUSTOM_JSON_EXACT')
+        self.assertEqual(params, [])
 
     @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_json_null_numeric_key_uses_array_index_semantics(self):
