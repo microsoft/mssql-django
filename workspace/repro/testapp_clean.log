@@ -1,0 +1,209 @@
+Creating test database for alias 'default'...
+Creating test database for alias 'sqlite'...
+
+Running tests...
+----------------------------------------------------------------------
+Found 211 test(s).
+System check identified no issues (0 silenced).
+...................................................................................................EEEEEEEEEEEEEEEEEE...................EEEEE................................/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/models/base.py:388: RuntimeWarning: Model 'testapp.tenantuser' was already registered. Reloading models is not advised as it can lead to inconsistencies, most notably with related models.
+  new_class._meta.apps.register_model(new_class._meta.app_label, new_class)
+..../Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/models/base.py:388: RuntimeWarning: Model 'testapp.tuplelookupuser' was already registered. Reloading models is not advised as it can lead to inconsistencies, most notably with related models.
+  new_class._meta.apps.register_model(new_class._meta.app_label, new_class)
+.................xx..ss......sx...
+======================================================================
+ERROR [0.000s]: test_basic_connection_string (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_basic_connection_string)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 264, in test_basic_connection_string
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_active_directory_default_no_trusted_connection (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_active_directory_default_no_trusted_connection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 405, in test_connection_string_active_directory_default_no_trusted_connection
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_active_directory_integrated_no_trusted_connection (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_active_directory_integrated_no_trusted_connection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 378, in test_connection_string_active_directory_integrated_no_trusted_connection
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_active_directory_interactive (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_active_directory_interactive)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 359, in test_connection_string_active_directory_interactive
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_active_directory_interactive_no_user (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_active_directory_interactive_no_user)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 616, in test_connection_string_active_directory_interactive_no_user
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_active_directory_msi_no_trusted_connection (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_active_directory_msi_no_trusted_connection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 392, in test_connection_string_active_directory_msi_no_trusted_connection
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_active_directory_password_keeps_pwd (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_active_directory_password_keeps_pwd)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 436, in test_connection_string_active_directory_password_keeps_pwd
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_active_directory_service_principal_keeps_pwd (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_active_directory_service_principal_keeps_pwd)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 631, in test_connection_string_active_directory_service_principal_keeps_pwd
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_auth_keyword_case_insensitive (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_auth_keyword_case_insensitive)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 449, in test_connection_string_auth_keyword_case_insensitive
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_auth_with_other_extra_params (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_auth_with_other_extra_params)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 464, in test_connection_string_auth_with_other_extra_params
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_extra_params_none (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_extra_params_none)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 644, in test_connection_string_extra_params_none
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_freetds (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_freetds)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 342, in test_connection_string_freetds
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_freetds_auth_no_sspi (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_freetds_auth_no_sspi)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 480, in test_connection_string_freetds_auth_no_sspi
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_sql_password_auth_keeps_pwd (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_sql_password_auth_keeps_pwd)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 420, in test_connection_string_sql_password_auth_keeps_pwd
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_trusted_connection (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_trusted_connection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 310, in test_connection_string_trusted_connection
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_with_dsn (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_with_dsn)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 296, in test_connection_string_with_dsn
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_with_extra_params (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_with_extra_params)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 326, in test_connection_string_with_extra_params
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_with_port (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_with_port)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 283, in test_connection_string_with_port
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_driver_could_not_be_loaded (testapp.tests.test_base.TestDatabaseWrapperIsDriverNotFoundError.test_driver_could_not_be_loaded)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 236, in test_driver_could_not_be_loaded
+    self.assertTrue(self.wrapper._is_driver_not_found_error(exception))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DatabaseWrapper' object has no attribute '_is_driver_not_found_error'
+
+======================================================================
+ERROR [0.000s]: test_driver_not_found_dsn (testapp.tests.test_base.TestDatabaseWrapperIsDriverNotFoundError.test_driver_not_found_dsn)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 226, in test_driver_not_found_dsn
+    self.assertTrue(self.wrapper._is_driver_not_found_error(exception))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DatabaseWrapper' object has no attribute '_is_driver_not_found_error'
+
+======================================================================
+ERROR [0.000s]: test_driver_not_found_explicit (testapp.tests.test_base.TestDatabaseWrapperIsDriverNotFoundError.test_driver_not_found_explicit)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 231, in test_driver_not_found_explicit
+    self.assertTrue(self.wrapper._is_driver_not_found_error(exception))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DatabaseWrapper' object has no attribute '_is_driver_not_found_error'
+
+======================================================================
+ERROR [0.000s]: test_driver_not_found_libsodbc (testapp.tests.test_base.TestDatabaseWrapperIsDriverNotFoundError.test_driver_not_found_libsodbc)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 221, in test_driver_not_found_libsodbc
+    self.assertTrue(self.wrapper._is_driver_not_found_error(exception))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DatabaseWrapper' object has no attribute '_is_driver_not_found_error'
+
+======================================================================
+ERROR [0.000s]: test_other_error (testapp.tests.test_base.TestDatabaseWrapperIsDriverNotFoundError.test_other_error)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 241, in test_other_error
+    self.assertFalse(self.wrapper._is_driver_not_found_error(exception))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DatabaseWrapper' object has no attribute '_is_driver_not_found_error'
+
+----------------------------------------------------------------------
+Ran 211 tests in 77.980s
+
+FAILED (errors=23, skipped=3, expected failures=3)
+
+Generating XML reports...
+Destroying test database for alias 'default'...
+Destroying test database for alias 'sqlite'...

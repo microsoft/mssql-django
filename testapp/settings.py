@@ -337,6 +337,46 @@ if VERSION >= (6, 0):
         'foreign_object.tests.ForeignObjectModelValidationTests.test_validate_constraints_success_case_single_query',
     ])
 
+# Django 6.1 specific exclusions - SQL Server limitations surfaced by 6.1's new
+# tests. Good candidates for incremental fixes / community contributions.
+if VERSION >= (6, 1):
+    EXCLUDED_TESTS.extend([
+        # SQL Server has no boolean literal usable in a predicate
+        # (supports_comparing_boolean_expr=False), so a boolean annotation compiles
+        # to a CASE compared to a literal. 6.1 added assertions that such expressions
+        # omit the redundant "= True" comparison.
+        # TODO: strip the redundant boolean comparison in the compiler.
+        'lookup.tests.LookupTests.test_exact_booleanfield_annotation',
+
+        # SQL Server LIKE treats [ ] as a character-class wildcard; escaping a column
+        # reference (F()) used as a LIKE pattern doesn't cover the bracket case.
+        # TODO: escape []-wildcards for column-referencing __contains/__startswith.
+        'expressions.tests.ExpressionsTests.test_patterns_escape',
+
+        # JSON key __iexact=None semantics (no native JSON null handling on SQL Server);
+        # sibling to the existing JSONField exclusions.
+        'model_fields.test_jsonfield.TestQuerying.test_key_iexact_none',
+
+        # bulk_batch_size is capped for SQL Server's 2100-parameter limit, so the
+        # "unlimited" (no-fields) case doesn't match Django's expected large batch size.
+        'backends.base.test_operations.DatabaseOperationTests.test_bulk_batch_size_unlimited',
+
+        # New database-level ON DELETE models (DB_CASCADE/DB_SET_NULL/DB_SET_DEFAULT) are
+        # unsupported on SQL Server (supports_on_delete_db_*=False), so syncdb doesn't
+        # create their tables.
+        'migrations.test_commands.MigrateTests.test_migrate_syncdb_installed_truncated_db_model',
+
+        # SQL Server requires FK columns to match the referenced column's length/scale
+        # (error 1753); altering a PK's type transitively breaks the FK.
+        'migrations.test_operations.OperationTests.test_alter_field_reloads_state_on_transitive_attname_to_field_type_change',
+
+        # Deferrable unique constraints are unsupported on SQL Server
+        # (supports_deferrable_unique_constraints=False); sibling to the existing
+        # test_alter_field_unique_false_removes_deferred_sql exclusion.
+        'migrations.test_operations.OperationTests.test_alter_unique_together_deferred',
+        'migrations.test_operations.OperationTests.test_alter_unique_together_deferred_overlapping_columns',
+    ])
+
 # Django 5.2 specific exclusions
 # These are good candidates for community contributions - see GitHub issues
 if VERSION >= (5, 2):

@@ -1,0 +1,44 @@
+Creating test database for alias 'default'...
+Creating test database for alias 'sqlite'...
+
+Running tests...
+----------------------------------------------------------------------
+Found 204 test(s).
+System check identified no issues (0 silenced).
+.......................................................................................................E..E..E......................................................../Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/models/base.py:388: RuntimeWarning: Model 'testapp.tenantuser' was already registered. Reloading models is not advised as it can lead to inconsistencies, most notably with related models.
+  new_class._meta.apps.register_model(new_class._meta.app_label, new_class)
+..../Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/models/base.py:388: RuntimeWarning: Model 'testapp.tuplelookupuser' was already registered. Reloading models is not advised as it can lead to inconsistencies, most notably with related models.
+  new_class._meta.apps.register_model(new_class._meta.app_label, new_class)
+.................xx..ss......sx...
+======================================================================
+ERROR [0.000s]: test_connection_string_active_directory_interactive_no_user (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_active_directory_interactive_no_user)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 538, in test_connection_string_active_directory_interactive_no_user
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_active_directory_service_principal_keeps_pwd (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_active_directory_service_principal_keeps_pwd)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 553, in test_connection_string_active_directory_service_principal_keeps_pwd
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR [0.000s]: test_connection_string_extra_params_none (testapp.tests.test_base.TestDatabaseWrapperBuildConnectionString.test_connection_string_extra_params_none)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/testapp/tests/test_base.py", line 566, in test_connection_string_extra_params_none
+    result = self.wrapper._build_connection_string(conn_params, driver)
+TypeError: DatabaseWrapper._build_connection_string() takes 2 positional arguments but 3 were given
+
+----------------------------------------------------------------------
+Ran 204 tests in 78.559s
+
+FAILED (errors=3, skipped=3, expected failures=3)
+
+Generating XML reports...
+Destroying test database for alias 'default'...
+Destroying test database for alias 'sqlite'...

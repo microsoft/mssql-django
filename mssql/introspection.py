@@ -11,6 +11,7 @@ from django.db.backends.base.introspection import BaseDatabaseIntrospection
 from django.db.backends.base.introspection import FieldInfo as BaseFieldInfo
 from django.db.backends.base.introspection import TableInfo as BaseTableInfo
 from django.db.models.indexes import Index
+from django.db.models import DO_NOTHING
 from django.conf import settings
 
 SQL_AUTOFIELD = -777555
@@ -201,7 +202,8 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
     def get_relations(self, cursor, table_name):
         """
         Returns a dictionary of {field_name: (field_name_other_table, other_table)}
-        representing all relationships to the given table.
+        representing all relationships to the given table. On Django 6.1+ the value
+        is a 3-tuple that also carries the introspected on-delete rule.
         """
         # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
         # CONSTRAINT_TABLE_USAGE:  http://msdn2.microsoft.com/en-us/library/ms179883.aspx
@@ -210,7 +212,8 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         sql = f"""
 SELECT e.COLUMN_NAME AS column_name,
   c.TABLE_NAME AS referenced_table_name,
-  d.COLUMN_NAME AS referenced_column_name
+  d.COLUMN_NAME AS referenced_column_name,
+  b.DELETE_RULE AS delete_rule
 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS a
 INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS AS b
   ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME AND a.TABLE_SCHEMA = b.CONSTRAINT_SCHEMA
@@ -222,7 +225,16 @@ INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
   ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME AND a.TABLE_SCHEMA = e.TABLE_SCHEMA
 WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         cursor.execute(sql, (table_name,))
-        return dict([[item[0], (item[2], item[1])] for item in cursor.fetchall()])
+        rows = cursor.fetchall()
+        if VERSION >= (6, 1):
+            # Django 6.1 expects (ref_column, ref_table, db_on_delete). Django creates
+            # SQL Server FKs with NO ACTION (on_delete is emulated in the ORM), which
+            # on_delete_types maps to DO_NOTHING.
+            return dict(
+                [item[0], (item[2], item[1], self.on_delete_types.get(item[3], DO_NOTHING))]
+                for item in rows
+            )
+        return dict([[item[0], (item[2], item[1])] for item in rows])
 
     def get_key_columns(self, cursor, table_name):
         """

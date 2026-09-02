@@ -1,0 +1,153 @@
+Creating test database for alias 'default'...
+Got an error creating the test database: Driver Error: Syntax error or access violation; DDBC Error: [Microsoft][SQL Server]Database 'test_default' already exists. Choose a different database name.
+Destroying old test database for alias 'default'...
+Found 211 test(s).
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/backends/utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/mssql/base.py", line 845, in execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/mssql_python/cursor.py", line 1547, in execute
+    check_error(ddbc_sql_const.SQL_HANDLE_STMT.value, self.hstmt, ret)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/mssql_python/helpers.py", line 38, in check_error
+    raise_exception(error_info.sqlState, error_info.ddbcErrorMsg)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/mssql_python/exceptions.py", line 583, in raise_exception
+    raise exception_class
+mssql_python.exceptions.OperationalError: Driver Error: Serialization failure; DDBC Error: [Microsoft][SQL Server]Transaction (Process ID 52) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/manage.py", line 14, in <module>
+    execute_from_command_line(sys.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 443, in execute_from_command_line
+    utility.execute()
+    ~~~~~~~~~~~~~~~^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 437, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/commands/test.py", line 24, in run_from_argv
+    super().run_from_argv(argv)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/base.py", line 420, in run_from_argv
+    self.execute(*args, **cmd_options)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/base.py", line 464, in execute
+    output = self.handle(*args, **options)
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/commands/test.py", line 63, in handle
+    failures = test_runner.run_tests(test_labels)
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/test/runner.py", line 1127, in run_tests
+    old_config = self.setup_databases(
+        aliases=databases,
+        serialized_aliases=suite.serialized_aliases,
+    )
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/test/runner.py", line 1026, in setup_databases
+    return _setup_databases(
+        self.verbosity,
+    ...<5 lines>...
+        **kwargs,
+    )
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/test/utils.py", line 207, in setup_databases
+    connection.creation.create_test_db(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        verbosity=verbosity,
+        ^^^^^^^^^^^^^^^^^^^^
+        autoclobber=not interactive,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        keepdb=keepdb,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/backends/base/creation.py", line 85, in create_test_db
+    call_command(
+    ~~~~~~~~~~~~^
+        "migrate",
+        ^^^^^^^^^^
+    ...<3 lines>...
+        run_syncdb=True,
+        ^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 195, in call_command
+    return command.execute(*args, **defaults)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/base.py", line 464, in execute
+    output = self.handle(*args, **options)
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/base.py", line 111, in wrapper
+    res = handle_func(*args, **kwargs)
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/core/management/commands/migrate.py", line 354, in handle
+    post_migrate_state = executor.migrate(
+        targets,
+    ...<3 lines>...
+        fake_initial=fake_initial,
+    )
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/migrations/executor.py", line 137, in migrate
+    state = self._migrate_all_forwards(
+        state, plan, full_plan, fake=fake, fake_initial=fake_initial
+    )
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/migrations/executor.py", line 169, in _migrate_all_forwards
+    state = self.apply_migration(
+        state, migration, fake=fake, fake_initial=fake_initial
+    )
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/migrations/executor.py", line 257, in apply_migration
+    state = migration.apply(state, schema_editor)
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/migrations/migration.py", line 132, in apply
+    operation.database_forwards(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self.app_label, schema_editor, old_state, project_state
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/migrations/operations/fields.py", line 176, in database_forwards
+    schema_editor.remove_field(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        from_model, from_model._meta.get_field(self.name)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/mssql/schema.py", line 1636, in remove_field
+    constraints = self.connection.introspection.get_constraints(cursor, model._meta.db_table)
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/mssql/introspection.py", line 329, in get_constraints
+    cursor.execute(f"""
+    ~~~~~~~~~~~~~~^^^^^
+        SELECT kc.constraint_name, kc.column_name
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<8 lines>...
+            kc.table_name = %s
+            ^^^^^^^^^^^^^^^^^^
+    """, [table_name])
+    ^^^^^^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/backends/utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/backends/utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/backends/utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/utils.py", line 94, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/django/db/backends/utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/mssql/base.py", line 845, in execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/mssql_python/cursor.py", line 1547, in execute
+    check_error(ddbc_sql_const.SQL_HANDLE_STMT.value, self.hstmt, ret)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/mssql_python/helpers.py", line 38, in check_error
+    raise_exception(error_info.sqlState, error_info.ddbcErrorMsg)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/gaurav/.copilot/pr-workspaces/mssql-django-mssql-python/venv/lib/python3.13/site-packages/mssql_python/exceptions.py", line 583, in raise_exception
+    raise exception_class
+django.db.utils.OperationalError: Driver Error: Serialization failure; DDBC Error: [Microsoft][SQL Server]Transaction (Process ID 52) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.
