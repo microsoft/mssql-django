@@ -17,7 +17,12 @@ class DatabaseCloningTests(TransactionTestCase):
     available_apps = ['testapp']
 
     def test_feature_flag_enabled(self):
-        self.assertTrue(connection.features.can_clone_databases)
+        # Cloning is available on regular SQL Server, but not on Azure SQL
+        # Database (no BACKUP/RESTORE to disk).
+        self.assertEqual(
+            connection.features.can_clone_databases,
+            not connection.to_azure_sql_db,
+        )
 
     def test_clone_is_a_working_copy(self):
         creation = connection.creation
