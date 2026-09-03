@@ -1,0 +1,17 @@
+# OneBranch-specific variables for the mssql-django release pipelines.
+variables:
+  # OneBranch auto-publishes everything placed in this directory as artifacts.
+  - name: ob_outputDirectory
+    value: '$(ARTIFACT_PATH)'
+
+  # SDL on for all release builds.
+  - name: ob_sdl_enabled
+    value: true
+
+  # TSA upload (Official pipelines only; NonOfficial/dummy ignores it).
+  - name: ob_tsa_enabled
+    value: true
+
+  # Linux build container used by the OneBranch Linux pool.
+  - name: LinuxContainerImage
+    value: 'mcr.microsoft.com/onebranch/cbl-mariner/build:2.0'

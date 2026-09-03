@@ -1,0 +1,134 @@
+# =============================================================================
+# OneBranch Official Release pipeline for mssql-django.
+# =============================================================================
+# Downloads the 'drop' artifact (sdist + wheel) produced by the
+# Build-Release-Package pipeline and releases it to PyPI via ESRP.
+#
+# ALWAYS Official. Gated by `releaseToPyPI` (default FALSE = dry run) so a run
+# never publishes by accident -- flip to true + re-run to actually release.
+# =============================================================================
+
+name: $(Year:YY)$(DayOfYear)$(Rev:.r)-Release
+
+# Manual trigger only - releases must be deliberate.
+trigger: none
+pr: none
+
+parameters:
+  - name: releaseToPyPI
+    displayName: 'Release to PyPI (Production)'
+    type: boolean
+    default: false   # Safety: default false to prevent accidental releases.
+
+variables:
+  - template: /OneBranchPipelines/variables/common-variables.yml@self
+  - template: /OneBranchPipelines/variables/onebranch-variables.yml@self
+  - group: 'ESRP Federated Creds (AME)'   # ESRP signing credentials
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: 'OneBranch.Pipelines/GovernedTemplates'
+      ref: 'refs/heads/main'
+  pipelines:
+    - pipeline: buildPipeline
+      source: 'Build-Release-Package-Pipeline'   # the build pipeline (PR #548)
+      trigger: none
+
+extends:
+  template: 'v2/OneBranch.Official.CrossPlat.yml@templates'
+  parameters:
+    globalSdl:
+      sbom:
+        enabled: true
+      credscan:
+        enabled: true
+      policheck:
+        break: true
+      tsa:
+        enabled: true
+        configFile: $(Build.SourcesDirectory)/.config/tsaoptions.json
+
+    stages:
+      - stage: ReleasePackage
+        displayName: 'Release mssql-django to PyPI'
+        jobs:
+
+          # Job 1: download + validate the built artifact.
+          - job: PrepAndValidate
+            displayName: 'Download and Validate Artifact'
+            pool:
+              type: linux
+              isCustom: true
+              name: Django-1ES-pool
+              demands:
+              - imageOverride -equals Ubuntu22.04-AzurePipelines
+            variables:
+              ob_outputDirectory: '$(Build.ArtifactStagingDirectory)'
+            steps:
+              - download: buildPipeline
+                displayName: 'Download drop from Build pipeline'
+              - task: Bash@3
+                displayName: 'Verify dist contents'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    set -euo pipefail
+                    DIST="$(Pipeline.Workspace)/buildPipeline/drop_build_build/dist"
+                    echo "=== artifact contents ==="
+                    ls -la "$DIST"
+                    test -n "$(find "$DIST" -name '*.whl' -o -name '*.tar.gz')" \
+                      || { echo "No wheel/sdist found in drop artifact"; exit 1; }
+              - ${{ if eq(parameters.releaseToPyPI, false) }}:
+                - task: Bash@3
+                  displayName: 'Dry Run - Release Skipped'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      echo "===================================="
+                      echo "DRY RUN MODE - No Release Performed"
+                      echo "releaseToPyPI=false. Verified the drop artifact only."
+                      echo "To release: set releaseToPyPI=true and re-run."
+                      echo "===================================="
+
+          # Job 2: ESRP release to PyPI (only when releaseToPyPI=true).
+          - ${{ if eq(parameters.releaseToPyPI, true) }}:
+            - job: PyPIRelease
+              displayName: 'ESRP Release to PyPI'
+              dependsOn: PrepAndValidate
+              templateContext:
+                type: releaseJob
+                isProduction: true
+              pool:
+                type: linux
+              variables:
+                ob_outputDirectory: '$(Build.ArtifactStagingDirectory)'
+              steps:
+                - download: buildPipeline
+                  displayName: 'Download drop from Build pipeline'
+                - task: EsrpRelease@9
+                  displayName: 'ESRP Release to PyPI'
+                  inputs:
+                    connectedservicename: '$(ESRPConnectedServiceName)'
+                    usemanagedidentity: true
+                    keyvaultname: '$(AuthAKVName)'
+                    signcertname: '$(AuthSignCertName)'
+                    clientid: '$(EsrpClientId)'
+                    Intent: 'PackageDistribution'
+                    ContentType: 'PyPI'
+                    ContentSource: 'Folder'
+                    FolderLocation: '$(Pipeline.Workspace)/buildPipeline/drop_build_build/dist'
+                    WaitForReleaseCompletion: true
+                    Owners: '$(owner)'
+                    Approvers: '$(approver)'
+                    ServiceEndpointUrl: 'https://api.esrp.microsoft.com'
+                    MainPublisher: 'ESRPRELPACMAN'
+                    DomainTenantId: '$(DomainTenantId)'
+                - task: Bash@3
+                  displayName: 'Release Summary'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      echo "ESRP release to PyPI submitted."
+                      echo "Verify at https://pypi.org/project/mssql-django/"
