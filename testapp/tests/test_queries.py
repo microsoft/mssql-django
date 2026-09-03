@@ -43,6 +43,84 @@ class TestBinaryfieldGroupby(TestCase):
             cursor.execute(f"SELECT binary FROM {BinaryData._meta.db_table} WHERE binary = %s GROUP BY binary", [bytes("ABC", 'utf-8')])
 
 
+class TestGroupByEscapedPercent(TestCase):
+    """Regression tests for issue #476 and the over-matching behind #394.
+
+    format_group_by_params rewrites parameter placeholders in any query that
+    contains a GROUP BY clause. The old ``re.sub(r'%\\w+', '{}', query)``
+    matched far more than real placeholders:
+
+    - it split escaped ``%%`` literals, injecting a phantom placeholder and
+      raising ``IndexError`` (issue #476, loud), and
+    - it swallowed unescaped ``%word`` patterns such as ``LIKE '%abc%'``,
+      rewriting them to ``LIKE '{}%'`` and silently returning the wrong rows
+      (issue #394, silent).
+
+    The fix narrows the match to ``%%`` (preserved verbatim) and ``%s`` (the
+    only real placeholder). These tests fail on ``dev`` and pass on the fix.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        Author.objects.bulk_create([
+            Author(name='%abc%'),
+            Author(name='xyz'),
+            Author(name='%abc%'),
+        ])
+
+    def test_like_with_escaped_percent_and_group_by(self):
+        # Issue #476: escaped %% inside a LIKE pattern plus a real %s param.
+        # The old regex mis-parsed %% and injected a phantom placeholder, so
+        # query.format() raised IndexError. The %s param drives the DECLARE
+        # path in format_group_by_params; the predicate is tied to the data.
+        table = Author._meta.db_table
+        sql = (
+            f"SELECT name, COUNT(*) FROM {table} "
+            f"WHERE name LIKE '%%abc%%' AND name <> %s "
+            f"GROUP BY name"
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(sql, ['xyz'])
+            rows = sorted(cursor.fetchall())
+        self.assertEqual(rows, [('%abc%', 2)])
+
+    def test_unescaped_percent_pattern_no_params_preserved(self):
+        # Issue #394: a GROUP BY query with an unescaped `%word` LIKE pattern
+        # and no params. The old `%\w+` regex matched `%abc` and rewrote it to
+        # `{}`, turning LIKE '%abc%' into LIKE '{}%' and silently returning
+        # zero rows. The narrowed `%%|%s` regex no longer matches word chars
+        # after a `%`, so the pattern is left untouched and the correct rows
+        # come back. This is a no-param query, so it guards the regex narrowing
+        # itself, not the DECLARE path (that is covered above).
+        table = Author._meta.db_table
+        sql = (
+            f"SELECT name, COUNT(*) FROM {table} "
+            f"WHERE name LIKE '%abc%' "
+            f"GROUP BY name"
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(sql)
+            rows = sorted(cursor.fetchall())
+        self.assertEqual(rows, [('%abc%', 2)])
+
+
+class TestIntegerChoicesGroupby(TestCase):
+    # Regression test for #540: an IntegerChoices value (an int subclass) passed to a
+    # raw query containing GROUP BY raised NotImplementedError because _as_sql_type used
+    # an exact type check (typ == int) instead of isinstance.
+    def test_integerchoices_param(self):
+        class StatusChoices(models.IntegerChoices):
+            NOT_STARTED = 1
+            IN_PROGRESS = 2
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT id FROM {Author._meta.db_table} WHERE id <= %s GROUP BY id",
+                [StatusChoices.IN_PROGRESS],
+            )
+            cursor.fetchall()
+
+
 @skipUnlessDBFeature("supports_expression_defaults")
 class DbDefaultBulkCreateRegressionTests(TransactionTestCase):
     """Regression tests for Django 6.0 db_default bulk insert alignment.

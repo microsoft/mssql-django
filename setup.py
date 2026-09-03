@@ -26,6 +26,7 @@ CLASSIFIERS = [
     'Framework :: Django :: 5.1',
     'Framework :: Django :: 5.2',
     'Framework :: Django :: 6.0',
+    'Framework :: Django :: 6.1',
 ]
 
 this_directory = path.abspath(path.dirname(__file__))
@@ -34,7 +35,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='mssql-django',
-    version='1.7.2',
+    version='1.8.0',
     description='Django backend for Microsoft SQL Server',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -48,7 +49,7 @@ setup(
     packages=find_packages(exclude=['testapp', 'testapp.*']),
     python_requires='>=3.8',
     install_requires=[
-        'django>=3.2,<6.1',
+        'django>=3.2,<6.2',
         'pyodbc>=3.0',
         # zoneinfo (used in mssql/operations.py) is stdlib on 3.9+;
         # use backports.zoneinfo on 3.8.
