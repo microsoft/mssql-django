@@ -47,20 +47,14 @@ setup(
     },
     license='BSD',
     packages=find_packages(exclude=['testapp', 'testapp.*']),
-    python_requires='>=3.8',
     install_requires=[
         'django>=3.2,<6.2',
         'pyodbc>=3.0',
-        # zoneinfo (used in mssql/operations.py) is stdlib on 3.9+;
-        # use backports.zoneinfo on 3.8.
-        'backports.zoneinfo; python_version < "3.9"',
-        # zoneinfo needs an IANA tz database at runtime. system
-        # tzdata is not guaranteed (Windows ships without one;
-        # minimal Linux images like alpine/distroless/scratch and
-        # slim Lambda layers strip it). always installing the
-        # tzdata pip package guarantees consistent behavior across
-        # all hosts. it is ~340KB and zoneinfo prefers system tz
-        # data when present, so it's a no-op on full Linux/macOS.
+        # zoneinfo needs an IANA tz database at runtime, and the system one
+        # is not guaranteed: Windows ships without it, and minimal Linux
+        # images (alpine, distroless, slim Lambda layers) strip it. zoneinfo
+        # prefers system data when present, so this is a no-op on full
+        # Linux/macOS and ~340KB otherwise.
         'tzdata',
     ],
     extras_require={

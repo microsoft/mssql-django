@@ -148,14 +148,19 @@ class TestGetUtcOffset(TestCase):
         # Inuvik observes MST/MDT; standard is MST = -7h
         self.assertEqual(self.ops._get_utcoffset('America/Inuvik'), -25200)
 
+    def test_negative_dst_zone(self):
+        # Dublin reports dst() as -1h rather than a positive summer
+        # shift. reading timedelta.seconds on that (as the old pytz
+        # code did) gave 82800 instead of -3600, so the offset came
+        # out as -82800 in winter and 3600 in summer. standard is 0.
+        self.assertEqual(self.ops._get_utcoffset('Europe/Dublin'), 0)
+
     def test_returns_int(self):
         # the value flows into '%d' formatting in compiled SQL
         result = self.ops._get_utcoffset('America/Los_Angeles')
         self.assertIsInstance(result, int)
 
-    def test_stable_across_year(self):
-        # the helper must not depend on when it's called. call it twice
-        # and confirm the result doesn't drift.
+    def test_repeated_calls_are_deterministic(self):
         first = self.ops._get_utcoffset('America/Los_Angeles')
         second = self.ops._get_utcoffset('America/Los_Angeles')
         self.assertEqual(first, second)

@@ -5,12 +5,7 @@ import datetime
 import uuid
 import warnings
 import sys
-
-try:
-    import zoneinfo
-except ImportError:
-    # Python 3.8 fallback
-    from backports import zoneinfo
+import zoneinfo
 
 from django.conf import settings
 from django.db import NotSupportedError
@@ -55,11 +50,14 @@ class DatabaseOperations(BaseDatabaseOperations):
         # http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
         # the compiled SQL bakes in a single offset and reuses it
         # across queries, so DST cannot be tracked. pick the
-        # standard (non-DST) offset by probing both January and
-        # July and using the one where dst() is zero. this is
-        # stable across the year and across negative-DST zones
-        # like Europe/Dublin where the old pytz formula returned
-        # different values depending on when it was called.
+        # standard (non-DST) offset by probing January and July
+        # and taking the month where dst() is zero.
+        #
+        # the previous pytz version read timedelta.seconds directly,
+        # which is wrong for negative-DST zones. Europe/Dublin has a
+        # dst() of -1h, which normalizes to (days=-1, seconds=82800),
+        # so the offset came out as -82800 in winter and 3600 in
+        # summer instead of 0.
         zone = zoneinfo.ZoneInfo(tzname)
         year = datetime.datetime.now().year
         for month in (1, 7):
