@@ -16,6 +16,11 @@ from django.utils.encoding import force_str
 from django import VERSION as django_version
 import pytz
 
+from mssql.parser import (
+    parse_multipart_identifier, build_multipart_name,
+    escape_identifier
+)
+
 DJANGO41 = django_version >= (4, 1)
 
 
@@ -409,9 +414,13 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         if not name:
             return name
-        if name.startswith('[') and name.endswith(']'):
-            return name  # Quoting once is enough.
-        return '[%s]' % name
+        # the name could be in the format 
+        # `[schema].[table]` or `table` or anything else
+        # or `column` or `[column]`
+        parts = parse_multipart_identifier(name)
+        
+        # escape
+        return build_multipart_name(*parts, force_wrap=True)
 
     def random_function_sql(self):
         """
@@ -527,13 +536,13 @@ class DatabaseOperations(BaseDatabaseOperations):
 
         seqs = self._build_sequences(sequences, cursor)
 
-        COLUMNS = "TABLE_NAME, CONSTRAINT_NAME"
+        COLUMNS = "TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME"
         WHERE = "CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')"
         cursor.execute(
             "SELECT {} FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE {}".format(COLUMNS, WHERE))
         fks = cursor.fetchall()
-        sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' %
-                    (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
+        sql_list = ['ALTER TABLE %s.%s NOCHECK CONSTRAINT %s;' %
+                    (self.quote_name(fk[0]), self.quote_name(fk[1]), self.quote_name(fk[2])) for fk in fks]
         sql_list.extend(['%s %s %s;' % (style.SQL_KEYWORD('DELETE'), style.SQL_KEYWORD('FROM'),
                                         style.SQL_FIELD(self.quote_name(table))) for table in tables])
 
@@ -554,8 +563,8 @@ class DatabaseOperations(BaseDatabaseOperations):
                 style.SQL_KEYWORD('NO_INFOMSGS'),
             ) for seq in seqs])
 
-        sql_list.extend(['ALTER TABLE %s CHECK CONSTRAINT %s;' %
-                         (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks])
+        sql_list.extend(['ALTER TABLE %s.%s CHECK CONSTRAINT %s;' %
+                         (self.quote_name(fk[0]), self.quote_name(fk[1]), self.quote_name(fk[2])) for fk in fks])
         return sql_list
 
     def start_transaction_sql(self):
