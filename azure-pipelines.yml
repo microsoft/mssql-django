@@ -73,7 +73,9 @@ jobs:
 
   - job: Windows_Legacy
     displayName: Windows (EOL Django, nightly)
-    condition: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
+    # Gated off for the Windows-only mssql-python wheel validation (fixes #741/#742).
+    # Restore to: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
+    condition: false
     pool:
       name: Django-1ES-pool
       demands:
@@ -154,6 +156,9 @@ jobs:
 
   - job: Linux_Core
     displayName: Linux (supported Django)
+    # Gated off for the Windows-only validation: build 172271 produced no Linux
+    # wheels, so Linux legs would still run against the unfixed PyPI driver.
+    condition: false
     pool:
       name: Django-1ES-pool
       demands:
@@ -198,7 +203,9 @@ jobs:
 
   - job: Linux_Legacy
     displayName: Linux (EOL Django, nightly)
-    condition: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
+    # Gated off for the Windows-only mssql-python wheel validation (fixes #741/#742).
+    # Restore to: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
+    condition: false
     pool:
       name: Django-1ES-pool
       demands:
