@@ -4,6 +4,12 @@
 
 mssql-django is a Django database backend for Microsoft SQL Server. It enables Django applications to use SQL Server as their database by translating Django's database abstraction layer to SQL Server's T-SQL dialect.
 
+## How these instructions are organized
+
+- **This file** is the repository-wide technical reference: SQL Server limitations, coding patterns, common errors, and testing commands.
+- **`AGENTS.md`** holds project facts, contribution conventions, and cross-cutting review judgment.
+- **`.github/instructions/*.instructions.md`** hold path-specific review checks, loaded automatically only when a matching file changes.
+
 ## Repository Structure
 
 ```
@@ -22,7 +28,7 @@ mssql/                  # Core backend implementation (~4400 lines)
         └── install_regex_clr.py  # CLR assembly for REGEXP_LIKE support
 
 testapp/               # Unit tests for the backend
-├── tests/             # 42 unit tests across 11 test files
+├── tests/             # 214 tests across 15 test files
 ├── settings.py        # Test configuration with EXCLUDED_TESTS
 └── models.py          # Test models
 
@@ -57,9 +63,9 @@ django/                # NOT in repo — cloned at runtime by test.sh for full t
 
 **mssql/functions.py** (~673 lines) - Uses the `as_microsoft` monkey-patching pattern (see Coding Patterns below). Also handles parameter limit splitting via temp tables for large IN clauses.
 
-**mssql/features.py** - Declares what SQL Server supports/doesn't support. Check here first when a test fails to see if it's a known limitation.
+**mssql/features.py** - Declares what SQL Server supports/doesn't support. Check here first when a test fails to see if it's a known limitation. On a new Django minor, diff Django's `BaseDatabaseFeatures` and override any newly added `supports_*` flags SQL Server can't honor.
 
-**testapp/settings.py** - Contains `EXCLUDED_TESTS` list for Django tests that cannot pass due to SQL Server limitations (not bugs). Includes version-gated exclusions (e.g., ~75 tests excluded for Django 6.0).
+**testapp/settings.py** - Contains `EXCLUDED_TESTS` list for Django tests that cannot pass due to SQL Server limitations (not bugs). Includes version-gated blocks (`if VERSION >= (X, Y):`) spanning Django 3.1 through 6.1.
 
 ## Coding Patterns
 
@@ -95,13 +101,14 @@ EXCLUDED_TESTS = [
     'app.test_module.TestClass.test_method',  # Brief reason
 ]
 ```
+State whether the reason is a permanent platform limitation or an unimplemented capability — the comment is documentation future maintainers rely on.
 
 ### Regex Support
 `python manage.py install_regex_clr <database>` installs a CLR assembly enabling `REGEXP_LIKE` support for regex-based Django tests.
 
 ## Testing
 
-### Run mssql-django unit tests (42 tests)
+### Run mssql-django unit tests (214 tests)
 ```bash
 python manage.py test testapp.tests
 ```
@@ -120,7 +127,7 @@ cd django && python tests/runtests.py --settings=testapp.settings <module>
 
 ## Version Compatibility
 
-- **Django**: 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0
+- **Django**: 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0, 6.1
 - **Python**: 3.8 – 3.14
 - **SQL Server**: 2017, 2019, 2022, 2025; Azure SQL DB / Managed Instance
 - **ODBC Driver**: 17 or 18 for SQL Server
@@ -149,13 +156,15 @@ echo "yes" | python tests/runtests.py --settings=testapp.settings <module>
 
 ## Development Workflow Rules
 
+For contribution conventions (branch, commit prefixes, history rules) and cross-cutting review judgment, see `AGENTS.md`.
+
 ### Git Hygiene
 - **Only commit files you intentionally changed.** Untracked files (e.g. `result.xml`, build artifacts) may exist in the workspace but not be in `.gitignore` — do not stage or commit them. Review `git diff` and `git status` before committing.
 - Do not modify `testapp/settings.py` database connection settings (ODBC driver version, passwords) as part of a PR — those are local dev environment changes.
 
 ### Fix Quality
-- **Find the root cause, not a workaround.** Don't parse or manipulate compiled SQL strings when Django provides a structured expression API to solve the problem at the right level. Work at the expression/node level (e.g. override `get_order_by()`, use `as_microsoft` pattern) rather than post-hoc string surgery on generated SQL.
-- Follow existing codebase patterns: the `as_microsoft` monkey-patching pattern in `functions.py`, the `_as_microsoft()` dispatch in `compiler.py`, and compiler method overrides are the standard extension points.
+- Follow the root-cause-over-workaround and node-level-fix principles in `AGENTS.md` (Review judgment).
+- Use the existing extension points: the `as_microsoft` monkey-patching pattern in `functions.py`, the `_as_microsoft()` dispatch in `compiler.py`, and compiler method overrides.
 
 ### Test Discipline
 - **All tests must be green before submitting.** If a test fails due to a SQL Server limitation (not a bug you introduced), add it to `EXCLUDED_TESTS` in `testapp/settings.py` with a comment explaining why.

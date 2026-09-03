@@ -12,3 +12,5 @@ tests/local_settings.py
 # Virtual Env
 /venv/
 .idea/
+logs/
+result.xml
