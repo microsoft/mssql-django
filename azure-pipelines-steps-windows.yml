@@ -41,29 +41,18 @@ steps:
       Write-Host "##vso[task.setvariable variable=pyTag]$tag"
     displayName: Compute Python wheel tag
 
-  # Pulls the mssql-python wheel that already contains the two pyodbc-parity
-  # fixes (#741 Binary(memoryview), #742 Decimal SQL_NUMERIC) from the
-  # Build-Release-Package-Pipeline dev build 172271, so validation runs against
-  # the fixed native driver instead of the last published PyPI wheel.
-  - task: DownloadBuildArtifacts@1
-    displayName: Download mssql-python wheel (fixes #741/#742) from build 172271
-    inputs:
-      buildType: 'specific'
-      project: 'c6d89619-62de-46a0-8b46-70b92a84d85e'
-      definition: '2199'
-      buildVersionToDownload: 'specific'
-      buildId: '172271'
-      downloadType: 'single'
-      artifactName: 'drop_Win_py$(pyTag)_x64_BuildWheel'
-      downloadPath: '$(Agent.TempDirectory)/mssqlpy'
-
   - powershell: |
       python -m pip install --upgrade pip wheel setuptools
       python -m pip install tox
       git clone https://github.com/django/django.git
 
-      $whl = Get-ChildItem -Recurse -Path "$(Agent.TempDirectory)/mssqlpy" -Filter "mssql_python-*-win_amd64.whl" | Select-Object -First 1
-      if (-not $whl) { Write-Error "mssql-python wheel not found under $(Agent.TempDirectory)/mssqlpy"; exit 1 }
+      # Use the mssql-python wheel committed under ci/mssql-python-wheels/. These
+      # wheels come from Build-Release-Package-Pipeline dev build 172271 and
+      # already carry the two pyodbc-parity fixes (microsoft/mssql-python#741
+      # Binary(memoryview) and microsoft/mssql-python#742 Decimal SQL_NUMERIC)
+      # with the native core rebuilt, which the published PyPI 1.14.0 wheel lacks.
+      $whl = Get-ChildItem -Path "$(Build.SourcesDirectory)/ci/mssql-python-wheels" -Filter "mssql_python-*-cp$(pyTag)-cp$(pyTag)-win_amd64.whl" | Select-Object -First 1
+      if (-not $whl) { Write-Error "mssql-python wheel for cp$(pyTag) not found under ci/mssql-python-wheels"; exit 1 }
       Write-Host "Using mssql-python wheel: $($whl.FullName)"
       $env:MSSQL_PYTHON_WHEEL = $whl.FullName
 
