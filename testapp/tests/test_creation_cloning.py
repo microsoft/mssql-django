@@ -29,8 +29,9 @@ class DatabaseCloningTests(TransactionTestCase):
         suffix = 'clonetest'
         clone_name = creation.get_test_db_clone_settings(suffix)['NAME']
 
-        creation._clone_test_db(suffix, verbosity=0)
+        returned_name = creation._clone_test_db(suffix, verbosity=0)
         try:
+            self.assertEqual(returned_name, clone_name)
             with connection._nodb_cursor() as cursor:
                 cursor.execute(
                     "SELECT 1 FROM sys.databases WHERE name = %s", [clone_name])

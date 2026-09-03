@@ -110,7 +110,7 @@ class DatabaseCreation(BaseDatabaseCreation):
 
         with self.cursor() as cursor:
             if keepdb and self._database_exists(cursor, target_database_name):
-                return
+                return target_database_name
             self._drop_database_if_exists(cursor, target_database_name)
 
             # Resolve the instance default data/log directories so the restored
@@ -146,6 +146,8 @@ class DatabaseCreation(BaseDatabaseCreation):
                 )
             )
             self._drain(cursor)
+
+        return target_database_name
 
     def _backup_source_once(self, cursor, source_database_name, data_path):
         """Back up the source test database a single time and cache the result.
