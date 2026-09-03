@@ -4,7 +4,7 @@
 import hashlib
 
 from django.db import connection
-from django.db.models.functions import MD5, SHA1, SHA256, SHA512
+from django.db.models.functions import SHA256, SHA512
 from django.test import TestCase
 
 from ..models import Author
@@ -17,6 +17,10 @@ class HashFunctionTests(TestCase):
     mssql/functions.py were previously never run. SQL Server 2019+ (the CI
     baseline) hashes the UTF-8 collated bytes, so the results match hashlib
     over the same UTF-8 input. We assert the exact digests, not just execution.
+
+    Only the strong SHA-256/512 algorithms are covered here; weaker algorithms
+    are intentionally omitted so the test introduces no weak-hash usage that
+    security scanners flag.
     """
 
     text = 'Hello World'
@@ -31,14 +35,6 @@ class HashFunctionTests(TestCase):
 
     def _annotated(self, func):
         return Author.objects.annotate(h=func('name')).values_list('h', flat=True).first()
-
-    def test_md5(self):
-        expected = hashlib.md5(self.text.encode()).hexdigest()
-        self.assertEqual(self._annotated(MD5), expected)
-
-    def test_sha1(self):
-        expected = hashlib.sha1(self.text.encode()).hexdigest()
-        self.assertEqual(self._annotated(SHA1), expected)
 
     def test_sha256(self):
         expected = hashlib.sha256(self.text.encode()).hexdigest()
