@@ -50,7 +50,12 @@ setup(
     install_requires=[
         'django>=3.2,<6.2',
         'pyodbc>=3.0',
-        'pytz',
+        # zoneinfo needs an IANA tz database at runtime, and the system one
+        # is not guaranteed: Windows ships without it, and minimal Linux
+        # images (alpine, distroless, slim Lambda layers) strip it. zoneinfo
+        # prefers system data when present, so this is a no-op on full
+        # Linux/macOS and ~340KB otherwise.
+        'tzdata',
     ],
     extras_require={
         'test': ['unittest-xml-reporting>=3.2.0'],

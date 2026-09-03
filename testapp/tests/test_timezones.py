@@ -6,6 +6,8 @@ from django.db import connection
 from django.test import TestCase
 from django.test.utils import override_settings
 
+from mssql.operations import DatabaseOperations
+
 from ..models import TimeZone
 
 class TestDateTimeField(TestCase):
@@ -105,3 +107,60 @@ class TestDateTimeToDateTimeOffsetMigration(TestCase):
             # Migrate back to DATETIME2 for other unit tests
             with connection.schema_editor() as cursor:
                 cursor.execute("ALTER TABLE [testapp_timezone] ALTER column [date] datetime2")
+
+
+class TestGetUtcOffset(TestCase):
+    """
+    Regression tests for DatabaseOperations._get_utcoffset.
+
+    The helper returns the standard (non-DST) UTC offset of a time zone
+    in seconds and feeds directly into compiled SQL via DATEADD. these
+    values must stay stable across the year and across Python versions
+    to avoid silent SQL behavior changes.
+    """
+
+    def setUp(self):
+        self.ops = DatabaseOperations(connection=None)
+
+    def test_fixed_offset_zones(self):
+        # zones without DST: offset is unambiguous
+        self.assertEqual(self.ops._get_utcoffset('UTC'), 0)
+        self.assertEqual(self.ops._get_utcoffset('Asia/Kolkata'), 19800)
+        self.assertEqual(self.ops._get_utcoffset('Africa/Nairobi'), 10800)
+        self.assertEqual(self.ops._get_utcoffset('Asia/Tokyo'), 32400)
+
+    def test_northern_hemisphere_dst_zones(self):
+        # standard (winter) offset, not DST offset
+        self.assertEqual(self.ops._get_utcoffset('America/Los_Angeles'), -28800)
+        self.assertEqual(self.ops._get_utcoffset('America/New_York'), -18000)
+        self.assertEqual(self.ops._get_utcoffset('Europe/London'), 0)
+        self.assertEqual(self.ops._get_utcoffset('Europe/Berlin'), 3600)
+
+    def test_southern_hemisphere_dst_zones(self):
+        # for southern zones, "standard" is the winter (Jul) offset
+        self.assertEqual(self.ops._get_utcoffset('Australia/Sydney'), 36000)
+        self.assertEqual(self.ops._get_utcoffset('Pacific/Auckland'), 43200)
+
+    def test_zones_with_unusual_dst_rules(self):
+        # Casablanca has had Ramadan-based negative DST since 2018
+        # with +1 as the standard offset
+        self.assertEqual(self.ops._get_utcoffset('Africa/Casablanca'), 3600)
+        # Inuvik observes MST/MDT; standard is MST = -7h
+        self.assertEqual(self.ops._get_utcoffset('America/Inuvik'), -25200)
+
+    def test_negative_dst_zone(self):
+        # Dublin reports dst() as -1h rather than a positive summer
+        # shift. reading timedelta.seconds on that (as the old pytz
+        # code did) gave 82800 instead of -3600, so the offset came
+        # out as -82800 in winter and 3600 in summer. standard is 0.
+        self.assertEqual(self.ops._get_utcoffset('Europe/Dublin'), 0)
+
+    def test_returns_int(self):
+        # the value flows into '%d' formatting in compiled SQL
+        result = self.ops._get_utcoffset('America/Los_Angeles')
+        self.assertIsInstance(result, int)
+
+    def test_repeated_calls_are_deterministic(self):
+        first = self.ops._get_utcoffset('America/Los_Angeles')
+        second = self.ops._get_utcoffset('America/Los_Angeles')
+        self.assertEqual(first, second)
