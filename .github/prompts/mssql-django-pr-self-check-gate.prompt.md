@@ -93,7 +93,7 @@ python manage.py test testapp.tests.test_jsonfield --verbosity 2
 
 # Upstream targeted test(s)
 cd django
-PYTHONPATH=/workspaces/mssql-django/django python tests/runtests.py --settings=testapp.settings <module.or.test>
+PYTHONPATH=/workspaces/mssql-django/django python tests/runtests.py --settings=testapp.settings --parallel 1 <module.or.test>
 
 # HOT matrix / CI guard
 # Run or verify the HOT matrix / CI guard workflow for this branch in your CI system

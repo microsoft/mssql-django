@@ -115,7 +115,7 @@ python manage.py test testapp.tests
 
 ### Run specific Django test module
 ```bash
-cd django && python tests/runtests.py --settings=testapp.settings <module>
+cd django && python tests/runtests.py --settings=testapp.settings --parallel 1 <module>
 ```
 
 ### Common test modules for validation
@@ -143,7 +143,7 @@ Add test to `EXCLUDED_TESTS` - this is a SQL Server limitation, not a bug.
 ### Tests hanging on database creation
 The test database may already exist. Answer "yes" to drop it, or use:
 ```bash
-echo "yes" | python tests/runtests.py --settings=testapp.settings <module>
+echo "yes" | python tests/runtests.py --settings=testapp.settings --parallel 1 <module>
 ```
 
 ## Pull Request Guidelines

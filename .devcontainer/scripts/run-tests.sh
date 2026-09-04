@@ -29,7 +29,7 @@ case "${1:-}" in
             git checkout "${DJANGO_VERSION}" 2>/dev/null || true
         fi
         pip install -q -r tests/requirements/py3.txt 2>/dev/null || true
-        coverage run tests/runtests.py --settings=testapp.settings --noinput "${MODULE}"
+        coverage run tests/runtests.py --settings=testapp.settings --noinput --parallel 1 "${MODULE}"
         coverage report --include='*mssql*' --omit='*virtualenvs*'
         coverage xml --include='*mssql*' --omit='*virtualenvs*' -o coverage.xml
         echo "Coverage report written to coverage.xml"

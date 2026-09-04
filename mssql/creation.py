@@ -113,29 +113,22 @@ class DatabaseCreation(BaseDatabaseCreation):
                 return target_database_name
             self._drop_database_if_exists(cursor, target_database_name)
 
-            # Resolve the instance default data/log directories so the restored
-            # files land somewhere the server can write, regardless of platform.
-            cursor.execute(
-                "SELECT CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(4000)), "
-                "CAST(SERVERPROPERTY('InstanceDefaultLogPath') AS nvarchar(4000))"
-            )
-            data_path, log_path = cursor.fetchone()
-
             backup_path, logical_files = self._backup_source_once(
-                cursor, source_database_name, data_path)
+                cursor, source_database_name)
 
             # A RESTORE onto the same instance must relocate every logical file
-            # to a new physical path, so build MOVE clauses from the source's
-            # logical file list.
+            # to a new physical path. Put each clone file in the same directory
+            # as its source file, which is guaranteed to exist and be writable
+            # by the server (no dependency on SERVERPROPERTY default paths).
             move_clauses = []
-            for logical_name, file_type in logical_files:
+            for logical_name, file_type, physical_name in logical_files:
                 extension = {0: '.mdf', 1: '.ldf'}.get(file_type, '.ndf')
-                directory = log_path if file_type == 1 else data_path
-                physical_path = '%s%s_%s%s' % (
+                directory = self._directory_of(physical_name)
+                target_physical = '%s%s_%s%s' % (
                     directory, target_database_name, logical_name, extension)
                 move_clauses.append('MOVE %s TO %s' % (
                     self._quote_literal(logical_name),
-                    self._quote_literal(physical_path),
+                    self._quote_literal(target_physical),
                 ))
 
             cursor.execute(
@@ -149,18 +142,32 @@ class DatabaseCreation(BaseDatabaseCreation):
 
         return target_database_name
 
-    def _backup_source_once(self, cursor, source_database_name, data_path):
+    def _backup_source_once(self, cursor, source_database_name):
         """Back up the source test database a single time and cache the result.
 
         Returns (backup_path, logical_files) where logical_files is a list of
-        (logical_name, file_type) tuples. All clones of the same source restore
-        from this one backup instead of re-dumping it per worker.
+        (logical_name, file_type, physical_name) tuples. All clones of the same
+        source restore from this one backup instead of re-dumping it per worker.
         """
         cache = getattr(self, '_clone_backup_cache', None)
         if cache and cache[0] == source_database_name:
             return cache[1], cache[2]
 
-        backup_path = '%s%s_clone_source.bak' % (data_path, source_database_name)
+        cursor.execute(
+            "SELECT name, type, physical_name FROM sys.master_files "
+            "WHERE database_id = DB_ID(%s)",
+            [source_database_name],
+        )
+        logical_files = cursor.fetchall()
+
+        # Write the backup next to a source data file (a directory the server
+        # can definitely write to).
+        data_file = next(
+            (pn for _, ftype, pn in logical_files if ftype == 0),
+            logical_files[0][2],
+        )
+        backup_path = '%s%s_clone_source.bak' % (
+            self._directory_of(data_file), source_database_name)
         cursor.execute(
             "BACKUP DATABASE %s TO DISK = %s WITH INIT, COPY_ONLY" % (
                 self.connection.ops.quote_name(source_database_name),
@@ -168,12 +175,6 @@ class DatabaseCreation(BaseDatabaseCreation):
             )
         )
         self._drain(cursor)
-
-        cursor.execute(
-            "SELECT name, type FROM sys.master_files WHERE database_id = DB_ID(%s)",
-            [source_database_name],
-        )
-        logical_files = cursor.fetchall()
         self._clone_backup_cache = (source_database_name, backup_path, logical_files)
         return backup_path, logical_files
 
@@ -181,6 +182,13 @@ class DatabaseCreation(BaseDatabaseCreation):
     def _quote_literal(value):
         """Quote a string as a T-SQL literal (BACKUP/RESTORE reject parameters)."""
         return "N'%s'" % value.replace("'", "''")
+
+    @staticmethod
+    def _directory_of(physical_name):
+        """Return the directory portion (with trailing separator) of a SQL
+        Server physical file path, handling both Windows and POSIX separators."""
+        separator = '\\' if '\\' in physical_name else '/'
+        return physical_name.rsplit(separator, 1)[0] + separator
 
     @staticmethod
     def _drain(cursor):
