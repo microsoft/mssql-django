@@ -22,6 +22,9 @@ class DatabaseCreation(BaseDatabaseCreation):
         Internal implementation - create the test db tables.
         """
 
+        # A fresh source means any cached clone backup is stale.
+        self._clone_backup_cache = None
+
         # Try to create the test DB, but if we fail due to 28000 (Login failed for user),
         #   it's probably because the user doesn't have permission to [dbo].[master],
         #   so we can proceed if we're keeping the DB anyway.
@@ -83,6 +86,161 @@ class DatabaseCreation(BaseDatabaseCreation):
                                % self.connection.ops.quote_name(test_database_name))
             cursor.execute("DROP DATABASE %s"
                            % self.connection.ops.quote_name(test_database_name))
+            # If this was the source of a clone backup, remove the backup file
+            # and drop the cache so it is not reused for a later database.
+            cache = getattr(self, '_clone_backup_cache', None)
+            if cache and cache[0] == test_database_name:
+                self._delete_backup_file(cursor, cache[1])
+                self._clone_backup_cache = None
+
+    def _clone_test_db(self, suffix, verbosity, keepdb=False):
+        """
+        Clone the already-created test database so Django can run tests with
+        the --parallel flag (one clone per worker process).
+
+        SQL Server has no CREATE DATABASE ... TEMPLATE, so the clone is made
+        with a server-side BACKUP of the source test database followed by a
+        RESTORE ... WITH MOVE into a new database. This copies both schema and
+        data, matching what Django expects from a cloned test database.
+
+        The source is identical for every clone, so it is backed up once and
+        that single backup is restored for each worker.
+        """
+        if self.connection.to_azure_sql_db:
+            raise NotImplementedError(
+                "Cloning test databases is not supported on the Azure SQL "
+                "family (Database, Managed Instance, Fabric), which does not "
+                "allow BACKUP/RESTORE to disk. Run tests without the --parallel "
+                "flag."
+            )
+
+        source_database_name = self.connection.settings_dict['NAME']
+        target_database_name = self.get_test_db_clone_settings(suffix)['NAME']
+        quote_name = self.connection.ops.quote_name
+
+        with self.cursor() as cursor:
+            if keepdb and self._database_exists(cursor, target_database_name):
+                return target_database_name
+            self._drop_database_if_exists(cursor, target_database_name)
+
+            backup_path, logical_files = self._backup_source_once(
+                cursor, source_database_name)
+
+            # A RESTORE onto the same instance must relocate every logical file
+            # to a new physical path. Put each clone file in the same directory
+            # as its source file, which is guaranteed to exist and be writable
+            # by the server (no dependency on SERVERPROPERTY default paths).
+            move_clauses = []
+            for logical_name, file_type, physical_name in logical_files:
+                extension = {0: '.mdf', 1: '.ldf'}.get(file_type, '.ndf')
+                directory = self._directory_of(physical_name)
+                target_physical = '%s%s_%s%s' % (
+                    directory, target_database_name, logical_name, extension)
+                move_clauses.append('MOVE %s TO %s' % (
+                    self._quote_literal(logical_name),
+                    self._quote_literal(target_physical),
+                ))
+
+            # The target was just dropped and each file is restored to a path
+            # named after the target database, so RESTORE does not need (and
+            # should not use) WITH REPLACE, which would bypass safety checks.
+            cursor.execute(
+                "RESTORE DATABASE %s FROM DISK = %s WITH %s, RECOVERY" % (
+                    quote_name(target_database_name),
+                    self._quote_literal(backup_path),
+                    ', '.join(move_clauses),
+                )
+            )
+            self._drain(cursor)
+
+        return target_database_name
+
+    def _backup_source_once(self, cursor, source_database_name):
+        """Back up the source test database a single time and cache the result.
+
+        Returns (backup_path, logical_files) where logical_files is a list of
+        (logical_name, file_type, physical_name) tuples. All clones of the same
+        source restore from this one backup instead of re-dumping it per worker.
+        """
+        cache = getattr(self, '_clone_backup_cache', None)
+        if cache and cache[0] == source_database_name:
+            return cache[1], cache[2]
+
+        cursor.execute(
+            "SELECT name, type, physical_name FROM sys.master_files "
+            "WHERE database_id = DB_ID(%s)",
+            [source_database_name],
+        )
+        logical_files = cursor.fetchall()
+
+        # Write the backup next to a source data file (a directory the server
+        # can definitely write to).
+        data_file = next(
+            (pn for _, ftype, pn in logical_files if ftype == 0),
+            logical_files[0][2],
+        )
+        backup_path = '%s%s_clone_source.bak' % (
+            self._directory_of(data_file), source_database_name)
+        cursor.execute(
+            "BACKUP DATABASE %s TO DISK = %s WITH INIT, COPY_ONLY" % (
+                self.connection.ops.quote_name(source_database_name),
+                self._quote_literal(backup_path),
+            )
+        )
+        self._drain(cursor)
+        self._clone_backup_cache = (source_database_name, backup_path, logical_files)
+        return backup_path, logical_files
+
+    @staticmethod
+    def _quote_literal(value):
+        """Quote a string as a T-SQL literal (BACKUP/RESTORE reject parameters)."""
+        return "N'%s'" % value.replace("'", "''")
+
+    @staticmethod
+    def _directory_of(physical_name):
+        """Return the directory portion (with trailing separator) of a SQL
+        Server physical file path, handling both Windows and POSIX separators."""
+        separator = '\\' if '\\' in physical_name else '/'
+        return physical_name.rsplit(separator, 1)[0] + separator
+
+    def _delete_backup_file(self, cursor, backup_path):
+        """Best-effort removal of the server-side clone backup file.
+
+        DROP DATABASE removes a database's data/log files but not a backup, so
+        the clone backup would otherwise linger. xp_delete_files is used where
+        available; failures (e.g. older servers, permissions) are ignored since
+        the file is harmless and overwritten on the next run.
+        """
+        try:
+            cursor.execute(
+                "EXEC master.sys.xp_delete_files %s" % self._quote_literal(backup_path))
+            self._drain(cursor)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _drain(cursor):
+        """Consume the informational result sets BACKUP/RESTORE emit.
+
+        Without this the connection is still finishing the restore when the next
+        statement runs, which raises 'database is in the middle of a restore'.
+        """
+        while cursor.nextset():
+            pass
+
+    def _database_exists(self, cursor, database_name):
+        cursor.execute(
+            "SELECT 1 FROM sys.databases WHERE name = %s", [database_name])
+        return cursor.fetchone() is not None
+
+    def _drop_database_if_exists(self, cursor, database_name):
+        if not self._database_exists(cursor, database_name):
+            return
+        quoted = self.connection.ops.quote_name(database_name)
+        if not self.connection.to_azure_sql_db:
+            cursor.execute(
+                "ALTER DATABASE %s SET SINGLE_USER WITH ROLLBACK IMMEDIATE" % quoted)
+        cursor.execute("DROP DATABASE %s" % quoted)
 
     def sql_table_creation_suffix(self):
         suffix = []
