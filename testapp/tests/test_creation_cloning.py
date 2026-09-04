@@ -2,7 +2,7 @@
 # Licensed under the BSD license.
 
 from django.db import connection
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, skipUnlessDBFeature
 
 
 class DatabaseCloningTests(TransactionTestCase):
@@ -24,6 +24,7 @@ class DatabaseCloningTests(TransactionTestCase):
             not connection.to_azure_sql_db,
         )
 
+    @skipUnlessDBFeature('can_clone_databases')
     def test_clone_is_a_working_copy(self):
         creation = connection.creation
         suffix = 'clonetest'
@@ -49,19 +50,35 @@ class DatabaseCloningTests(TransactionTestCase):
             with connection._nodb_cursor() as cursor:
                 creation._drop_database_if_exists(cursor, clone_name)
 
+    @skipUnlessDBFeature('can_clone_databases')
     def test_clone_keepdb_reuses_existing(self):
         creation = connection.creation
         suffix = 'clonekeep'
         clone_name = creation.get_test_db_clone_settings(suffix)['NAME']
+        quoted_clone = connection.ops.quote_name(clone_name)
 
         creation._clone_test_db(suffix, verbosity=0)
         try:
-            # A second clone with keepdb=True must be a no-op, not an error.
-            creation._clone_test_db(suffix, verbosity=0, keepdb=True)
+            # Write a marker that exists only in the clone (the source backup
+            # has no such table), so a genuine keepdb no-op can be told apart
+            # from a silent drop-and-restore.
             with connection._nodb_cursor() as cursor:
                 cursor.execute(
-                    "SELECT 1 FROM sys.databases WHERE name = %s", [clone_name])
-                self.assertIsNotNone(cursor.fetchone())
+                    "EXEC('USE %s; CREATE TABLE keepdb_marker (id int)')"
+                    % quoted_clone)
+
+            # A second clone with keepdb=True must reuse the existing database.
+            creation._clone_test_db(suffix, verbosity=0, keepdb=True)
+
+            with connection._nodb_cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM %s.sys.tables WHERE name = %%s"
+                    % quoted_clone,
+                    ['keepdb_marker'],
+                )
+                self.assertEqual(
+                    cursor.fetchone()[0], 1,
+                    'keepdb=True should reuse the clone, not recreate it')
         finally:
             with connection._nodb_cursor() as cursor:
                 creation._drop_database_if_exists(cursor, clone_name)
