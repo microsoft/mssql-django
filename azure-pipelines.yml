@@ -33,7 +33,10 @@ jobs:
       name: Django-1ES-pool
       demands:
       - imageOverride -equals JDBC-MMS2025-SQL2025
-    timeoutInMinutes: 120
+    # mssql-python runs this suite ~1.5-2x slower than pyodbc (per-call overhead
+    # over the DDBC core), so legs land at ~95-120 min vs pyodbc's ~60. Raised
+    # from 120 so the slowest legs finish instead of being killed by the cap.
+    timeoutInMinutes: 180
 
     strategy:
       matrix:
