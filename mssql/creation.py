@@ -22,6 +22,9 @@ class DatabaseCreation(BaseDatabaseCreation):
         Internal implementation - create the test db tables.
         """
 
+        # A fresh source means any cached clone backup is stale.
+        self._clone_backup_cache = None
+
         # Try to create the test DB, but if we fail due to 28000 (Login failed for user),
         #   it's probably because the user doesn't have permission to [dbo].[master],
         #   so we can proceed if we're keeping the DB anyway.
@@ -83,6 +86,12 @@ class DatabaseCreation(BaseDatabaseCreation):
                                % self.connection.ops.quote_name(test_database_name))
             cursor.execute("DROP DATABASE %s"
                            % self.connection.ops.quote_name(test_database_name))
+            # If this was the source of a clone backup, remove the backup file
+            # and drop the cache so it is not reused for a later database.
+            cache = getattr(self, '_clone_backup_cache', None)
+            if cache and cache[0] == test_database_name:
+                self._delete_backup_file(cursor, cache[1])
+                self._clone_backup_cache = None
 
     def _clone_test_db(self, suffix, verbosity, keepdb=False):
         """
@@ -99,9 +108,10 @@ class DatabaseCreation(BaseDatabaseCreation):
         """
         if self.connection.to_azure_sql_db:
             raise NotImplementedError(
-                "Cloning test databases is not supported on Azure SQL Database, "
-                "which does not allow BACKUP/RESTORE to disk. Run tests without "
-                "the --parallel flag."
+                "Cloning test databases is not supported on the Azure SQL "
+                "family (Database, Managed Instance, Fabric), which does not "
+                "allow BACKUP/RESTORE to disk. Run tests without the --parallel "
+                "flag."
             )
 
         source_database_name = self.connection.settings_dict['NAME']
@@ -131,8 +141,11 @@ class DatabaseCreation(BaseDatabaseCreation):
                     self._quote_literal(target_physical),
                 ))
 
+            # The target was just dropped and each file is restored to a path
+            # named after the target database, so RESTORE does not need (and
+            # should not use) WITH REPLACE, which would bypass safety checks.
             cursor.execute(
-                "RESTORE DATABASE %s FROM DISK = %s WITH %s, RECOVERY, REPLACE" % (
+                "RESTORE DATABASE %s FROM DISK = %s WITH %s, RECOVERY" % (
                     quote_name(target_database_name),
                     self._quote_literal(backup_path),
                     ', '.join(move_clauses),
@@ -189,6 +202,21 @@ class DatabaseCreation(BaseDatabaseCreation):
         Server physical file path, handling both Windows and POSIX separators."""
         separator = '\\' if '\\' in physical_name else '/'
         return physical_name.rsplit(separator, 1)[0] + separator
+
+    def _delete_backup_file(self, cursor, backup_path):
+        """Best-effort removal of the server-side clone backup file.
+
+        DROP DATABASE removes a database's data/log files but not a backup, so
+        the clone backup would otherwise linger. xp_delete_files is used where
+        available; failures (e.g. older servers, permissions) are ignored since
+        the file is harmless and overwritten on the next run.
+        """
+        try:
+            cursor.execute(
+                "EXEC master.sys.xp_delete_files %s" % self._quote_literal(backup_path))
+            self._drain(cursor)
+        except Exception:
+            pass
 
     @staticmethod
     def _drain(cursor):
