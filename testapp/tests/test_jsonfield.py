@@ -160,7 +160,9 @@ class TestJSONField(TestCase):
         KeyTransform.register_lookup(CustomExact)
         try:
             lookup = KeyTransformIExact(
-                KeyTextTransform('nullable', F('value')),
+                KeyTextTransform('nullable', F('value')).resolve_expression(
+                    JSONModel.objects.all().query,
+                ),
                 None,
             )
             sql, params = lookup.as_sql(
