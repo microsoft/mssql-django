@@ -156,6 +156,7 @@ class TestJSONField(TestCase):
             def as_sql(self, compiler, connection):
                 return 'CUSTOM_JSON_EXACT', []
 
+        previous_lookup = KeyTransform.get_lookups()['exact']
         KeyTransform.register_lookup(CustomExact)
         try:
             lookup = KeyTransformIExact(
@@ -167,8 +168,9 @@ class TestJSONField(TestCase):
                 connection=SimpleNamespace(vendor='microsoft'),
             )
         finally:
-            KeyTransform._unregister_lookup(CustomExact)
+            KeyTransform.register_lookup(previous_lookup)
 
+        self.assertIs(KeyTransform.get_lookups()['exact'], previous_lookup)
         self.assertEqual(sql, 'CUSTOM_JSON_EXACT')
         self.assertEqual(params, [])
 
@@ -250,7 +252,7 @@ class TestJSONField(TestCase):
         with CaptureQueriesContext(connections['default']) as captured:
             result = list(queryset)
 
-        self.assertSequenceEqual(result, [rows[1], rows[2], rows[0]])
+        self.assertSequenceEqual(result, [rows[1], rows[0], rows[2]])
 
         # The numeric conversion expression should appear only once even though
         # the same order clause is requested twice.
