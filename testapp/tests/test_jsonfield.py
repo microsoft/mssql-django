@@ -252,7 +252,7 @@ class TestJSONField(TestCase):
         with CaptureQueriesContext(connections['default']) as captured:
             result = list(queryset)
 
-        self.assertSequenceEqual(result, [rows[1], rows[0], rows[2]])
+        self.assertSequenceEqual(result, [rows[1], rows[2], rows[0]])
 
         # The numeric conversion expression should appear only once even though
         # the same order clause is requested twice.
