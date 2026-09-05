@@ -4,7 +4,7 @@
 # * many_to_one_null
 
 set -e
-
+ 
 DJANGO_VERSION="$(python -m django --version)"
 
 cd django
