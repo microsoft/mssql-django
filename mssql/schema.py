@@ -2,7 +2,9 @@
 # Licensed under the BSD license.
 
 import binascii
+import copy
 import datetime
+
 
 from collections import defaultdict
 
@@ -423,16 +425,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         #
         #
         # KNOWN BUGS/LIMITATIONS:
-        #   1. Rename + alter in same migration: When a field is renamed (via RenameField)
-        #      AND has a type or nullability change (via AlterField) in the same migration,
-        #      indexes from Meta.indexes are not restored. The _delete_indexes() method
-        #      fails with FieldDoesNotExist because it looks up the index field by the
-        #      old field name, but RenameField has already updated the model state.
-        #      Tests:
-        #        - test_index_from_meta_indexes_retained_after_rename_and_type_change
-        #        - test_index_from_meta_indexes_retained_after_rename_and_nullability_change
-        #
-        #   2. unique_together + unique=True: When a field has BOTH unique=True AND
+
+        #   1. unique_together + unique=True: When a field has BOTH unique=True AND
         #      participates in unique_together, only the single-field unique constraint
         #      is restored after field alteration. The unique_together constraint is NOT
         #      restored because the restoration code is in an 'else' block that only
@@ -518,6 +512,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 )
                 for fk_name in rel_fk_names:
                     self.execute(self._delete_constraint_sql(self.sql_delete_fk, new_rel.related_model, fk_name))
+        meta_index_replacements = self._get_meta_index_replacements(model)
+
         # If working with an AutoField or BigAutoField drop all indexes on the related table
         # This is needed when doing ALTER column statements on IDENTITY fields
         # https://stackoverflow.com/questions/33429775/sql-server-alter-table-alter-column-giving-set-option-error
@@ -639,7 +635,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # Drop unique constraint, SQL Server requires explicit deletion
             self._delete_unique_constraints(model, old_field, new_field, strict)
             # Drop indexes, SQL Server requires explicit deletion
-            self._delete_indexes(model, old_field, new_field)
+            self._delete_indexes(
+                model, old_field, new_field,
+                meta_index_replacements=meta_index_replacements,
+            )
+
         # db_default change?
         if django_version >= (5,0):
             if new_field.db_default is not NOT_PROVIDED:
@@ -691,7 +691,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 # Drop unique constraint, SQL Server requires explicit deletion
                 self._delete_unique_constraints(model, old_field, new_field, strict)
                 # Drop indexes, SQL Server requires explicit deletion
-                self._delete_indexes(model, old_field, new_field)
+                self._delete_indexes(
+                    model, old_field, new_field,
+                    meta_index_replacements=meta_index_replacements,
+                )
+
 
         # ================================================================================
         # 3. Column alteration
@@ -951,83 +955,43 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # For other changes, only restore indexes involving the altered field.
             # --------------------------------------------------------------------------------
             for index in model._meta.indexes:
-                # Get the column names for this index, resolving stale field names
-                # that may remain after a RenameField updated the model state but
-                # not the Index.fields list.
-                # See https://github.com/microsoft/mssql-django/issues/499
+                replacements = meta_index_replacements.get(index.name)
                 try:
-                    index_fields = [model._meta.get_field(field_name) for field_name, _ in index.fields_orders]
-                    index_columns_list = [field.column for field in index_fields]
-                except FieldDoesNotExist:
-                    # A field name in index.fields_orders is stale (from a preceding RenameField).
-                    # Resolve columns individually, falling back to new_field.column.
-                    index_columns_list = []
-                    for field_name, _ in index.fields_orders:
-                        try:
-                            index_columns_list.append(model._meta.get_field(field_name).column)
-                        except FieldDoesNotExist:
-                            index_columns_list.append(new_field.column)
+                    index_fields = [
+                        model._meta.get_field(replacements.get(field_name, field_name))
+                        for field_name, _ in index.fields_orders
+                    ]
+                    included_fields = [
+                        model._meta.get_field(replacements.get(field_name, field_name))
+                        for field_name in index.include
+                    ]
+                    condition_fields = [
+                        model._meta.get_field(replacements.get(field_name, field_name))
+                        for field_name in self._get_condition_field_names(index.condition)
+                    ]
+                except (AttributeError, FieldDoesNotExist):
+                    # An unresolved reference isn't evidence that it names the field
+                    # currently being altered. Its index was already removed or has
+                    # never existed, so never recreate it with a different field.
+                    continue
 
-                # Restore if: AutoField change (all indexes dropped) OR field is in this index
+                index_columns_list = [
+                    field.column for field in index_fields + included_fields + condition_fields
+                ]
                 if is_autofield_change or old_field.column in index_columns_list or new_field.column in index_columns_list:
-                    indexes_to_restore.append(index)  # Store the Index object, not field list
+                    indexes_to_restore.append((index, replacements))
 
-            # --------------------------------------------------------------------------------
-            # Execute restoration: Meta.indexes
-            # --------------------------------------------------------------------------------
-            # Restore Index objects using index.create_sql() to preserve explicit names
-            # and attributes.
-            #
-            # If an index has stale field names (from a preceding RenameField that
-            # updated the model state but not Index.fields), clone the index with
-            # corrected field names so that create_sql() can resolve them.
-            # See https://github.com/microsoft/mssql-django/issues/499
-            #
-            # Deduplication: Skip if already in deferred_sql or post_actions
-            # (which contains other_actions from _alter_column_type_sql).
-            # This prevents duplicate index creation if the same index
-            # was already scheduled elsewhere.
-            # --------------------------------------------------------------------------------
-            for index in indexes_to_restore:
-                # Fix stale field names in index.fields before calling create_sql()
-                restored_index = index
-                has_stale_fields = False
-                for field_name in index.fields:
-                    try:
-                        model._meta.get_field(field_name)
-                    except FieldDoesNotExist:
-                        has_stale_fields = True
-                        break
-                if has_stale_fields:
-                    # Build corrected field names preserving ordering prefixes.
-                    # index.fields stores raw strings like ['-a', 'b'] where '-'
-                    # means descending.  We need to replace just the name part
-                    # while keeping the prefix, because Index.__init__ derives
-                    # fields_orders (used by create_sql) from the raw strings.
-                    corrected_fields = []
-                    for raw_field in index.fields:
-                        # Strip optional '-' prefix to get the bare field name
-                        if raw_field.startswith('-'):
-                            prefix = '-'
-                            bare_name = raw_field[1:]
-                        else:
-                            prefix = ''
-                            bare_name = raw_field
-                        try:
-                            model._meta.get_field(bare_name)
-                            corrected_fields.append(raw_field)
-                        except FieldDoesNotExist:
-                            corrected_fields.append(prefix + new_field.name)
-                    # Reconstruct via deconstruct() so fields_orders is correct
-                    _, args, kwargs = index.deconstruct()
-                    kwargs['fields'] = corrected_fields
-                    restored_index = index.__class__(*args, **kwargs)
-
+            # Restore Index objects using index.create_sql() to preserve explicit
+            # names and attributes. Stale references are repaired only when the
+            # existing physical index supplied an unambiguous replacement.
+            for index, replacements in indexes_to_restore:
+                restored_index = self._clone_index_with_replacements(index, replacements)
                 create_index_sql_statement = restored_index.create_sql(model, self)
                 if create_index_sql_statement and (str(create_index_sql_statement)
                         not in [str(sql) for sql in self.deferred_sql] + [str(statement[0]) for statement in post_actions]
                         ):
                     self.execute(create_index_sql_statement)
+
 
         # Type alteration on primary key? Then we need to alter the column
         # referring to us.
@@ -1135,68 +1099,160 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
 
-    def _delete_indexes(self, model, old_field, new_field):
+    def _get_index_metadata(self, model, index_name):
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT ic.is_included_column, c.name, i.filter_definition
+                FROM sys.indexes AS i
+                INNER JOIN sys.index_columns AS ic
+                    ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                INNER JOIN sys.columns AS c
+                    ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE i.object_id = OBJECT_ID(%s) AND i.name = %s
+                ORDER BY ic.key_ordinal, ic.index_column_id
+                """,
+                [model._meta.db_table, index_name],
+            )
+            return cursor.fetchall()
+
+    def _get_condition_field_names(self, condition):
+        if condition is None:
+            return []
+        field_names = []
+        for child in condition.children:
+            if hasattr(child, 'children'):
+                field_names.extend(self._get_condition_field_names(child))
+            else:
+                field_names.append(child[0].split('__', 1)[0])
+        return field_names
+
+    def _get_meta_index_replacements(self, model):
+        fields_by_column = {field.column: field for field in model._meta.fields}
+        replacements = {}
+        for index in model._meta.indexes:
+            field_names = [field_name for field_name, _ in index.fields_orders]
+            include_names = list(index.include)
+            condition_names = self._get_condition_field_names(index.condition)
+            reference_names = field_names + include_names + condition_names
+            if all(name in model._meta._forward_fields_map for name in reference_names):
+                continue
+
+            metadata = self._get_index_metadata(model, index.name)
+            if not metadata:
+                continue
+            key_columns = [column for included, column, _ in metadata if not included]
+            included_columns = [column for included, column, _ in metadata if included]
+            if len(field_names) != len(key_columns) or len(include_names) != len(included_columns):
+                continue
+
+            index_replacements = {}
+            for name, column in zip(field_names + include_names, key_columns + included_columns):
+                try:
+                    field = model._meta.get_field(name)
+                except FieldDoesNotExist:
+                    field = fields_by_column.get(column)
+                    if field is None:
+                        break
+                    index_replacements[name] = field.name
+                else:
+                    if field.column != column:
+                        break
+            else:
+                filter_definition = metadata[0][2]
+                condition_columns = {
+                    column for column in fields_by_column
+                    if f"[{column.replace(']', ']]')}]" in (filter_definition or '')
+                }
+                for name in condition_names:
+                    try:
+                        condition_columns.remove(model._meta.get_field(name).column)
+                    except FieldDoesNotExist:
+                        if name not in index_replacements and len(condition_columns) == 1:
+                            index_replacements[name] = fields_by_column[condition_columns.pop()].name
+                if all(name in index_replacements or name in model._meta._forward_fields_map for name in reference_names):
+                    replacements[index.name] = index_replacements
+        return replacements
+
+    def _clone_index_with_replacements(self, index, replacements):
+        if not replacements:
+            return index
+        _, args, kwargs = index.deconstruct()
+        kwargs['fields'] = [
+            ('-' if field_name.startswith('-') else '') + replacements.get(field_name.lstrip('-'), field_name.lstrip('-'))
+            for field_name in index.fields
+        ]
+        if index.include:
+            kwargs['include'] = [replacements.get(field_name, field_name) for field_name in index.include]
+        if index.condition:
+            condition = copy.deepcopy(index.condition)
+            self._replace_condition_field_names(condition, replacements)
+            kwargs['condition'] = condition
+        return index.__class__(*args, **kwargs)
+
+    def _replace_condition_field_names(self, condition, replacements):
+        for index, child in enumerate(condition.children):
+            if hasattr(child, 'children'):
+                self._replace_condition_field_names(child, replacements)
+            else:
+                field_name, lookup = child[0].split('__', 1) if '__' in child[0] else (child[0], '')
+                if field_name in replacements:
+                    condition.children[index] = (
+                        replacements[field_name] + ('__' + lookup if lookup else ''), child[1]
+                    )
+
+    def _delete_indexes(self, model, old_field, new_field, meta_index_replacements=None):
         if (
             django_version >= (4, 2)
             and isinstance(new_field, ForeignKey)
             and type(new_field.db_comment) != type(None)
             and "fk_on_delete_keep_index" in new_field.db_comment
         ):
-            return
+            return []
+        if isinstance(old_field, (AutoField, BigAutoField)) or isinstance(new_field, (AutoField, BigAutoField)):
+            return []
+
+        meta_index_replacements = meta_index_replacements or {}
         index_columns = []
         index_names = []
-
-        # After a RenameField + AlterField in the same migration, the model state
-        # has the new field name but Index.fields / index_together / unique_together
-        # may still reference the old field name (Django's rename_field() updates
-        # index_together and unique_together but NOT Meta.indexes). Additionally,
-        # sp_rename has already executed so the DB column uses new_field.column.
-        # This helper resolves a field name to its DB column, falling back to
-        # new_field.column when the field name is stale (FieldDoesNotExist).
-        # See https://github.com/microsoft/mssql-django/issues/499
-        def _resolve_column(field_name):
-            try:
-                return model._meta.get_field(field_name).column
-            except FieldDoesNotExist:
-                # The field was renamed by a preceding RenameField; the old name
-                # is stale. Use new_field.column since sp_rename has already run.
-                return new_field.column
-
         if old_field.db_index and new_field.db_index:
             index_columns.append([old_field.column])
         elif old_field.null != new_field.null:
             index_columns.append([old_field.column])
-        # Handle index_together for only django version < 5.1    
-        if django_version < (5, 1):  
-           # Iterate over each set of field names defined in index_together  
-           for fields in model._meta.index_together:
-              # Get the actual column names for each field in the set
-              columns = [_resolve_column(field) for field in fields]
-              # If the old field's column is among these columns, add to index_columns for later index deletion
-              if old_field.column in columns or new_field.column in columns:
-                 index_columns.append(columns)
+        if django_version < (5, 1):
+            for fields in model._meta.index_together:
+                columns = [model._meta.get_field(field).column for field in fields]
+                if old_field.column in columns or new_field.column in columns:
+                    index_columns.append(columns)
 
         for index in model._meta.indexes:
-            columns = [_resolve_column(field) for field, _ in index.fields_orders]
-            if old_field.column in columns or new_field.column in columns:
-                index_columns.append(columns)
+            replacements = meta_index_replacements.get(index.name, {})
+            try:
+                fields = [
+                    model._meta.get_field(replacements.get(field_name, field_name))
+                    for field_name, _ in index.fields_orders
+                ]
+                fields += [
+                    model._meta.get_field(replacements.get(field_name, field_name))
+                    for field_name in index.include
+                ]
+                fields += [
+                    model._meta.get_field(replacements.get(field_name, field_name))
+                    for field_name in self._get_condition_field_names(index.condition)
+                ]
+            except FieldDoesNotExist:
+                continue
+            if old_field.column in [field.column for field in fields] or new_field.column in [field.column for field in fields]:
+                index_names.append(index.name)
 
         for fields in model._meta.unique_together:
-            columns = [_resolve_column(field) for field in fields]
+            columns = [model._meta.get_field(field).column for field in fields]
             if old_field.column in columns or new_field.column in columns:
                 index_columns.append(columns)
-        if index_columns:
-            # remove duplicates first
-            temp = []
-            for columns in index_columns:
-                if columns not in temp:
-                    temp.append(columns)
-            index_columns = temp
-
-            for columns in index_columns:
-                index_names = self._constraint_names(model, columns, index=True)
-                for index_name in index_names:
-                    self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
+        for columns in {tuple(columns) for columns in index_columns}:
+            index_names.extend(self._constraint_names(model, columns, index=True))
+        for index_name in set(index_names):
+            self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
         return index_names
 
     def _delete_unique_constraints(self, model, old_field, new_field, strict=False):
