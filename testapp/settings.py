@@ -348,11 +348,6 @@ if VERSION >= (6, 1):
         # TODO: strip the redundant boolean comparison in the compiler.
         'lookup.tests.LookupTests.test_exact_booleanfield_annotation',
 
-        # SQL Server LIKE treats [ ] as a character-class wildcard; escaping a column
-        # reference (F()) used as a LIKE pattern doesn't cover the bracket case.
-        # TODO: escape []-wildcards for column-referencing __contains/__startswith.
-        'expressions.tests.ExpressionsTests.test_patterns_escape',
-
         # JSON key __iexact=None semantics (no native JSON null handling on SQL Server);
         # sibling to the existing JSONField exclusions.
         'model_fields.test_jsonfield.TestQuerying.test_key_iexact_none',
