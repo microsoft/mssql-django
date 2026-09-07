@@ -277,6 +277,27 @@ class TestMetaIndexesRetained(TransactionTestCase):
     def _get_context_description(self, use_single_migration: bool) -> str:
         return "combined single migration" if use_single_migration else "split into 2 migrations"
 
+    def _assert_named_index_columns(self, constraints, index_name, expected_columns, error_msg):
+        self.assertIn(index_name, constraints, error_msg)
+        self.assertEqual(constraints[index_name]['columns'], expected_columns, error_msg)
+
+    def _get_index_catalog(self, model, index_name):
+        with django.db.connections[django.db.DEFAULT_DB_ALIAS].cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT ic.is_included_column, c.name, i.filter_definition
+                FROM sys.indexes AS i
+                INNER JOIN sys.index_columns AS ic
+                    ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                INNER JOIN sys.columns AS c
+                    ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE i.object_id = OBJECT_ID(%s) AND i.name = %s
+                ORDER BY ic.key_ordinal, ic.index_column_id
+                """,
+                [model._meta.db_table, index_name],
+            )
+            return cursor.fetchall()
+
     def test_index_from_meta_indexes_retained_after_type_change(self):
         """
         Test that indexes defined in Meta.indexes are retained when altering field type (max_length change).
@@ -1712,6 +1733,212 @@ class TestMetaIndexesRetained(TransactionTestCase):
                         f"({self._get_context_description(use_single_migration)}). "
                         f"Expected index_together to be restored for field without db_index=True."
                     ),
+                )
+    def test_stale_meta_index_not_retargeted_by_autofield_change(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestStaleIndexAuto{suffix}'
+                index_name = f'idx_stale_auto{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['a'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='id',
+                            field=models.BigAutoField(primary_key=True),
+                        ),
+                    ],
+                    migration_name_prefix='test_stale_index_auto',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['aa'],
+                    'A stale Meta.indexes field was retargeted during an AutoField change.',
+                )
+
+    def test_removed_meta_index_not_retargeted_by_unrelated_alter(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestRemovedIndex{suffix}'
+                index_name = f'idx_removed{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['a'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RemoveField(model_name=model_name.lower(), name='a'),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_removed_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self.assertNotIn(
+                    index_name,
+                    result.constraints,
+                    'A removed Meta.indexes definition was recreated on an unrelated field.',
+                )
+
+    def test_meta_index_restored_after_multiple_renames(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestMultipleRenames{suffix}'
+                index_name = f'idx_multiple_renames{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['a', 'b'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='b', new_name='bb'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='aa',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_multiple_renames',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['aa', 'bb'],
+                    'A composite Meta.indexes definition was not restored after multiple renames.',
+                )
+
+    def test_filtered_meta_index_retained_after_rename_and_alter(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFilteredIndex{suffix}'
+                index_name = f'idx_filtered{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20, null=True)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                catalog = self._get_index_catalog(result.model, index_name)
+                self.assertIn('[aa]', catalog[0][2])
+
+    def test_covering_meta_index_retained_after_rename_and_alter(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestCoveringIndex{suffix}'
+                index_name = f'idx_covering{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['b'], include=['a'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='aa',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_covering_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self.assertEqual(
+                    self._get_index_catalog(result.model, index_name),
+                    [(False, 'b', None), (True, 'aa', None)],
                 )
 
     @expectedFailure
