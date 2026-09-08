@@ -971,3 +971,127 @@ class TestDatabaseWrapperSubclass(SimpleTestCase):
 
         DatabaseWrapper._known_versions.pop("test_subclass", None)
         DatabaseWrapper._known_azures.pop("test_subclass", None)
+
+
+class TestDatabaseWrapperMssqlPythonSelection(SimpleTestCase):
+    """Tests for the ``python_driver`` opt-in that selects mssql-python."""
+
+    def test_uses_mssql_python_true_variants(self):
+        """mssql_python / mssql-python / python (any case) opt in."""
+        for value in ("mssql_python", "mssql-python", "python",
+                      "MSSQL_PYTHON", " Python "):
+            conn_params = {"OPTIONS": {"python_driver": value}}
+            self.assertTrue(
+                DatabaseWrapper._uses_mssql_python(conn_params),
+                msg=f"expected opt-in for {value!r}",
+            )
+
+    def test_uses_mssql_python_false_variants(self):
+        """Absent, empty, or unrelated values keep the pyodbc default."""
+        for options in ({}, {"python_driver": ""}, {"python_driver": None},
+                        {"python_driver": "pyodbc"}):
+            conn_params = {"OPTIONS": options}
+            self.assertFalse(
+                DatabaseWrapper._uses_mssql_python(conn_params),
+                msg=f"did not expect opt-in for {options!r}",
+            )
+
+
+class TestDatabaseWrapperMssqlPythonConnectionString(SimpleTestCase):
+    """Connection-string building for the mssql-python opt-in path.
+
+    mssql-python bundles its own SQL Server driver and rejects the ODBC-only
+    DRIVER / DSN / SERVERNAME / MARS_Connection keywords, so the connection
+    string never carries them; SERVER uses the ``host,port`` form.
+    """
+
+    def setUp(self):
+        self.wrapper = object.__new__(DatabaseWrapper)
+
+    def _params(self, **overrides):
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {"python_driver": "mssql_python"},
+        }
+        conn_params.update(overrides)
+        return conn_params
+
+    def test_no_odbc_only_keywords(self):
+        """DRIVER / DSN / SERVERNAME are never emitted for mssql-python."""
+        result = self.wrapper._build_connection_string(self._params(), "ignored")
+
+        self.assertNotIn("DRIVER=", result)
+        self.assertNotIn("DSN=", result)
+        self.assertNotIn("SERVERNAME=", result)
+        self.assertIn("SERVER=localhost", result)
+        self.assertIn("DATABASE=testdb", result)
+        self.assertIn("UID=testuser", result)
+
+    def test_port_uses_host_comma_port(self):
+        """host and port are joined with a comma (Microsoft driver form)."""
+        result = self.wrapper._build_connection_string(
+            self._params(PORT=1433), "ignored")
+
+        self.assertIn("SERVER=localhost,1433", result)
+
+    def test_trusted_connection_when_no_user(self):
+        """Trusted_Connection is injected (not Integrated Security=SSPI)."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "OPTIONS": {"python_driver": "mssql_python"},
+        }
+        result = self.wrapper._build_connection_string(conn_params, "ignored")
+
+        self.assertIn("Trusted_Connection=yes", result)
+        self.assertNotIn("Integrated Security=", result)
+        self.assertNotIn("UID=", result)
+
+    def test_extra_params_appended(self):
+        """extra_params are appended unchanged for the mssql-python path."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {
+                "python_driver": "mssql_python",
+                "extra_params": "Encrypt=yes;TrustServerCertificate=yes",
+            },
+        }
+        result = self.wrapper._build_connection_string(conn_params, "ignored")
+
+        self.assertIn("Encrypt=yes", result)
+        self.assertIn("TrustServerCertificate=yes", result)
+
+    def test_authentication_keyword_skips_trusted_connection(self):
+        """An explicit Authentication= keyword suppresses Trusted_Connection."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "server.database.windows.net",
+            "OPTIONS": {
+                "python_driver": "mssql_python",
+                "extra_params": "Authentication=ActiveDirectoryIntegrated",
+            },
+        }
+        result = self.wrapper._build_connection_string(conn_params, "ignored")
+
+        self.assertNotIn("Trusted_Connection=", result)
+        self.assertNotIn("Integrated Security=", result)
+
+    def test_pyodbc_default_still_emits_driver(self):
+        """Without the opt-in, the pyodbc path is unchanged (DRIVER emitted)."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "localhost",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {},
+        }
+        result = self.wrapper._build_connection_string(
+            conn_params, "ODBC Driver 18 for SQL Server")
+
+        self.assertIn("DRIVER=ODBC Driver 18 for SQL Server", result)
