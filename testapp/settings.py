@@ -16,8 +16,10 @@ DATABASES = {
         "HOST": os.environ.get("MSSQL_HOST", "localhost"),
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
         "OPTIONS": {
-            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"),
-            "extra_params": os.environ.get("MSSQL_EXTRA_PARAMS", ""),
+            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 18 for SQL Server"),
+            "extra_params": os.environ.get(
+                "MSSQL_EXTRA_PARAMS", "TrustServerCertificate=yes"
+            ),
             "return_rows_bulk_insert": True,
         },
     },
@@ -29,8 +31,10 @@ DATABASES = {
         "HOST": os.environ.get("MSSQL_HOST", "localhost"),
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
         "OPTIONS": {
-            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"),
-            "extra_params": os.environ.get("MSSQL_EXTRA_PARAMS", ""),
+            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 18 for SQL Server"),
+            "extra_params": os.environ.get(
+                "MSSQL_EXTRA_PARAMS", "TrustServerCertificate=yes"
+            ),
             "return_rows_bulk_insert": True,
         },
     },
