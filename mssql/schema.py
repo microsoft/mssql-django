@@ -1182,9 +1182,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             include_names = list(index.include)
             condition_names = self._get_condition_field_names(index.condition)
             reference_names = field_names + include_names + condition_names
-            if all(name in model._meta._forward_fields_map for name in reference_names):
-                continue
-
             metadata = self._get_index_metadata(model, index.name)
             if not metadata:
                 continue
@@ -1195,16 +1192,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
             index_replacements = {}
             for name, column in zip(field_names + include_names, key_columns + included_columns):
-                try:
-                    field = model._meta.get_field(name)
-                except FieldDoesNotExist:
+                field = model._meta._forward_fields_map.get(name)
+                if field is None or field.column != column:
                     field = fields_by_column.get(column)
                     if field is None:
                         break
                     index_replacements[name] = field.name
-                else:
-                    if field.column != column:
-                        break
             else:
                 filter_definition = metadata[0][2]
                 condition_columns = {
@@ -1212,11 +1205,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     if f"[{column.replace(']', ']]')}]" in (filter_definition or '')
                 }
                 for name in condition_names:
-                    try:
-                        condition_columns.remove(model._meta.get_field(name).column)
-                    except FieldDoesNotExist:
-                        if name not in index_replacements and len(condition_columns) == 1:
-                            index_replacements[name] = fields_by_column[condition_columns.pop()].name
+                    field = model._meta._forward_fields_map.get(
+                        index_replacements.get(name, name)
+                    )
+                    if field is not None and field.column in condition_columns:
+                        condition_columns.remove(field.column)
+                    elif len(condition_columns) == 1:
+                        field = fields_by_column[condition_columns.pop()]
+                        index_replacements[name] = field.name
                 if all(name in index_replacements or name in model._meta._forward_fields_map for name in reference_names):
                     replacements[index.name] = index_replacements
         return replacements

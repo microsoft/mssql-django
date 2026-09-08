@@ -1776,6 +1776,52 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     'A stale Meta.indexes field was retargeted during an AutoField change.',
                 )
 
+    def test_stale_meta_index_reconciles_reused_field_name(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestReusedIndexField{suffix}'
+                index_name = f'idx_reused_field{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['a'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AddField(
+                            model_name=model_name.lower(),
+                            name='a',
+                            field=models.CharField(max_length=20),
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='aa',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_reused_index_field',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['aa'],
+                    'A stale Meta.indexes field was not reconciled after its old name was reused.',
+                )
+
     def test_removed_meta_index_not_retargeted_by_unrelated_alter(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
