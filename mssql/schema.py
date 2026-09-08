@@ -42,24 +42,9 @@ class Statement(DjStatement):
     def __eq__(self, other):
         return self.template == other.template and str(self.parts['name']) == str(other.parts['name'])
 
-    def rename_column_references(self, table, old_column, new_column):
-        for part in self.parts.values():
-            if hasattr(part, 'rename_column_references'):
-                part.rename_column_references(table, old_column, new_column)
-            condition = self.parts['condition']
-            if condition:
-                self.parts['condition'] = condition.replace(f'[{old_column}]', f'[{new_column}]')
 
 
 class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
-    def _rename_statement_column_references(self, statement, table, old_column, new_column):
-        statement.rename_column_references(table, old_column, new_column)
-        condition = statement.parts.get('condition')
-        if condition:
-            statement.parts['condition'] = condition.replace(
-                f'[{old_column}]', f'[{new_column}]'
-            )
-
 
     _sql_check_constraint = " CONSTRAINT %(name)s CHECK (%(check)s)"
     _sql_select_default_constraint_name = "SELECT" \
@@ -612,7 +597,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     index.name in existing_index_names
                     and old_field.name in self._get_condition_field_names(index.condition)
                 ):
-                    statement = index.create_sql(model, self)
+                    restored_index = self._clone_index_with_replacements(
+                        index, {old_field.name: new_field.name}
+                    )
+                    statement = restored_index.create_sql(new_field.model, self)
                     if statement:
                         meta_indexes_to_restore.append(statement)
                         self.execute(
@@ -626,15 +614,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if sql_restore_index:
                 self.execute(sql_restore_index.replace(f'[{old_field.column}]', f'[{new_field.column}]'))
             for statement in meta_indexes_to_restore:
-                self._rename_statement_column_references(
-                    statement, model._meta.db_table, old_field.column, new_field.column
-                )
                 self.execute(statement)
             # Rename all references to the renamed column.
             for sql in self.deferred_sql:
                 if isinstance(sql, DjStatement):
-                    self._rename_statement_column_references(
-                        sql, model._meta.db_table, old_field.column, new_field.column
+                    sql.rename_column_references(
+                        model._meta.db_table, old_field.column, new_field.column
                     )
 
         # ===============================================================================
