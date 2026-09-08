@@ -54,6 +54,10 @@ setup(
     ],
     extras_require={
         'test': ['unittest-xml-reporting>=3.2.0'],
+        # Opt-in mssql-python driver (see the ``python_driver`` connection
+        # option). pyodbc remains the default and is always installed;
+        # mssql-python requires Python 3.10 or newer.
+        'mssql-python': ['mssql-python>=1.15.0'],
     },
     package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
