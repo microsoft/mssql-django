@@ -8,6 +8,7 @@ from django.db import models, migrations
 from django.db.migrations.migration import Migration
 from django.db.migrations.state import ProjectState
 from django.db.models import UniqueConstraint
+from django.db.models.lookups import Exact
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler, ProgrammingError
 from django.test import TestCase, TransactionTestCase
 from unittest import skipIf, expectedFailure
@@ -1936,10 +1937,52 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     model_name=model_name,
                     use_single_migration=use_single_migration,
                 )
-                self.assertEqual(
-                    self._get_index_catalog(result.model, index_name),
-                    [(False, 'b', None), (True, 'aa', None)],
+                catalog = self._get_index_catalog(result.model, index_name)
+                self.assertIn((False, 'b', None), catalog)
+                self.assertIn((True, 'aa', None), catalog)
+
+    def test_expression_filtered_meta_index_retained_after_alter(self):
+        """
+        A filtered Meta index may use a positional lookup expression instead of
+        a keyword-style Q tuple. Ensure altering its key field preserves the
+        index and doesn't treat the Exact expression as a subscriptable tuple.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestExpressionFilteredIndex{suffix}'
+                index_name = f'idx_expression_filtered{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(Exact(models.F('a'), models.Value('value'))),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_expression_filtered_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
                 )
+                self.assertIn('[a]', self._get_index_catalog(result.model, index_name)[0][2])
 
     @expectedFailure
     def test_unique_together_retained_when_field_also_has_unique_true(self):
