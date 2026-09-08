@@ -27,8 +27,9 @@ test models.
 ## Version-aware tests
 
 - **Gate tests by `django.VERSION`, not by skipping.** A fix gated to a new Django minor is
-  inert on the legs CI runs today; a version-aware test still runs and asserts on the
-  current legs and automatically starts covering the new minor once it's enabled. See #558/#559.
+  inert outside its target versions; a version-aware test still runs and asserts across the
+  declared support matrix and automatically starts covering the new minor once it's enabled.
+  See #558/#559.
 - **When the only observable change is a deprecation warning, make the warning the
   assertion:** scope a filter to the specific `RemovedInDjangoXWarning` and promote it to an
   error in the test. That mirrors Django's own warnings-as-errors suite and gives an
