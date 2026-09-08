@@ -1945,6 +1945,46 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn("'[a]'", filter_definition)
                 self.assertNotIn("'[aa]'", filter_definition)
 
+    @expectedFailure
+    def test_deferred_filtered_meta_index_after_field_rename(self):
+        """
+        A filtered Meta.indexes definition created with CreateModel is deferred
+        until after the RenameField. Its condition retains the old column name.
+        """
+        model_name = 'TestDeferredFilteredIndex'
+        index_name = 'idx_deferred_filtered'
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                    options={
+                        'indexes': [
+                            models.Index(
+                                fields=['b'],
+                                condition=models.Q(a='[a]'),
+                                name=index_name,
+                            ),
+                        ],
+                    },
+                ),
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='a', new_name='aa'
+                ),
+            ],
+            operations_b=[],
+            migration_name_prefix='test_deferred_filtered_index',
+            model_name=model_name,
+            use_single_migration=True,
+        )
+        filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+        self.assertIn('[aa]', filter_definition)
+        self.assertIn("'[a]'", filter_definition)
+
     def test_filtered_meta_index_retained_after_rename_and_alter(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):

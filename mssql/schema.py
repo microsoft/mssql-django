@@ -616,6 +616,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             for statement in meta_indexes_to_restore:
                 self.execute(statement)
             # Rename all references to the renamed column.
+            # Deferred Statement conditions are already-rendered SQL. Rewriting them
+            # would mutate string literals; filtered Meta.indexes in this path remain
+            # unsupported. See test_deferred_filtered_meta_index_after_field_rename.
             for sql in self.deferred_sql:
                 if isinstance(sql, DjStatement):
                     sql.rename_column_references(
