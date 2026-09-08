@@ -14,11 +14,16 @@ Django's database abstraction layer into T-SQL. The backend lives entirely under
 ## Project facts
 
 - **Default branch:** `dev` (not `main`). Open pull requests against `dev`.
-- **Version:** declared in `setup.py` (`version='X.Y.Z'`). Supported range is the
-  `install_requires` cap (`django>=3.2,<6.2`) plus the `Framework :: Django :: X.Y`
-  classifiers.
-- **Supported matrix:** Django 3.2 – 6.1, Python 3.8 – 3.14, SQL Server 2017 – 2025 /
-  Azure SQL, ODBC Driver 17 or 18.
+- **Version and support policy:** `setup.py` declares the package version and supported
+  Python/Django ranges (`install_requires`, classifiers, and `python_requires` when
+  present). `azure-pipelines.yml` defines the executed CI matrix, `tox.ini` defines its
+  environment dependencies and commands, and `README.md` documents supported database
+  platforms. Treat those files as the source of truth rather than duplicating ranges here.
+- **Retired-version code:** compatibility branches below the currently declared support
+  floor can remain in the distributed package, but those runtimes are no longer tested or
+  declared supported. Treat changes that add logic to or depend on those branches as work
+  on an untested path; steer the fix onto a supported branch instead of asking contributors
+  to maintain retired versions.
 - **Tests:** `python manage.py test testapp --noinput` runs the suite we own. A live
   SQL Server is required; connection settings come from environment variables read in
   `testapp/settings.py` (`MSSQL_HOST`, `MSSQL_PASSWORD`, ...). The full upstream Django
@@ -36,9 +41,13 @@ Django's database abstraction layer into T-SQL. The backend lives entirely under
 | `features.py` | Capability flags (`supports_*`) declaring what SQL Server can and can't do. |
 | `introspection.py` | Type-code → Django field mapping; table/relation introspection. |
 | `creation.py` | Test-database creation and teardown. |
+| `client.py` | Database shell command selection (`sqlcmd` / `isql`). |
 
-`base.py` and `introspection.py` are the only DBAPI/driver-coupled files; everything
-else in `mssql/` is driver-agnostic.
+Direct DBAPI imports and type-code coupling are concentrated in `base.py` and
+`introspection.py`. Other modules may legitimately branch on backend capabilities such as
+MARS or database-shell selection. Review SQL and ORM behavior independently of the Python
+driver, and flag new direct DBAPI coupling outside the adapter boundary unless it is
+explicitly justified.
 
 ## Commit and PR conventions
 
