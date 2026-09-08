@@ -18,6 +18,12 @@ SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 SQL_SMALLAUTOFIELD = -777333
 SQL_TIMESTAMP_WITH_TIMEZONE = -155
+# SQL_SS_TIME2 is the SQL Server-specific type code for ``time(n)`` columns.
+# pyodbc exports it as a module constant, but not every DB-API driver does
+# (mssql-python, for example, does not). Resolve it from the driver when
+# available and fall back to the documented ODBC value (-154) otherwise, so
+# introspection does not depend on a driver-specific attribute.
+SQL_SS_TIME2 = getattr(Database, 'SQL_SS_TIME2', -154)
 
 FieldInfo = namedtuple("FieldInfo", BaseFieldInfo._fields + ("comment",))
 TableInfo = namedtuple("TableInfo", BaseTableInfo._fields + ("comment",))
@@ -46,7 +52,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Database.SQL_NUMERIC: 'DecimalField',
         Database.SQL_REAL: 'FloatField',
         Database.SQL_SMALLINT: 'SmallIntegerField',
-        Database.SQL_SS_TIME2: 'TimeField',
+        SQL_SS_TIME2: 'TimeField',
         Database.SQL_TINYINT: 'SmallIntegerField',
         Database.SQL_TYPE_DATE: 'DateField',
         Database.SQL_TYPE_TIME: 'TimeField',
