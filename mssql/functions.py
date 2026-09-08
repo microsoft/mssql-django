@@ -411,7 +411,11 @@ def json_KeyTransformExact_process_rhs(self, compiler, connection):
 
 def json_KeyTransformExact(self, compiler, connection):
     """Match an existing JSON key whose value is the JSON null literal."""
-    if self.rhs is None and isinstance(self.lhs, KeyTransform):
+    if (
+        self.rhs is None
+        and isinstance(self.lhs, KeyTransform)
+        and connection.features.supports_json_openjson
+    ):
         lhs, lhs_params, key_transforms = self.lhs.preprocess_lhs(compiler, connection)
         final_key = key_transforms.pop()
 

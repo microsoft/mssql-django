@@ -98,6 +98,23 @@ class DatabaseFeatures(BaseDatabaseFeatures):
         return self.connection.sql_server_version >= 2016 or self.connection.to_azure_sql_db
 
     @cached_property
+    def supports_json_openjson(self):
+        # OPENJSON requires a database compatibility level of 130 or higher,
+        # independent of the SQL Server product version: a 2016+ server can host a
+        # database pinned at an older level (for example a database restored from
+        # SQL Server 2014). JSON-null key lookups fall back to a non-OPENJSON path
+        # when this is False. Azure SQL Database is always at a supported level.
+        if self.connection.to_azure_sql_db:
+            return True
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT compatibility_level FROM sys.databases "
+                "WHERE database_id = DB_ID()"
+            )
+            row = cursor.fetchone()
+        return bool(row) and row[0] >= 130
+
+    @cached_property
     def introspected_field_types(self):
         return {
             **super().introspected_field_types,
