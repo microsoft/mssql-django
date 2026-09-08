@@ -469,8 +469,16 @@ def json_KeyTransformIExact_as_sql(self, compiler, connection):
             # iexact=None -> isnull=True rewrite (query.py) for every vendor.
             # Non-SQL-Server backends kept the pre-6.1 IS NULL semantics, so
             # replay that rewrite here to leave their results unchanged.
+            # Dispatch through the vendor method: KeyTransformIsNull overrides
+            # as_sqlite/as_oracle, and the generic as_sql matches both a
+            # JSON-null value and a missing key on some backends.
             isnull_lookup = self.lhs.get_lookup('isnull')(self.lhs, True)
-            return isnull_lookup.as_sql(compiler, connection)
+            isnull_method = getattr(
+                isnull_lookup,
+                'as_%s' % connection.vendor,
+                isnull_lookup.as_sql,
+            )
+            return isnull_method(compiler, connection)
         key_transform = KeyTransform(self.lhs.key_name, self.lhs.lhs)
         exact_lookup = key_transform.get_lookup('exact')(key_transform, self.rhs)
         vendor_method = getattr(
