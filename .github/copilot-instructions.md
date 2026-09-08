@@ -127,10 +127,11 @@ cd django && python tests/runtests.py --settings=testapp.settings <module>
 
 ## Version Compatibility
 
-- **Django**: 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0, 6.1
-- **Python**: 3.8 – 3.14
-- **SQL Server**: 2017, 2019, 2022, 2025; Azure SQL DB / Managed Instance
-- **ODBC Driver**: 17 or 18 for SQL Server
+- **Django and Python:** Read the declared ranges from `setup.py`, the executed matrix from
+  `azure-pipelines.yml`, and environment definitions from `tox.ini`; treat those files as
+  the source of truth.
+- **SQL Server and drivers:** Read the supported platforms from `README.md` and dependency
+  declarations from `setup.py`; do not duplicate version lists here.
 
 ## Common Issues
 
