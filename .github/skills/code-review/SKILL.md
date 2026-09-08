@@ -29,20 +29,22 @@ vs. after the change, not to an abstract concern.
 
 ## Cross-version safety (the most common real defect)
 
-The backend declares support for **Django 5.2 through 6.1** and **Python 3.10 through 3.14**.
-A change that is correct on the author's version routinely breaks another.
+Read the current Django and Python support policy from `setup.py`, the executed matrix from
+`azure-pipelines.yml`, and environment definitions from `tox.ini` before reviewing. A
+change that is correct on the author's version routinely breaks another.
 
-- **Do not use a Django API newer than the 5.2 floor without a version guard.** Accessing an
-  attribute or symbol introduced in a later Django raises `AttributeError`/`ImportError` on
-  the older supported versions, *after* the SELECT compiles — so it passes the author's local
-  run and fails in the field. Match the version guard already used by the nearest related
-  branch.
+- **Do not use a Django API newer than the declared minimum without a version guard.**
+  Accessing an attribute or symbol introduced in a later Django raises
+  `AttributeError`/`ImportError` on older supported versions, *after* the SELECT compiles —
+  so it passes the author's local run and fails in the field. Match the version guard already
+  used by the nearest related branch.
 - **Version-gated code for retired versions is dead-code-adjacent.** The tree still contains
-  compatibility branches for versions below the declared floor (e.g. `if VERSION < (5, 2)`);
-  those versions are no longer tested, declared, or packaged. A change that adds logic to or
-  depends on a below-floor branch is working on an untested path — flag it as such and steer
-  the fix onto a supported branch. Do not ask contributors to *fix* below-floor branches;
-  they exist only as inert history.
+  compatibility branches for versions below the currently declared floor; those versions
+  are no longer tested or declared supported, although the compatibility code remains in
+  the distributed package. A change that adds logic to or depends on a below-floor branch
+  is working on an untested path — flag it as such and steer the fix onto a supported
+  branch. Do not ask contributors to *fix* below-floor branches; they exist only as inert
+  history.
 - **New Django minor → check `features.py`.** New minors add `supports_*` flags defaulting to
   `True`; if not overridden, Django emits SQL SQL Server rejects, sometimes at test-database
   creation (which fails the whole suite before a test runs).
@@ -51,9 +53,10 @@ A change that is correct on the author's version routinely breaks another.
   was missed. Grep the whole symbol across the module, not just the path the failing test hit.
 - **Review the SQL/ORM behavior, not the Python driver.** Keep review at the T-SQL / Django
   ORM level. Don't assume a specific DBAPI driver's behavior or bind a fix to one driver's
-  quirk; the driver layer is isolated to `base.py` and `introspection.py`, and the rest of the
-  backend is driver-agnostic. If a change outside those files appears to depend on
-  driver-specific behavior, that coupling is itself worth a comment.
+  quirk. Direct DBAPI imports and type-code handling belong in the adapter boundary
+  (`base.py` and `introspection.py`); capability-based behavior such as MARS may legitimately
+  appear elsewhere. Flag new direct driver coupling outside that boundary unless the PR
+  explicitly justifies it.
 
 ## Cross-file interactions (single-file review misses these)
 
