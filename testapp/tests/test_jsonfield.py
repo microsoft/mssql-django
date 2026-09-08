@@ -1,15 +1,10 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 
-from types import SimpleNamespace
 from unittest import skipUnless
 
 from django import VERSION
 from django.db import NotSupportedError, connections
-from django.db.models import F, Lookup
-from django.db.models.fields.json import (
-    KeyTextTransform, KeyTransform, KeyTransformIExact,
-)
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 
@@ -140,27 +135,32 @@ class TestJSONField(TestCase):
         JSONModel.objects.create(value={})
 
         self.assertSequenceEqual(JSONModel.objects.filter(value__nullable=None), [present])
-        self.assertSequenceEqual(JSONModel.objects.filter(value__nullable__iexact=None), [present])
         self.assertSequenceEqual(JSONModel.objects.filter(value__nested__nullable=None), [present])
         self.assertSequenceEqual(JSONModel.objects.exclude(value__nullable=None), [non_null])
         self.assertSequenceEqual(
             JSONModel.objects.exclude(value__nested__nullable=None),
             [non_null],
         )
+        if VERSION >= (6, 1):
+            # iexact=None matches the JSON null value only from Django 6.1, where
+            # KeyTransformIExact delegates None to the exact lookup. Pre-6.1 keeps
+            # Django's native IS NULL semantics for iexact=None and is left alone.
+            self.assertSequenceEqual(
+                JSONModel.objects.filter(value__nullable__iexact=None), [present]
+            )
 
     @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     @skipUnless(
         _check_jsonfield_supported_sqlite(),
         "JSONField not supported by SQLite on this platform and Python version",
     )
-    def test_json_null_iexact_none_preserves_secondary_database(self):
-        # Importing this backend enables None as an iexact right-hand side for
-        # every vendor, which suppresses Django's build-time iexact=None ->
-        # isnull=True rewrite. A non-SQL-Server database must still see its
-        # native result: pre-6.1 a missing key matched (IS NULL semantics),
-        # while 6.1 unified iexact=None to match the JSON null value. Assert both
-        # the filter and the negated (exclude) direction so the three-valued
-        # behavior on the secondary database can't silently regress.
+    def test_json_null_iexact_none_secondary_database_unaffected(self):
+        # This backend must not alter iexact=None on a non-SQL-Server database.
+        # The fix is scoped to SQL Server, so a secondary database keeps Django's
+        # native semantics on every version: pre-6.1 a missing key matches (IS
+        # NULL), while 6.1 matches the JSON null value. Assert both the filter and
+        # the negated (exclude) direction so a future global patch that leaks into
+        # other backends is caught here.
         json_null = JSONModel(value={"nullable": None})
         json_null.save(using='sqlite')
         missing = JSONModel(value={"other": "value"})
@@ -184,34 +184,6 @@ class TestJSONField(TestCase):
             # whose key resolves to a non-null JSON value.
             self.assertSequenceEqual(included, [missing])
             self.assertSequenceEqual(excluded, [json_null, present])
-
-    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
-    def test_json_null_iexact_uses_registered_exact_lookup(self):
-        class CustomExact(Lookup):
-            lookup_name = 'exact'
-
-            def as_sql(self, compiler, connection):
-                return 'CUSTOM_JSON_EXACT', []
-
-        previous_lookup = KeyTransform.get_lookups()['exact']
-        KeyTransform.register_lookup(CustomExact)
-        try:
-            lookup = KeyTransformIExact(
-                KeyTextTransform('nullable', F('value')).resolve_expression(
-                    JSONModel.objects.all().query,
-                ),
-                None,
-            )
-            sql, params = lookup.as_sql(
-                compiler=None,
-                connection=SimpleNamespace(vendor='microsoft'),
-            )
-        finally:
-            KeyTransform.register_lookup(previous_lookup)
-
-        self.assertIs(KeyTransform.get_lookups()['exact'], previous_lookup)
-        self.assertEqual(sql, 'CUSTOM_JSON_EXACT')
-        self.assertEqual(params, [])
 
     @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_json_null_numeric_key_uses_array_index_semantics(self):

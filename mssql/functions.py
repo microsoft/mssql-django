@@ -30,7 +30,7 @@ if VERSION >= (5, 2):
 
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
-        KeyTransform, KeyTransformIn, KeyTransformExact, KeyTransformIExact,
+        KeyTransform, KeyTransformIn, KeyTransformExact,
         HasKeyLookup)
     # compile_json_path was moved from django.db.models.fields.json to
     # connection.ops.compile_json_path() in Django 6.0
@@ -461,35 +461,6 @@ def json_KeyTransformExact(self, compiler, connection):
     return self.as_sql(compiler, connection)
 
 
-def json_KeyTransformIExact_as_sql(self, compiler, connection):
-    """Backport Django 6.1's vendor-aware JSON null delegation."""
-    if self.rhs is None:
-        if connection.vendor != 'microsoft':
-            # can_use_none_as_rhs=True suppresses Django's build-time
-            # iexact=None -> isnull=True rewrite (query.py) for every vendor.
-            # Non-SQL-Server backends kept the pre-6.1 IS NULL semantics, so
-            # replay that rewrite here to leave their results unchanged.
-            # Dispatch through the vendor method: KeyTransformIsNull overrides
-            # as_sqlite/as_oracle, and the generic as_sql matches both a
-            # JSON-null value and a missing key on some backends.
-            isnull_lookup = self.lhs.get_lookup('isnull')(self.lhs, True)
-            isnull_method = getattr(
-                isnull_lookup,
-                'as_%s' % connection.vendor,
-                isnull_lookup.as_sql,
-            )
-            return isnull_method(compiler, connection)
-        key_transform = KeyTransform(self.lhs.key_name, self.lhs.lhs)
-        exact_lookup = key_transform.get_lookup('exact')(key_transform, self.rhs)
-        vendor_method = getattr(
-            exact_lookup,
-            'as_%s' % connection.vendor,
-            exact_lookup.as_sql,
-        )
-        return vendor_method(compiler, connection)
-    return key_transform_iexact_as_sql(self, compiler, connection)
-
-
 def json_KeyTransformIn(self, compiler, connection):
     lhs, _ = super(KeyTransformIn, self).process_lhs(compiler, connection)
     rhs, rhs_params = super(KeyTransformIn, self).process_rhs(compiler, connection)
@@ -821,12 +792,6 @@ In.split_parameter_list_as_sql = split_parameter_list_as_sql
 if VERSION >= (3, 1):
     KeyTransformIn.as_microsoft = json_KeyTransformIn
     KeyTransformExact.as_microsoft = json_KeyTransformExact
-    if VERSION < (6, 1):
-        # Django 6.1 added vendor-aware delegation upstream. Backport the full
-        # behavior so enabling None also remains correct on secondary databases.
-        KeyTransformIExact.can_use_none_as_rhs = True
-        key_transform_iexact_as_sql = KeyTransformIExact.as_sql
-        KeyTransformIExact.as_sql = json_KeyTransformIExact_as_sql
     # Need copy of old KeyTransformExact.process_rhs to call later
     key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
