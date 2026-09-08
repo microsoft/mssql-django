@@ -192,3 +192,17 @@ class TestJSONField(TestCase):
         select_sql = captured[-1]["sql"]
         self.assertEqual(select_sql.upper().count("TRY_CONVERT(FLOAT"), 1)
 
+    def test_key_isnull(self):
+        missing_key = JSONModel.objects.create(value={"other": 1})
+        null_value = JSONModel.objects.create(value={"k": None})
+
+        self.assertSequenceEqual(
+            JSONModel.objects.filter(value__k__isnull=True),
+            [missing_key],
+        )
+
+        self.assertSequenceEqual(
+            JSONModel.objects.filter(value__k__isnull=False),
+            [null_value],
+        )
+

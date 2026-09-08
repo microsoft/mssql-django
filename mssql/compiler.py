@@ -19,7 +19,7 @@ from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
 if django.VERSION >= (3, 1):
-    from django.db.models.fields.json import KeyTransform as json_KeyTransform
+    from django.db.models.fields.json import KeyTransform as json_KeyTransform, KeyTransformIsNull
     # compile_json_path was moved to connection.ops in Django 6.0
     if django.VERSION < (6, 0):
         from django.db.models.fields.json import compile_json_path
@@ -77,6 +77,25 @@ def _as_sql_json_keytransform(self, compiler, connection):
         "COALESCE(JSON_QUERY(%s, '%s'), JSON_VALUE(%s, '%s'))" %
         ((lhs, json_path) * 2)
     ), tuple(params) * 2
+
+def _as_sql_keytransform_isnull(self, compiler, connection):
+    lhs, params, key_transforms = self.lhs.preprocess_lhs(compiler, connection)
+
+    if hasattr(connection.ops, "compile_json_path"):
+        json_path = connection.ops.compile_json_path(key_transforms)
+    else:
+        json_path = compile_json_path(key_transforms)
+
+    json_path = json_path.replace("'", "''")
+
+    if self.rhs:
+        # isnull=True → the key doesn't exist.
+        template = "JSON_PATH_EXISTS(%s, '%s') = 0"
+    else:
+        # isnull=False → the key exists, including JSON null.
+        template = "JSON_PATH_EXISTS(%s, '%s') = 1"
+
+    return template % (lhs, json_path), tuple(params)
 
 def _as_sql_least(self, compiler, connection):
     # SQL Server does not provide LEAST function,
@@ -756,7 +775,9 @@ class SQLCompiler(compiler.SQLCompiler):
         elif django.VERSION >= (6, 0) and isinstance(node, StringAgg):
             as_microsoft = _as_sql_stringagg
         if django.VERSION >= (3, 1):
-            if isinstance(node, json_KeyTransform):
+            if isinstance(node, KeyTransformIsNull):
+                as_microsoft = _as_sql_keytransform_isnull
+            elif isinstance(node, json_KeyTransform):
                 as_microsoft = _as_sql_json_keytransform
         if django.VERSION >= (4, 1):
             if isinstance(node, Window):
