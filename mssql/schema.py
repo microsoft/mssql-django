@@ -22,7 +22,7 @@ from django.db.backends.ddl_references import (
 )
 from django import VERSION as django_version
 from django.core.exceptions import FieldDoesNotExist
-from django.db.models import NOT_PROVIDED, Index, UniqueConstraint
+from django.db.models import F, NOT_PROVIDED, Index, UniqueConstraint
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.fields.related import ForeignKey
 from django.db.models.sql.where import AND
@@ -52,6 +52,14 @@ class Statement(DjStatement):
 
 
 class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
+    def _rename_statement_column_references(self, statement, table, old_column, new_column):
+        statement.rename_column_references(table, old_column, new_column)
+        condition = statement.parts.get('condition')
+        if condition:
+            statement.parts['condition'] = condition.replace(
+                f'[{old_column}]', f'[{new_column}]'
+            )
+
 
     _sql_check_constraint = " CONSTRAINT %(name)s CHECK (%(check)s)"
     _sql_select_default_constraint_name = "SELECT" \
@@ -594,14 +602,40 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     index_name, model._meta.db_table, columns_to_recreate_index, filter_definition)
                 self.execute(self._db_table_delete_constraint_sql(
                     self.sql_delete_index, model._meta.db_table, index_name))
+
+            meta_indexes_to_restore = []
+            existing_index_names = set(
+                self._db_table_constraint_names(model._meta.db_table, index=True)
+            )
+            for index in model._meta.indexes:
+                if (
+                    index.name in existing_index_names
+                    and old_field.name in self._get_condition_field_names(index.condition)
+                ):
+                    statement = index.create_sql(model, self)
+                    if statement:
+                        meta_indexes_to_restore.append(statement)
+                        self.execute(
+                            self._delete_constraint_sql(
+                                self.sql_delete_index, model, index.name
+                            )
+                        )
+
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
             # Restore index(es) now the column has been renamed
             if sql_restore_index:
                 self.execute(sql_restore_index.replace(f'[{old_field.column}]', f'[{new_field.column}]'))
+            for statement in meta_indexes_to_restore:
+                self._rename_statement_column_references(
+                    statement, model._meta.db_table, old_field.column, new_field.column
+                )
+                self.execute(statement)
             # Rename all references to the renamed column.
             for sql in self.deferred_sql:
                 if isinstance(sql, DjStatement):
-                    sql.rename_column_references(model._meta.db_table, old_field.column, new_field.column)
+                    self._rename_statement_column_references(
+                        sql, model._meta.db_table, old_field.column, new_field.column
+                    )
 
         # ===============================================================================
         # 2. Column alter preparation
@@ -955,7 +989,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # For other changes, only restore indexes involving the altered field.
             # --------------------------------------------------------------------------------
             for index in model._meta.indexes:
-                replacements = meta_index_replacements.get(index.name)
+                replacements = meta_index_replacements.get(index.name, {})
                 try:
                     index_fields = [
                         model._meta.get_field(replacements.get(field_name, field_name))
@@ -1116,6 +1150,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             )
             return cursor.fetchall()
 
+    def _get_expression_field_names(self, expression):
+        if isinstance(expression, F):
+            return [expression.name]
+        if hasattr(expression, 'get_source_expressions'):
+            return [
+                field_name
+                for source_expression in expression.get_source_expressions()
+                for field_name in self._get_expression_field_names(source_expression)
+            ]
+        return []
+
     def _get_condition_field_names(self, condition):
         if condition is None:
             return []
@@ -1123,8 +1168,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for child in condition.children:
             if hasattr(child, 'children'):
                 field_names.extend(self._get_condition_field_names(child))
-            else:
+            elif isinstance(child, tuple):
                 field_names.append(child[0].split('__', 1)[0])
+            else:
+                field_names.extend(self._get_expression_field_names(child))
         return field_names
 
     def _get_meta_index_replacements(self, model):
@@ -1194,12 +1241,26 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for index, child in enumerate(condition.children):
             if hasattr(child, 'children'):
                 self._replace_condition_field_names(child, replacements)
-            else:
+            elif isinstance(child, tuple):
                 field_name, lookup = child[0].split('__', 1) if '__' in child[0] else (child[0], '')
                 if field_name in replacements:
                     condition.children[index] = (
                         replacements[field_name] + ('__' + lookup if lookup else ''), child[1]
                     )
+            else:
+                condition.children[index] = self._replace_expression_field_names(
+                    child, replacements
+                )
+
+    def _replace_expression_field_names(self, expression, replacements):
+        if isinstance(expression, F):
+            return F(replacements.get(expression.name, expression.name))
+        if hasattr(expression, 'get_source_expressions'):
+            expression.set_source_expressions([
+                self._replace_expression_field_names(source_expression, replacements)
+                for source_expression in expression.get_source_expressions()
+            ])
+        return expression
 
     def _delete_indexes(self, model, old_field, new_field, meta_index_replacements=None):
         if (
@@ -1251,7 +1312,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 index_columns.append(columns)
         for columns in {tuple(columns) for columns in index_columns}:
             index_names.extend(self._constraint_names(model, columns, index=True))
-        for index_name in set(index_names):
+        existing_index_names = set(
+            self._db_table_constraint_names(model._meta.db_table, index=True)
+        )
+        for index_name in set(index_names) & existing_index_names:
             self.execute(self._delete_constraint_sql(self.sql_delete_index, model, index_name))
         return index_names
 
@@ -1262,7 +1326,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # afterwards then that is handled separately in _alter_field
         if old_field.unique and new_field.unique:
             unique_columns.append([old_field.column])
-
         # Also consider unique_together because, although this is implemented with a filtered unique INDEX now, we
         # need to handle the possibility that we're acting on a database previously created by an older version of
         # this backend, where unique_together used to be implemented with a CONSTRAINT
