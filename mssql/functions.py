@@ -464,6 +464,13 @@ def json_KeyTransformExact(self, compiler, connection):
 def json_KeyTransformIExact_as_sql(self, compiler, connection):
     """Backport Django 6.1's vendor-aware JSON null delegation."""
     if self.rhs is None:
+        if connection.vendor != 'microsoft':
+            # can_use_none_as_rhs=True suppresses Django's build-time
+            # iexact=None -> isnull=True rewrite (query.py) for every vendor.
+            # Non-SQL-Server backends kept the pre-6.1 IS NULL semantics, so
+            # replay that rewrite here to leave their results unchanged.
+            isnull_lookup = self.lhs.get_lookup('isnull')(self.lhs, True)
+            return isnull_lookup.as_sql(compiler, connection)
         key_transform = KeyTransform(self.lhs.key_name, self.lhs.lhs)
         exact_lookup = key_transform.get_lookup('exact')(key_transform, self.rhs)
         vendor_method = getattr(

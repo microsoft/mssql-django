@@ -149,6 +149,28 @@ class TestJSONField(TestCase):
         )
 
     @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
+    @skipUnless(
+        _check_jsonfield_supported_sqlite(),
+        "JSONField not supported by SQLite on this platform and Python version",
+    )
+    def test_json_null_iexact_none_preserves_secondary_database(self):
+        # Importing this backend enables None as an iexact right-hand side for
+        # every vendor, which suppresses Django's build-time iexact=None ->
+        # isnull=True rewrite. A non-SQL-Server database must still see its
+        # native result: pre-6.1 a missing key matched (IS NULL semantics),
+        # while 6.1 unified iexact=None to match the JSON null value.
+        json_null = JSONModel(value={"nullable": None})
+        json_null.save(using='sqlite')
+        missing = JSONModel(value={"other": "value"})
+        missing.save(using='sqlite')
+
+        result = list(
+            JSONModel.objects.using('sqlite').filter(value__nullable__iexact=None)
+        )
+        expected = [json_null] if VERSION >= (6, 1) else [missing]
+        self.assertSequenceEqual(result, expected)
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_json_null_iexact_uses_registered_exact_lookup(self):
         class CustomExact(Lookup):
             lookup_name = 'exact'
