@@ -1902,6 +1902,51 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 catalog = self._get_index_catalog(result.model, index_name)
                 self.assertIn('[aa]', catalog[0][2])
 
+    def test_expression_filtered_meta_index_retained_after_rename_and_alter(self):
+        """
+        Field references nested in positional lookup expressions must be updated
+        when a rename precedes an alteration that recreates the filtered index.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestExpressionFilteredRename{suffix}'
+                index_name = f'idx_expression_rename{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(Exact(models.F('a'), models.Value('value'))),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_expression_filtered_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self.assertIn('[aa]', self._get_index_catalog(result.model, index_name)[0][2])
+
     def test_covering_meta_index_retained_after_rename_and_alter(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
