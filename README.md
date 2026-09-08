@@ -73,7 +73,8 @@ DATABASE_CONNECTION_POOLING = False
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `driver` | String | `"ODBC Driver 18 for SQL Server"` | ODBC driver to use. Auto-falls back to Driver 17 if 18 is not installed. |
+| `python_driver` | String | — | Opt in to the [mssql-python](https://github.com/microsoft/mssql-python) driver by setting this to `"mssql_python"`. Omit it (the default) to use pyodbc. See [Selecting the database driver](#selecting-the-database-driver) below. |
+| `driver` | String | `"ODBC Driver 18 for SQL Server"` | ODBC driver to use (pyodbc path). Auto-falls back to Driver 17 if 18 is not installed. |
 | `isolation_level` | String | `None` | [Transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql): `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SNAPSHOT`, or `SERIALIZABLE` |
 | `dsn` | String | — | Named DSN, can be used instead of `HOST` |
 | `host_is_server` | Boolean | `False` | Set to `True` to use `HOST`/`PORT` directly with FreeTDS instead of a `freetds.conf` dataserver name. [Details](https://www.freetds.org/userguide/dsnless.html) |
@@ -86,6 +87,42 @@ DATABASE_CONNECTION_POOLING = False
 | `query_timeout` | Integer | `0` | Query timeout in seconds (`0` = disabled) |
 | `setencoding` / `setdecoding` | List | — | pyodbc [encoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) / [decoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding) config |
 | `return_rows_bulk_insert` | Boolean | `False` | Allow returning rows from bulk insert. Must be `False` if tables have triggers. |
+
+### Selecting the database driver
+
+mssql-django uses **pyodbc** by default. Starting with 2.0 you can opt in to
+the [mssql-python](https://github.com/microsoft/mssql-python) driver
+per-connection, without changing `ENGINE`:
+
+```python
+DATABASES = {
+    'default': {
+        'ENGINE': 'mssql',
+        'NAME': 'mydb',
+        'USER': 'user',
+        'PASSWORD': 'password',
+        'HOST': 'myserver.database.windows.net',
+        'PORT': '',
+        'OPTIONS': {
+            'python_driver': 'mssql_python',  # omit to use pyodbc (the default)
+        },
+    },
+}
+```
+
+Notes:
+
+- **Opt-in and non-breaking.** Omitting `python_driver` keeps today's pyodbc
+  behavior, so existing configurations are unaffected.
+- **No separate ODBC install.** mssql-python bundles ODBC Driver 18, whose
+  defaults require encryption. For a server with a self-signed certificate,
+  add `TrustServerCertificate=yes` to `extra_params` (or configure a trusted
+  certificate).
+- **Ignored keywords.** When `python_driver` is set, the pyodbc-only
+  `driver`, `dsn`, `host_is_server`, and `unicode_results` options do not
+  apply; the bundled driver manages driver selection.
+- **Requirements.** Python 3.10 or newer, and `mssql-python` installed
+  (`pip install mssql-django[mssql-python]`).
 
 ### Backend-Specific Settings
 
