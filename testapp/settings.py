@@ -346,11 +346,6 @@ if VERSION >= (6, 1):
         # TODO: strip the redundant boolean comparison in the compiler.
         'lookup.tests.LookupTests.test_exact_booleanfield_annotation',
 
-        # SQL Server LIKE treats [ ] as a character-class wildcard; escaping a column
-        # reference (F()) used as a LIKE pattern doesn't cover the bracket case.
-        # TODO: escape []-wildcards for column-referencing __contains/__startswith.
-        'expressions.tests.ExpressionsTests.test_patterns_escape',
-
         # bulk_batch_size is capped for SQL Server's 2100-parameter limit, so the
         # "unlimited" (no-fields) case doesn't match Django's expected large batch size.
         'backends.base.test_operations.DatabaseOperationTests.test_bulk_batch_size_unlimited',
