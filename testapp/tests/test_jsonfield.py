@@ -158,17 +158,32 @@ class TestJSONField(TestCase):
         # every vendor, which suppresses Django's build-time iexact=None ->
         # isnull=True rewrite. A non-SQL-Server database must still see its
         # native result: pre-6.1 a missing key matched (IS NULL semantics),
-        # while 6.1 unified iexact=None to match the JSON null value.
+        # while 6.1 unified iexact=None to match the JSON null value. Assert both
+        # the filter and the negated (exclude) direction so the three-valued
+        # behavior on the secondary database can't silently regress.
         json_null = JSONModel(value={"nullable": None})
         json_null.save(using='sqlite')
         missing = JSONModel(value={"other": "value"})
         missing.save(using='sqlite')
+        present = JSONModel(value={"nullable": "value"})
+        present.save(using='sqlite')
 
-        result = list(
-            JSONModel.objects.using('sqlite').filter(value__nullable__iexact=None)
-        )
-        expected = [json_null] if VERSION >= (6, 1) else [missing]
-        self.assertSequenceEqual(result, expected)
+        included = JSONModel.objects.using('sqlite').filter(
+            value__nullable__iexact=None
+        ).order_by('pk')
+        excluded = JSONModel.objects.using('sqlite').exclude(
+            value__nullable__iexact=None
+        ).order_by('pk')
+        if VERSION >= (6, 1):
+            # 6.1 matches the JSON null value. The missing-key row yields a NULL
+            # predicate, so it drops out of both the filter and the exclude.
+            self.assertSequenceEqual(included, [json_null])
+            self.assertSequenceEqual(excluded, [present])
+        else:
+            # Pre-6.1 matches a missing key (IS NULL). exclude keeps the rows
+            # whose key resolves to a non-null JSON value.
+            self.assertSequenceEqual(included, [missing])
+            self.assertSequenceEqual(excluded, [json_null, present])
 
     @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_json_null_iexact_uses_registered_exact_lookup(self):
