@@ -62,10 +62,10 @@ jobs:
     env:
       MSSQL_PASSWORD: "MyPassword42"
       MSSQL_HOST: "127.0.0.1"
-      # Driver 17 defaults to Encrypt=no, so it connects to the container's self-signed
-      # certificate without TrustServerCertificate. This matches testapp/settings.py's
-      # default driver and the ADO Linux legs.
-      MSSQL_DRIVER: "ODBC Driver 17 for SQL Server"
+      # Driver 18 encrypts by default. Trust the ephemeral test container's self-signed
+      # certificate while keeping the connection encrypted.
+      MSSQL_DRIVER: "ODBC Driver 18 for SQL Server"
+      MSSQL_EXTRA_PARAMS: "TrustServerCertificate=yes"
 
     steps:
       - name: Checkout
@@ -78,7 +78,7 @@ jobs:
           cache: pip
           cache-dependency-path: setup.py
 
-      - name: Install ODBC Driver 17
+      - name: Install ODBC Driver 18
         run: |
           set -euo pipefail
           curl -sSL -O "https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb"
@@ -90,7 +90,7 @@ jobs:
             echo "apt-get update failed (attempt $i), retrying in 10s..."
             sleep 10
           done
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
 
       - name: Install mssql-django
         run: |
@@ -105,10 +105,14 @@ jobs:
           import os, sys
           import pyodbc
           try:
+              driver = os.environ["MSSQL_DRIVER"]
+              host = os.environ["MSSQL_HOST"]
+              port = os.environ.get("MSSQL_PORT", "1433")
+              user = os.environ.get("MSSQL_USER", "sa")
               cn = pyodbc.connect(
-                  "DRIVER={ODBC Driver 17 for SQL Server};"
-                  "SERVER=127.0.0.1,1433;UID=sa;"
-                  "PWD=" + os.environ["MSSQL_PASSWORD"] + ";DATABASE=master",
+                  f"DRIVER={{{driver}}};SERVER={host},{port};UID={user};"
+                  "PWD=" + os.environ["MSSQL_PASSWORD"] + ";DATABASE=master;"
+                  + os.environ["MSSQL_EXTRA_PARAMS"],
                   timeout=5,
               )
               cn.close()

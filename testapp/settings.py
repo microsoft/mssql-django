@@ -15,7 +15,11 @@ DATABASES = {
         "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
         "HOST": os.environ.get("MSSQL_HOST", "localhost"),
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
-        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
+        "OPTIONS": {
+            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"),
+            "extra_params": os.environ.get("MSSQL_EXTRA_PARAMS", ""),
+            "return_rows_bulk_insert": True,
+        },
     },
     'other': {
         "ENGINE": "mssql",
@@ -24,7 +28,11 @@ DATABASES = {
         "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
         "HOST": os.environ.get("MSSQL_HOST", "localhost"),
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
-        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
+        "OPTIONS": {
+            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"),
+            "extra_params": os.environ.get("MSSQL_EXTRA_PARAMS", ""),
+            "return_rows_bulk_insert": True,
+        },
     },
 }
 
