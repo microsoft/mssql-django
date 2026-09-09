@@ -769,6 +769,8 @@ class TestMarsConnectionLive(TestCase):
         self.wrapper.ensure_connection()
 
     def test_fetchone_preserves_remaining_rows(self):
+        if not self.wrapper._is_microsoft_driver:
+            self.skipTest("Row preservation without MARS requires a Microsoft driver")
         self.assertFalse(self.wrapper.supports_mars)
         self.assertFalse(self.wrapper.features.can_use_chunked_reads)
         with self.wrapper.cursor() as cursor:
