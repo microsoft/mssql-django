@@ -1,0 +1,134 @@
+# Runs the fast `testapp` suite against a SQL Server 2025 service container on every PR
+# to `dev`. This is the GitHub-Actions half of the dual-run CI (the Azure DevOps pipeline
+# keeps the full tox matrix, including the ~6600-test upstream Django suite via test.sh).
+# The goal is an executable green/red signal on the backend so PRs are validated against a
+# real database, not just reasoned about statically.
+#
+# Scope is deliberately narrow: only `manage.py test testapp` (~200 tests, a couple of
+# minutes), never `test.sh`. The heavy Django-suite coverage stays on ADO during the
+# dual-run period.
+name: Test
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  testapp:
+    name: Py ${{ matrix.python }} / Django ${{ matrix.django }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      # A representative sample of the SUPPORTED support tier, not the full matrix
+      # (that lives on ADO during the dual-run). Every currently-supported Django minor
+      # is covered, each on its lowest supported Python and on the newest Python it runs
+      # on, so the Python floor/ceiling of each Django is exercised. EOL Django versions
+      # (<= 5.1) are intentionally excluded here; they stay on the ADO nightly legacy legs.
+      matrix:
+        include:
+          - { python: "3.10", django: "5.2", django-spec: "django>=5.2,<5.3" }
+          - { python: "3.13", django: "5.2", django-spec: "django>=5.2,<5.3" }
+          - { python: "3.12", django: "6.0", django-spec: "django>=6.0,<6.1" }
+          - { python: "3.14", django: "6.0", django-spec: "django>=6.0,<6.1" }
+          - { python: "3.12", django: "6.1", django-spec: "django>=6.1,<6.2" }
+          - { python: "3.14", django: "6.1", django-spec: "django>=6.1,<6.2" }
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2025-latest
+        env:
+          ACCEPT_EULA: "Y"
+          # Throwaway password for an ephemeral, per-run test container. Not a secret, so it
+          # is hardcoded rather than pulled from repo secrets; that keeps the workflow working
+          # for pull requests from forks. Kept in sync with the job-level MSSQL_PASSWORD below.
+          MSSQL_SA_PASSWORD: "MyPassword42"
+        ports:
+          - 1433:1433
+
+    env:
+      MSSQL_PASSWORD: "MyPassword42"
+      MSSQL_HOST: "127.0.0.1"
+      # Driver 18 encrypts by default. Trust the ephemeral test container's self-signed
+      # certificate while keeping the connection encrypted.
+      MSSQL_DRIVER: "ODBC Driver 18 for SQL Server"
+      MSSQL_EXTRA_PARAMS: "TrustServerCertificate=yes"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: setup.py
+
+      - name: Install ODBC Driver 18
+        run: |
+          set -euo pipefail
+          curl -sSL -O "https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb"
+          sudo dpkg -i packages-microsoft-prod.deb
+          rm packages-microsoft-prod.deb
+          # apt on the hosted runner occasionally holds the dpkg lock; retry a few times.
+          for i in 1 2 3 4 5; do
+            sudo apt-get update && break
+            echo "apt-get update failed (attempt $i), retrying in 10s..."
+            sleep 10
+          done
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
+
+      - name: Install mssql-django
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          pip install -e ".[test]" "${{ matrix.django-spec }}"
+
+      - name: Wait for SQL Server
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if python - <<'PY'
+          import os, sys
+          import pyodbc
+          try:
+              driver = os.environ["MSSQL_DRIVER"]
+              host = os.environ["MSSQL_HOST"]
+              port = os.environ.get("MSSQL_PORT", "1433")
+              user = os.environ.get("MSSQL_USER", "sa")
+              cn = pyodbc.connect(
+                  f"DRIVER={{{driver}}};SERVER={host},{port};UID={user};"
+                  "PWD=" + os.environ["MSSQL_PASSWORD"] + ";DATABASE=master;"
+                  + os.environ["MSSQL_EXTRA_PARAMS"],
+                  timeout=5,
+              )
+              cn.close()
+          except Exception as exc:  # noqa: BLE001
+              print(exc, file=sys.stderr)
+              sys.exit(1)
+          PY
+            then
+              echo "SQL Server is accepting authenticated connections (attempt $i)."
+              exit 0
+            fi
+            echo "Attempt $i/30: SQL Server not ready yet, waiting 5s..."
+            sleep 5
+          done
+          echo "SQL Server did not become ready in time."
+          exit 1
+
+      - name: Run testapp suite
+        run: python manage.py test testapp --noinput -v 2
