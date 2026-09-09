@@ -1176,6 +1176,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 field_names.extend(self._get_condition_field_names(child))
             elif isinstance(child, tuple):
                 field_names.append(child[0].split('__', 1)[0])
+                field_names.extend(self._get_expression_field_names(child[1]))
             else:
                 field_names.extend(self._get_expression_field_names(child))
         return field_names
@@ -1248,10 +1249,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self._replace_condition_field_names(child, replacements)
             elif isinstance(child, tuple):
                 field_name, lookup = child[0].split('__', 1) if '__' in child[0] else (child[0], '')
-                if field_name in replacements:
-                    condition.children[index] = (
-                        replacements[field_name] + ('__' + lookup if lookup else ''), child[1]
-                    )
+                condition.children[index] = (
+                    replacements.get(field_name, field_name) + ('__' + lookup if lookup else ''),
+                    self._replace_expression_field_names(child[1], replacements),
+                )
             else:
                 condition.children[index] = self._replace_expression_field_names(
                     child, replacements
