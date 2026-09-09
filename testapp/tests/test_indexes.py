@@ -1906,6 +1906,53 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     ['aa', 'bb'],
                     'A composite Meta.indexes definition was not restored after multiple renames.',
                 )
+    def test_filtered_meta_index_restored_after_multiple_renames(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFilteredMultipleRenames{suffix}'
+                index_name = f'idx_filtered_multiple{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('c', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['a'],
+                                condition=models.Q(c__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='c', new_name='cc'
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_multiple_renames',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['aa'],
+                    'A filtered Meta.indexes key was not restored after multiple renames.',
+                )
+                filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+                self.assertIn('[cc]', filter_definition)
+                self.assertNotIn('[c]', filter_definition)
+
     def test_filtered_meta_index_preserves_literal_after_field_rename(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
