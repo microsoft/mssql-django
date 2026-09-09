@@ -2071,6 +2071,48 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 )
                 catalog = self._get_index_catalog(result.model, index_name)
                 self.assertIn('[aa]', catalog[0][2])
+    def test_filtered_meta_index_tracks_tuple_rhs_expression(self):
+        migration = Migration('test_tuple_rhs_filtered_index', 'testapp')
+        migration.operations = [
+            migrations.CreateModel(
+                name='TestTupleRhsFilteredIndex',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                    ('c', models.CharField(max_length=20)),
+                ],
+            ),
+            migrations.RenameField(
+                model_name='testtuplerhsfilteredindex', old_name='a', new_name='aa'
+            ),
+            migrations.RenameField(
+                model_name='testtuplerhsfilteredindex', old_name='b', new_name='bb'
+            ),
+        ]
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+        with patch.object(conn.features, 'connection_persists_old_columns', False):
+            with conn.schema_editor(collect_sql=True, atomic=False) as editor:
+                project_state = migration.apply(ProjectState(), editor)
+                model = project_state.apps.get_model('testapp', 'TestTupleRhsFilteredIndex')
+                index = models.Index(
+                    fields=['c'],
+                    condition=models.Q(a=models.F('b')),
+                    name='idx_tuple_rhs_filtered',
+                )
+                self.assertEqual(
+                    editor._get_condition_field_names(index.condition), ['a', 'b']
+                )
+                editor.execute(
+                    editor._clone_index_with_replacements(
+                        index, {'a': 'aa', 'b': 'bb'}
+                    ).create_sql(model, editor)
+                )
+        index_sql = next(
+            sql for sql in editor.collected_sql if 'idx_tuple_rhs_filtered' in sql
+        )
+        self.assertIn('[aa]', index_sql)
+        self.assertIn('[bb]', index_sql)
 
     def test_expression_filtered_meta_index_retained_after_rename_and_alter(self):
         """
