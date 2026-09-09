@@ -1992,6 +1992,55 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn('[aa]', filter_definition)
                 self.assertIn("'[a]'", filter_definition)
                 self.assertNotIn("'[aa]'", filter_definition)
+    def test_filtered_meta_index_ignores_bracketed_literal(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestBracketedLiteral{suffix}'
+                index_name = f'idx_bracketed_literal{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(a='[b]'),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_bracketed_literal',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                catalog = self._get_index_catalog(result.model, index_name)
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['b'],
+                    'A filtered Meta.indexes key was not restored after an unrelated rename.',
+                )
+                self.assertIn('[aa]', catalog[0][2])
+                self.assertIn("'[b]'", catalog[0][2])
+                self.assertNotIn("'[aa]'", catalog[0][2])
 
     @expectedFailure
     def test_deferred_filtered_meta_index_after_field_rename(self):
