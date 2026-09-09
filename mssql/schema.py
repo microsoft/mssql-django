@@ -1137,6 +1137,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self.connection.close()
 
     def _get_index_metadata(self, model, index_name):
+        """Return key/include columns and the filter definition for a physical index."""
         with self.connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -1154,6 +1155,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             return cursor.fetchall()
 
     def _get_expression_field_names(self, expression):
+        """Return field names referenced recursively by an expression tree."""
         if isinstance(expression, F):
             return [expression.name]
         if hasattr(expression, 'get_source_expressions'):
@@ -1165,6 +1167,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         return []
 
     def _get_condition_field_names(self, condition):
+        """Return lookup and expression field names referenced by a Q condition."""
         if condition is None:
             return []
         field_names = []
@@ -1178,6 +1181,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         return field_names
 
     def _get_meta_index_replacements(self, model):
+        """Map each reconciled Meta index to its unambiguous stale field replacements."""
         fields_by_column = {field.column: field for field in model._meta.fields}
         replacements = {}
         for index in model._meta.indexes:
@@ -1221,6 +1225,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         return replacements
 
     def _clone_index_with_replacements(self, index, replacements):
+        """Clone an Index while replacing field names in keys, includes, and conditions."""
         if not replacements:
             return index
         _, args, kwargs = index.deconstruct()
@@ -1237,6 +1242,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         return index.__class__(*args, **kwargs)
 
     def _replace_condition_field_names(self, condition, replacements):
+        """Mutate a Q condition tree to replace referenced lookup and expression fields."""
         for index, child in enumerate(condition.children):
             if hasattr(child, 'children'):
                 self._replace_condition_field_names(child, replacements)
@@ -1252,6 +1258,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 )
 
     def _replace_expression_field_names(self, expression, replacements):
+        """Mutate an expression tree to replace F() field references."""
         if isinstance(expression, F):
             return F(replacements.get(expression.name, expression.name))
         if hasattr(expression, 'get_source_expressions'):
