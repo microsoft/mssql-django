@@ -11,7 +11,8 @@ from django.db.models import UniqueConstraint
 from django.db.models.lookups import Exact
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler, ProgrammingError
 from django.test import TestCase, TransactionTestCase
-from unittest import skipIf, expectedFailure
+from unittest import expectedFailure, skipIf
+from unittest.mock import patch
 
 from . import get_constraints
 from ..models import (
@@ -1998,39 +1999,36 @@ class TestMetaIndexesRetained(TransactionTestCase):
         A filtered Meta.indexes definition created with CreateModel is deferred
         until after the RenameField. Its condition retains the old column name.
         """
-        model_name = 'TestDeferredFilteredIndex'
-        index_name = 'idx_deferred_filtered'
-        result = self._run_migration_test(
-            operations_a=[
-                migrations.CreateModel(
-                    name=model_name,
-                    fields=[
-                        ('id', models.AutoField(primary_key=True)),
-                        ('a', models.CharField(max_length=20)),
-                        ('b', models.CharField(max_length=20)),
+        migration = Migration('test_deferred_filtered_index', 'testapp')
+        migration.operations = [
+            migrations.CreateModel(
+                name='TestDeferredFilteredIndex',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                ],
+                options={
+                    'indexes': [
+                        models.Index(
+                            fields=['b'],
+                            condition=models.Q(a='[a]'),
+                            name='idx_deferred_filtered',
+                        ),
                     ],
-                    options={
-                        'indexes': [
-                            models.Index(
-                                fields=['b'],
-                                condition=models.Q(a='[a]'),
-                                name=index_name,
-                            ),
-                        ],
-                    },
-                ),
-                migrations.RenameField(
-                    model_name=model_name.lower(), old_name='a', new_name='aa'
-                ),
-            ],
-            operations_b=[],
-            migration_name_prefix='test_deferred_filtered_index',
-            model_name=model_name,
-            use_single_migration=True,
-        )
-        filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
-        self.assertIn('[aa]', filter_definition)
-        self.assertIn("'[a]'", filter_definition)
+                },
+            ),
+            migrations.RenameField(
+                model_name='testdeferredfilteredindex', old_name='a', new_name='aa'
+            ),
+        ]
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+        with patch.object(conn.features, 'connection_persists_old_columns', False):
+            with conn.schema_editor(collect_sql=True, atomic=False) as editor:
+                migration.apply(ProjectState(), editor)
+        index_sql = next(sql for sql in editor.collected_sql if 'idx_deferred_filtered' in sql)
+        self.assertIn('[aa]', index_sql)
+        self.assertIn("'[a]'", index_sql)
 
     def test_filtered_meta_index_retained_after_rename_and_alter(self):
         for use_single_migration in [False, True]:
