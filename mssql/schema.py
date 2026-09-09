@@ -593,21 +593,36 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self._db_table_constraint_names(model._meta.db_table, index=True)
             )
             for index in model._meta.indexes:
-                if (
-                    index.name in existing_index_names
-                    and old_field.name in self._get_condition_field_names(index.condition)
-                ):
-                    restored_index = self._clone_index_with_replacements(
-                        index, {old_field.name: new_field.name}
+                if index.name not in existing_index_names:
+                    continue
+                base_replacements = meta_index_replacements.get(index.name)
+                if base_replacements is None:
+                    continue
+                condition_names = {
+                    base_replacements.get(name, name)
+                    for name in self._get_condition_field_names(index.condition)
+                }
+                if old_field.name not in condition_names:
+                    continue
+                replacements = {
+                    stale_name: (
+                        new_field.name if field_name == old_field.name else field_name
                     )
+                    for stale_name, field_name in base_replacements.items()
+                }
+                replacements.setdefault(old_field.name, new_field.name)
+                restored_index = self._clone_index_with_replacements(index, replacements)
+                try:
                     statement = restored_index.create_sql(new_field.model, self)
-                    if statement:
-                        meta_indexes_to_restore.append(statement)
-                        self.execute(
-                            self._delete_constraint_sql(
-                                self.sql_delete_index, model, index.name
-                            )
+                except (AttributeError, FieldDoesNotExist):
+                    continue
+                if statement:
+                    meta_indexes_to_restore.append(statement)
+                    self.execute(
+                        self._delete_constraint_sql(
+                            self.sql_delete_index, model, index.name
                         )
+                    )
 
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
             # Restore index(es) now the column has been renamed
