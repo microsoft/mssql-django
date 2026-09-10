@@ -16,6 +16,50 @@ Reviews are advisory. Prefer a few high-value comments to many low-value ones. A
 significant finding to a concrete query or model operation that behaves differently before
 vs. after the change, not to an abstract concern.
 
+## Regression Police: executable review
+
+For behavior-changing pull requests, act as **Regression Police**: turn plausible SQL Server
+regressions into disposable, executable proofs before reporting them. Static reasoning may
+identify candidates, but it is not evidence when the behavior can be exercised in `testapp`.
+
+1. **Freeze the evidence target.** Record `git rev-parse HEAD` before testing. Publish evidence
+   only for that SHA, and stop if the checkout changes during review.
+2. **Mine a small suspect set.** Trace changed code through its callers and choose at most three
+   high-value candidates. Prioritize silent wrong results, data loss, broken migrations, and
+   cross-version failures over style or speculative edge cases.
+3. **Write one minimal proof per candidate.** Add a disposable test under `testapp/tests/` using
+   existing models and helpers. Exercise the real ORM and SQL Server behavior, avoid mocks for
+   database behavior, and assert observable rows, schema, or errors rather than SQL text when
+   possible. Do not commit the generated test.
+4. **Run the identical test on head and base.** Run only the generated test on the reviewed SHA,
+   then copy it unchanged to a detached worktree at `git merge-base HEAD origin/dev` and run the
+   same command there. Keep the two runs sequential so they do not collide on shared test
+   databases.
+5. **Interpret the differential correctly.**
+
+   | Base | Head | Verdict |
+   |------|------|---------|
+   | Pass | Fail | The pull request introduces a regression. |
+   | Fail | Pass | The pull request fixes the exercised behavior. |
+   | Fail | Fail | Pre-existing or an incomplete claimed fix; not a new regression. |
+   | Pass | Pass | The candidate is disproved. |
+
+   Setup failures, flaky outcomes, different tests, or a stale SHA are inconclusive and must
+   not be reported as proof.
+6. **Run the Devil's Advocate Rubber Duck.** Assume each candidate is wrong. Challenge the
+   test's trigger, attribution, determinism, user impact, nearby input shapes, and use of public
+   behavior. Classify it internally as `KEEP`, `HARDEN`, or `DROP`. Rerun both revisions after
+   hardening and drop anything that does not survive.
+7. **Apply Ponytail.** Shrink every surviving test and recommendation to the smallest case that
+   still proves the behavior. Reuse existing code and point to the narrowest shared root-cause
+   correction instead of proposing a new abstraction.
+
+Publish only `KEEP` findings on changed lines. Start a newly introduced defect with
+`Regression Police: Proven regression` and an incomplete claimed fix with
+`Regression Police: Proven incomplete fix`. Include concrete user impact, the minimal test,
+the exact command, base/head outcomes, and the smallest credible fix direction. Do not treat
+pending or absent Azure DevOps runs as evidence, and do not fetch routine successful logs.
+
 ## Review procedure
 
 1. **Restate the change and its blast radius.** What ORM behavior does this alter, and which
@@ -25,7 +69,8 @@ vs. after the change, not to an abstract concern.
 2. **Run the cross-cutting checks below** for the areas the PR touches.
 3. **Check the change across the whole support matrix**, not just the author's version.
 4. **Check test discipline** (see Testing).
-5. **Calibrate severity** (see Severity) and report.
+5. **Run Regression Police** for executable behavior candidates.
+6. **Calibrate severity** (see Severity) and report.
 
 ## Cross-version safety (the most common real defect)
 
