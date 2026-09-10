@@ -14,6 +14,8 @@ from django.test import TestCase, TransactionTestCase
 from unittest import expectedFailure, skipIf
 from unittest.mock import patch
 
+from mssql.schema import _clone_index_with_replacements
+
 from . import get_constraints
 from ..models import (
     TestIndexesRetainedRenamed,
@@ -2184,6 +2186,78 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn((True, 'c', filter_definition), catalog)
                 self.assertIn('[aa]', filter_definition)
 
+    def test_filtered_meta_index_survives_reconstructed_rename_state(self):
+        """
+        MigrationExecutor startup rebuilds applied-migration state without replaying
+        DDL, unlike the existing across-migration rename test.
+        """
+        class MigrationA(Migration):
+            initial = True
+            operations = [
+                migrations.CreateModel(
+                    name='TestFilteredIndexReconstructed',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20, null=True)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                ),
+                migrations.AddIndex(
+                    model_name='testfilteredindexreconstructed',
+                    index=models.Index(
+                        fields=['b'],
+                        condition=models.Q(a__isnull=False),
+                        name='idx_filtered_reconstructed',
+                    ),
+                ),
+            ]
+
+        class MigrationB(Migration):
+            operations = [
+                migrations.RenameField(
+                    model_name='testfilteredindexreconstructed',
+                    old_name='a',
+                    new_name='aa',
+                ),
+            ]
+
+        class MigrationC(Migration):
+            operations = [
+                migrations.AlterField(
+                    model_name='testfilteredindexreconstructed',
+                    name='b',
+                    field=models.CharField(max_length=40),
+                ),
+            ]
+
+        migration_a = MigrationA('test_filtered_index_reconstructed_a', 'testapp')
+        migration_b = MigrationB('test_filtered_index_reconstructed_b', 'testapp')
+        migration_c = MigrationC('test_filtered_index_reconstructed_c', 'testapp')
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+
+        with conn.schema_editor(atomic=True) as editor:
+            applied_state = migration_a.apply(ProjectState(), editor)
+        with conn.schema_editor(atomic=True) as editor:
+            migration_b.apply(applied_state, editor)
+
+        # Deliberately bypass Migration.apply(), as MigrationExecutor does while
+        # rebuilding applied state through mutate_state().
+        rebuilt_state = migration_a.mutate_state(ProjectState())
+        rebuilt_state = migration_b.mutate_state(rebuilt_state)
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = migration_c.apply(rebuilt_state, editor)
+
+        model = project_state.apps.get_model('testapp', 'TestFilteredIndexReconstructed')
+        constraints = get_constraints(table_name=model._meta.db_table)
+        self._assert_named_index_columns(
+            constraints,
+            'idx_filtered_reconstructed',
+            ['b'],
+            'A reconstructed filtered Meta.index was not restored after a rename.',
+        )
+        catalog = self._get_index_catalog(model, 'idx_filtered_reconstructed')
+        self.assertIn('[aa]', catalog[0][2])
+
     def test_filtered_meta_index_retained_after_logical_rename(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
@@ -2432,7 +2506,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
                                 editor._get_condition_field_names(index.condition), ['aa', 'bb']
                             )
                             editor.execute(
-                                editor._clone_index_with_replacements(index, {}).create_sql(
+                                _clone_index_with_replacements(index, {}).create_sql(
                                     model, editor
                                 )
                             )
@@ -2468,7 +2542,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
                                 editor._get_condition_field_names(index.condition), ['aa', 'bb']
                             )
                             editor.execute(
-                                editor._clone_index_with_replacements(index, {}).create_sql(
+                                _clone_index_with_replacements(index, {}).create_sql(
                                     model, editor
                                 )
                             )
