@@ -43,6 +43,16 @@ class Statement(DjStatement):
         return self.template == other.template and str(self.parts['name']) == str(other.parts['name'])
 
 
+class NullableColumns(Columns):
+    """Reference nullable unique-index columns in deferred schema SQL."""
+
+    def __str__(self):
+        return ' WHERE ' + ' AND '.join(
+            '%s IS NOT NULL' % self.quote_name(column) for column in self.columns
+        )
+
+
+
 
 class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
@@ -1522,15 +1532,20 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             include = self._index_include_sql(model, include)
 
             if condition:
+                condition = (
+                    condition
+                    if isinstance(condition, NullableColumns)
+                    else ' WHERE ' + condition
+                )
                 return Statement(
                     self.sql_create_unique_index,
                     table=self.quote_name(table),
                     name=name,
                     columns=columns,
-                    condition=' WHERE ' + condition,
+                    condition=condition,
                     **statement_args,
                     include=include,
-                    nulls_distinct=''
+                    nulls_distinct='',
                 ) if self.connection.features.supports_partial_indexes else None
             else:
                 return Statement(
@@ -1686,7 +1701,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for field_names in model._meta.unique_together:
             fields = [model._meta.get_field(field) for field in field_names]
             columns = [model._meta.get_field(field).column for field in field_names]
-            condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+            condition = NullableColumns(
+                model._meta.db_table, columns, self.quote_name
+            )
             if django_version >= (4, 0):
                 self.deferred_sql.append(self._create_unique_sql(model, fields, condition=condition))
             else:
