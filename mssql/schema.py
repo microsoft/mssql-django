@@ -28,6 +28,101 @@ from django.db.models.fields.related import ForeignKey
 from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_str
+from django.db.migrations.state import ProjectState
+
+
+def _clone_index_with_replacements(index, replacements):
+    """Clone a structured Meta.indexes definition with renamed field references.
+
+    Django stores indexes as structured Index and Q objects in migration state.
+    Cloning from deconstruct() preserves index options without changing the
+    historical definition retained by a preserved project state.
+    """
+    if not replacements:
+        return index
+    _, args, kwargs = index.deconstruct()
+    kwargs['fields'] = [
+        ('-' if field_name.startswith('-') else '') + replacements.get(
+            field_name.lstrip('-'), field_name.lstrip('-')
+        )
+        for field_name in index.fields
+    ]
+    if index.include:
+        kwargs['include'] = [
+            replacements.get(field_name, field_name) for field_name in index.include
+        ]
+    if index.condition:
+        condition = copy.deepcopy(index.condition)
+        _replace_condition_field_names(condition, replacements)
+        kwargs['condition'] = condition
+    return index.__class__(*args, **kwargs)
+
+
+def _replace_condition_field_names(condition, replacements):
+    """Rewrite lookup roots and nested F() references in a copied Q tree.
+
+    Only field references are replaced; literal condition values are retained.
+    """
+    for index, child in enumerate(condition.children):
+        if hasattr(child, 'children'):
+            _replace_condition_field_names(child, replacements)
+        elif isinstance(child, tuple):
+            field_name, lookup = (
+                child[0].split('__', 1) if '__' in child[0] else (child[0], '')
+            )
+            condition.children[index] = (
+                replacements.get(field_name, field_name) + ('__' + lookup if lookup else ''),
+                _replace_expression_field_names(child[1], replacements),
+            )
+        else:
+            condition.children[index] = _replace_expression_field_names(
+                child, replacements
+            )
+
+
+def _replace_expression_field_names(expression, replacements):
+    """Rewrite F() references in a copied condition expression tree."""
+    if isinstance(expression, F):
+        return F(replacements.get(expression.name, expression.name))
+    if hasattr(expression, 'get_source_expressions'):
+        expression.set_source_expressions([
+            _replace_expression_field_names(source_expression, replacements)
+            for source_expression in expression.get_source_expressions()
+        ])
+    return expression
+
+
+def _rename_field_with_meta_indexes(self, app_label, model_name, old_name, new_name):
+    """Keep structured Meta.indexes state consistent with Django field renames.
+
+    Django's rename_field() updates fields but not ModelState.options['indexes'].
+    RenameField.database_forwards() is too late to make reconstructed state
+    durable, and mssql imports this module while initializing its backend before
+    MigrationExecutor builds state.
+    """
+    model_state = self.models[(app_label, model_name)]
+    if old_name not in model_state.fields:
+        return ProjectState._mssql_original_rename_field(
+            self, app_label, model_name, old_name, new_name
+        )
+    indexes = model_state.options.get('indexes')
+    if indexes is not None:
+        # ModelState.clone() shallow-copies options, so replace the list to protect
+        # the preserved state used by a migration operation.
+        model_state.options['indexes'] = [
+            _clone_index_with_replacements(index, {old_name: new_name})
+            for index in indexes
+        ]
+    return ProjectState._mssql_original_rename_field(
+        self, app_label, model_name, old_name, new_name
+    )
+
+
+# The private ProjectState sentinel prevents a module reload from stacking wrappers.
+if not hasattr(ProjectState, '_mssql_original_rename_field'):
+    ProjectState._mssql_original_rename_field = ProjectState.rename_field
+    ProjectState.rename_field = _rename_field_with_meta_indexes
+
 
 if django_version >= (4, 0):
     from django.db.models.sql import Query
@@ -408,28 +503,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             params = ()
         return f"GENERATED ALWAYS AS ({expression_sql}) {persistency_sql}", params
 
-    def alter_field(self, model, old_field, new_field, strict=False):
-        """Persist structured Meta.indexes references through field renames.
-
-        RenameField updates ModelState fields but not its indexes option. Rewrite
-        the rendered destination model's original index definitions before the
-        base editor can short-circuit a logical rename or emit physical DDL.
-        """
-        if old_field.name != new_field.name:
-            self._rename_meta_index_references(
-                getattr(new_field, 'model', model), old_field.name, new_field.name
-            )
-        super().alter_field(model, old_field, new_field, strict=strict)
-
-    def _rename_meta_index_references(self, model, old_name, new_name):
-        """Update migration-state Meta indexes for a logical field rename."""
-        indexes = model._meta.original_attrs.get('indexes')
-        if indexes is None:
-            return
-        indexes[:] = [
-            self._clone_index_with_replacements(index, {old_name: new_name})
-            for index in indexes
-        ]
 
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
@@ -638,7 +711,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     **base_replacements,
                     old_field.name: new_field.name,
                 }
-                restored_index = self._clone_index_with_replacements(index, replacements)
+                restored_index = _clone_index_with_replacements(index, replacements)
                 statement = restored_index.create_sql(new_field.model, self)
                 if statement:
                     meta_indexes_to_restore.append(statement)
@@ -1052,7 +1125,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # names and attributes. Stale references are repaired only when the
             # existing physical index supplied an unambiguous replacement.
             for index, replacements in indexes_to_restore:
-                restored_index = self._clone_index_with_replacements(index, replacements)
+                restored_index = _clone_index_with_replacements(index, replacements)
                 create_index_sql_statement = restored_index.create_sql(meta_model, self)
                 if create_index_sql_statement and (str(create_index_sql_statement)
                         not in [str(sql) for sql in self.deferred_sql] + [str(statement[0]) for statement in post_actions]
@@ -1239,49 +1312,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         return replacements
 
 
-    def _clone_index_with_replacements(self, index, replacements):
-        """Clone an Index while replacing field names in keys, includes, and conditions."""
-        if not replacements:
-            return index
-        _, args, kwargs = index.deconstruct()
-        kwargs['fields'] = [
-            ('-' if field_name.startswith('-') else '') + replacements.get(field_name.lstrip('-'), field_name.lstrip('-'))
-            for field_name in index.fields
-        ]
-        if index.include:
-            kwargs['include'] = [replacements.get(field_name, field_name) for field_name in index.include]
-        if index.condition:
-            condition = copy.deepcopy(index.condition)
-            self._replace_condition_field_names(condition, replacements)
-            kwargs['condition'] = condition
-        return index.__class__(*args, **kwargs)
-
-    def _replace_condition_field_names(self, condition, replacements):
-        """Mutate a Q condition tree to replace referenced lookup and expression fields."""
-        for index, child in enumerate(condition.children):
-            if hasattr(child, 'children'):
-                self._replace_condition_field_names(child, replacements)
-            elif isinstance(child, tuple):
-                field_name, lookup = child[0].split('__', 1) if '__' in child[0] else (child[0], '')
-                condition.children[index] = (
-                    replacements.get(field_name, field_name) + ('__' + lookup if lookup else ''),
-                    self._replace_expression_field_names(child[1], replacements),
-                )
-            else:
-                condition.children[index] = self._replace_expression_field_names(
-                    child, replacements
-                )
-
-    def _replace_expression_field_names(self, expression, replacements):
-        """Mutate an expression tree to replace F() field references."""
-        if isinstance(expression, F):
-            return F(replacements.get(expression.name, expression.name))
-        if hasattr(expression, 'get_source_expressions'):
-            expression.set_source_expressions([
-                self._replace_expression_field_names(source_expression, replacements)
-                for source_expression in expression.get_source_expressions()
-            ])
-        return expression
 
     def _delete_indexes(self, model, old_field, new_field, meta_index_replacements=None):
         if (
