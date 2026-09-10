@@ -16,6 +16,7 @@ from django.db.backends.base.schema import (
 )
 from django.db.backends.ddl_references import (
     Columns,
+    Expressions,
     IndexName,
     Statement as DjStatement,
     Table,
@@ -25,6 +26,7 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db.models import F, NOT_PROVIDED, Index, UniqueConstraint
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.fields.related import ForeignKey
+from django.db.models.sql import Query
 from django.db.models.sql.where import AND
 from django.db.transaction import TransactionManagementError
 from django.utils.encoding import force_str
@@ -124,9 +126,6 @@ if not hasattr(ProjectState, '_mssql_original_rename_field'):
     ProjectState.rename_field = _rename_field_with_meta_indexes
 
 
-if django_version >= (4, 0):
-    from django.db.models.sql import Query
-    from django.db.backends.ddl_references import Expressions
 # Import CompositePrimaryKey only if Django version is 5.2 or higher
 if django_version >= (5, 2):    
     from django.db.models.fields.composite import CompositePrimaryKey
@@ -145,6 +144,20 @@ class NullableColumns(Columns):
         return ' WHERE ' + ' AND '.join(
             '%s IS NOT NULL' % self.quote_name(column) for column in self.columns
         )
+
+class IndexCondition(Expressions):
+    """Reference a filtered Meta.index condition in deferred schema SQL."""
+
+    def __init__(self, model, condition, schema_editor):
+        query = Query(model=model, alias_cols=False)
+        where = query.build_where(condition)
+        compiler = query.get_compiler(connection=schema_editor.connection)
+        super().__init__(
+            model._meta.db_table, where, compiler, schema_editor.quote_value
+        )
+
+    def __str__(self):
+        return ' WHERE ' + super().__str__()
 
 
 
@@ -391,6 +404,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 sql = self._create_unique_sql(model, columns, condition=condition)
                 self.execute(sql)
 
+    def _create_deferred_meta_index_sql(self, model, index):
+        if index.condition is None:
+            return index.create_sql(model, self)
+        condition = index.condition
+        index = index.clone()
+        index.condition = None
+        statement = index.create_sql(model, self)
+        if statement is not None:
+            statement.parts['condition'] = IndexCondition(model, condition, self)
+        return statement
+
     def _model_indexes_sql(self, model):
         """
         Return a list of all index SQL statements (field indexes,
@@ -431,9 +455,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 not index.contains_expressions or
                 self.connection.features.supports_expression_indexes
             ):
-                output.append(index.create_sql(model, self))
+                sql = self._create_deferred_meta_index_sql(model, index)
+                if sql:
+                    output.append(sql)
             else:
-                output.append(index.create_sql(model, self))
+                sql = self._create_deferred_meta_index_sql(model, index)
+                if sql:
+                    output.append(sql)
         return output
 
     def _db_table_constraint_names(self, db_table, column_names=None, column_match_any=False,
@@ -727,10 +755,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(sql_restore_index.replace(f'[{old_field.column}]', f'[{new_field.column}]'))
             for statement in meta_indexes_to_restore:
                 self.execute(statement)
-            # Rename all references to the renamed column.
-            # Deferred Statement conditions are already-rendered SQL. Rewriting them
-            # would mutate string literals; filtered Meta.indexes in this path remain
-            # unsupported. See test_deferred_filtered_meta_index_after_field_rename.
+            # Rename all deferred references to the renamed column.
             for sql in self.deferred_sql:
                 if isinstance(sql, DjStatement):
                     sql.rename_column_references(
