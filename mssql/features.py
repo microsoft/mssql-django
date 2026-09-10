@@ -88,6 +88,20 @@ class DatabaseFeatures(BaseDatabaseFeatures):
         if django_version >= (5, 2, 4):
             supports_tuple_comparison_against_subquery = False
     @cached_property
+    def can_clone_databases(self):
+        # Cloning uses server-side BACKUP/RESTORE to disk, which the Azure SQL
+        # family (Database, Managed Instance, Fabric) does not allow. Detect the
+        # engine edition through a master-scoped connection: master exists even
+        # before the test database is created, so Django's runtests.py can
+        # evaluate this on a fresh server without connecting to the not-yet-
+        # created application database.
+        from mssql.base import _AZURE_EDITIONS
+        with self.connection._nodb_cursor() as cursor:
+            cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS integer)")
+            edition = cursor.fetchone()[0]
+        return edition not in _AZURE_EDITIONS
+
+    @cached_property
     def has_zoneinfo_database(self):
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT TOP 1 1 FROM sys.time_zone_info")
