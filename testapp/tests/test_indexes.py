@@ -2056,11 +2056,10 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn("'[b]'", catalog[0][2])
                 self.assertNotIn("'[aa]'", catalog[0][2])
 
-    @expectedFailure
     def test_deferred_filtered_meta_index_after_field_rename(self):
         """
-        A filtered Meta.indexes definition created with CreateModel is deferred
-        until after the RenameField. Its condition retains the old column name.
+        A filtered Meta.indexes condition remains structured until deferred SQL
+        executes, so a following RenameField updates its identifier only.
         """
         migration = Migration('test_deferred_filtered_index', 'testapp')
         migration.operations = [
@@ -2094,6 +2093,44 @@ class TestMetaIndexesRetained(TransactionTestCase):
         self.assertIn("'[a]'", index_sql)
 
     def test_filtered_meta_index_retained_after_rename_and_alter(self):
+
+    def test_deferred_filtered_meta_index_after_field_rename_executes(self):
+        index_name = 'idx_deferred_filtered_execution'
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name='TestDeferredFilteredIndexExecution',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                    options={
+                        'indexes': [
+                            models.Index(
+                                fields=['b'],
+                                condition=models.Q(a='[a]'),
+                                name=index_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.RenameField(
+                    model_name='testdeferredfilteredindexexecution',
+                    old_name='a',
+                    new_name='aa',
+                ),
+            ],
+            migration_name_prefix='test_deferred_filtered_index_execution',
+            model_name='TestDeferredFilteredIndexExecution',
+            use_single_migration=True,
+        )
+        filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+        self.assertIn('[aa]', filter_definition)
+        self.assertIn("'[a]'", filter_definition)
+
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
                 suffix = '_combined' if use_single_migration else '_split'
