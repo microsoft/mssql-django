@@ -398,6 +398,29 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             params = ()
         return f"GENERATED ALWAYS AS ({expression_sql}) {persistency_sql}", params
 
+    def alter_field(self, model, old_field, new_field, strict=False):
+        """Persist structured Meta.indexes references through field renames.
+
+        RenameField updates ModelState fields but not its indexes option. Rewrite
+        the rendered destination model's original index definitions before the
+        base editor can short-circuit a logical rename or emit physical DDL.
+        """
+        if old_field.name != new_field.name:
+            self._rename_meta_index_references(
+                new_field.model, old_field.name, new_field.name
+            )
+        super().alter_field(model, old_field, new_field, strict=strict)
+
+    def _rename_meta_index_references(self, model, old_name, new_name):
+        """Update migration-state Meta indexes for a logical field rename."""
+        indexes = model._meta.original_attrs.get('indexes')
+        if indexes is None:
+            return
+        indexes[:] = [
+            self._clone_index_with_replacements(index, {old_name: new_name})
+            for index in indexes
+        ]
+
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
         """Actually perform a "physical" (non-ManyToMany) field update."""
@@ -443,6 +466,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if (old_is_auto and not new_is_auto) or (not old_is_auto and new_is_auto):
             raise NotImplementedError("the backend doesn't support altering from %s to %s." %
                 (old_field.get_internal_type(), new_field.get_internal_type()))
+        meta_model = new_field.model
+
+
+        meta_index_replacements = self._get_meta_index_replacements(model)
 
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
@@ -505,10 +532,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 )
                 for fk_name in rel_fk_names:
                     self.execute(self._delete_constraint_sql(self.sql_delete_fk, new_rel.related_model, fk_name))
-        catalog_meta_index_replacements = self._get_meta_index_replacements(model)
-        meta_index_replacements = self._merge_meta_index_replacements(
-            catalog_meta_index_replacements
-        )
 
         # If working with an AutoField or BigAutoField drop all indexes on the related table
         # This is needed when doing ALTER column statements on IDENTITY fields
@@ -565,12 +588,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(self._delete_constraint_sql(self.sql_delete_check, model, constraint_name))
         # Have they renamed the column?
         if old_field.column != new_field.column:
-            self._record_meta_index_rename_replacements(
-                model, old_field, new_field, meta_index_replacements
-            )
-            meta_index_replacements = self._merge_meta_index_replacements(
-                catalog_meta_index_replacements
-            )
             sql_restore_index = ''
             # Drop any unique indexes which include the column to be renamed
             index_names = self._db_table_constraint_names(
@@ -604,22 +621,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             for index in model._meta.indexes:
                 if index.name not in existing_index_names:
                     continue
-                base_replacements = meta_index_replacements.get(index.name)
-                if base_replacements is None:
-                    continue
-                condition_names = {
-                    base_replacements.get(name, name)
-                    for name in self._get_condition_field_names(index.condition)
-                }
-                if new_field.name not in condition_names:
+                base_replacements = meta_index_replacements.get(index.name, {})
+                if old_field.name not in self._get_condition_field_names(index.condition):
                     continue
                 replacements = {
-                    stale_name: (
-                        new_field.name if field_name == old_field.name else field_name
-                    )
-                    for stale_name, field_name in base_replacements.items()
+                    **base_replacements,
+                    old_field.name: new_field.name,
                 }
-                replacements.setdefault(old_field.name, new_field.name)
                 restored_index = self._clone_index_with_replacements(index, replacements)
                 statement = restored_index.create_sql(new_field.model, self)
                 if statement:
@@ -679,7 +687,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self._delete_unique_constraints(model, old_field, new_field, strict)
             # Drop indexes, SQL Server requires explicit deletion
             self._delete_indexes(
-                model, old_field, new_field,
+                meta_model, old_field, new_field,
                 meta_index_replacements=meta_index_replacements,
             )
 
@@ -735,7 +743,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self._delete_unique_constraints(model, old_field, new_field, strict)
                 # Drop indexes, SQL Server requires explicit deletion
                 self._delete_indexes(
-                    model, old_field, new_field,
+                    meta_model, old_field, new_field,
                     meta_index_replacements=meta_index_replacements,
                 )
 
@@ -997,7 +1005,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # For AutoField changes, restore ALL Meta.indexes.
             # For other changes, only restore indexes involving the altered field.
             # --------------------------------------------------------------------------------
-            for index in model._meta.indexes:
+            for index in meta_model._meta.indexes:
                 if index.name not in meta_index_replacements:
                     continue
                 replacements = meta_index_replacements.get(index.name, {})
@@ -1008,7 +1016,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 for field_name in reference_names:
                     try:
                         fields.append(
-                            model._meta.get_field(
+                            meta_model._meta.get_field(
                                 replacements.get(field_name, field_name)
                             )
                         )
@@ -1035,7 +1043,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # existing physical index supplied an unambiguous replacement.
             for index, replacements in indexes_to_restore:
                 restored_index = self._clone_index_with_replacements(index, replacements)
-                create_index_sql_statement = restored_index.create_sql(model, self)
+                create_index_sql_statement = restored_index.create_sql(meta_model, self)
                 if create_index_sql_statement and (str(create_index_sql_statement)
                         not in [str(sql) for sql in self.deferred_sql] + [str(statement[0]) for statement in post_actions]
                         ):
@@ -1220,48 +1228,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 replacements[index.name] = index_replacements
         return replacements
 
-    def _merge_meta_index_replacements(self, catalog_replacements):
-        """Merge catalog reconciliation with structured field rename history."""
-        rename_replacements = getattr(self, '_meta_index_rename_replacements', {})
-        replacements = {}
-        for index_name, index_replacements in catalog_replacements.items():
-            rename_replacements_for_index = rename_replacements.get(index_name, {})
-            if any(
-                rename_replacements_for_index[name] != replacement
-                for name, replacement in index_replacements.items()
-                if name in rename_replacements_for_index
-            ):
-                continue
-            replacements[index_name] = {
-                **rename_replacements_for_index,
-                **index_replacements,
-            }
-        return replacements
-
-    def _record_meta_index_rename_replacements(
-        self, model, old_field, new_field, meta_index_replacements
-    ):
-        """Record structured references changed by a Meta.indexes field rename."""
-        for index in model._meta.indexes:
-            replacements = meta_index_replacements.get(index.name)
-            if replacements is None:
-                continue
-            field_names = [field_name for field_name, _ in index.fields_orders]
-            field_names += list(index.include)
-            field_names += self._get_condition_field_names(index.condition)
-            if old_field.name not in {
-                replacements.get(field_name, field_name) for field_name in field_names
-            }:
-                continue
-            if not hasattr(self, '_meta_index_rename_replacements'):
-                self._meta_index_rename_replacements = {}
-            index_replacements = self._meta_index_rename_replacements.setdefault(
-                index.name, {}
-            )
-            for field_name, replacement in list(index_replacements.items()):
-                if replacement == old_field.name:
-                    index_replacements[field_name] = new_field.name
-            index_replacements.setdefault(old_field.name, new_field.name)
 
     def _clone_index_with_replacements(self, index, replacements):
         """Clone an Index while replacing field names in keys, includes, and conditions."""

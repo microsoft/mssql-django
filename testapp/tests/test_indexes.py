@@ -206,6 +206,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
         migration_name_prefix: str,
         model_name: str,
         use_single_migration: bool,
+        operations_c=None,
     ) -> MigrationTestResult:
         """
         Helper to run migration tests with either combined or split schema_editor contexts.
@@ -224,13 +225,14 @@ class TestMetaIndexesRetained(TransactionTestCase):
         # Use django.db.connections to get a fresh connection for TransactionTestCase
         conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
         suffix = '_combined' if use_single_migration else '_split'
+        operations_c = operations_c or []
 
         if use_single_migration:
             # Combined: Create ONE migration with all operations combined
             # This simulates combining operations in a single migration file
             class CombinedMigration(migrations.Migration):
                 initial = True
-                operations = operations_a + operations_b
+                operations = operations_a + operations_b + operations_c
 
             migration = CombinedMigration(name=f'{migration_name_prefix}{suffix}', app_label='testapp')
 
@@ -249,11 +251,21 @@ class TestMetaIndexesRetained(TransactionTestCase):
 
             migration_a = MigrationA(name=f'{migration_name_prefix}{suffix}_a', app_label='testapp')
             migration_b = MigrationB(name=f'{migration_name_prefix}{suffix}_b', app_label='testapp')
+            if operations_c:
+                class MigrationC(migrations.Migration):
+                    operations = operations_c
+
+                migration_c = MigrationC(
+                    name=f'{migration_name_prefix}{suffix}_c', app_label='testapp'
+                )
 
             with conn.schema_editor(atomic=True) as editor:
                 project_state = migration_a.apply(ProjectState(), editor)
             with conn.schema_editor(atomic=True) as editor:
                 project_state = migration_b.apply(project_state, editor)
+            if operations_c:
+                with conn.schema_editor(atomic=True) as editor:
+                    project_state = migration_c.apply(project_state, editor)
 
         # Get the model and constraints for assertions
         model = project_state.apps.get_model('testapp', model_name)
@@ -2120,48 +2132,350 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 )
                 catalog = self._get_index_catalog(result.model, index_name)
                 self.assertIn('[aa]', catalog[0][2])
-    def test_filtered_meta_index_tracks_tuple_rhs_expression(self):
-        migration = Migration('test_tuple_rhs_filtered_index', 'testapp')
-        migration.operations = [
-            migrations.CreateModel(
-                name='TestTupleRhsFilteredIndex',
-                fields=[
-                    ('id', models.AutoField(primary_key=True)),
-                    ('a', models.CharField(max_length=20)),
-                    ('b', models.CharField(max_length=20)),
-                    ('c', models.CharField(max_length=20)),
-                ],
-            ),
-            migrations.RenameField(
-                model_name='testtuplerhsfilteredindex', old_name='a', new_name='aa'
-            ),
-            migrations.RenameField(
-                model_name='testtuplerhsfilteredindex', old_name='b', new_name='bb'
-            ),
-        ]
-        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
-        with patch.object(conn.features, 'connection_persists_old_columns', False):
-            with conn.schema_editor(collect_sql=True, atomic=False) as editor:
-                project_state = migration.apply(ProjectState(), editor)
-                model = project_state.apps.get_model('testapp', 'TestTupleRhsFilteredIndex')
-                index = models.Index(
-                    fields=['c'],
-                    condition=models.Q(a=models.F('b')),
-                    name='idx_tuple_rhs_filtered',
+    def test_filtered_meta_index_retained_across_migration_rename(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFilteredIndexAcrossRename{suffix}'
+                index_name = f'idx_filtered_across_rename{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20, null=True)),
+                                ('b', models.CharField(max_length=20)),
+                                ('c', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                include=['c'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                    ],
+                    operations_c=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_index_across_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
                 )
+                self.assertIn(index_name, result.constraints)
+                catalog = self._get_index_catalog(result.model, index_name)
                 self.assertEqual(
-                    editor._get_condition_field_names(index.condition), ['a', 'b']
+                    [column for included, column, _ in catalog if not included], ['b']
                 )
-                editor.execute(
-                    editor._clone_index_with_replacements(
-                        index, {'a': 'aa', 'b': 'bb'}
-                    ).create_sql(model, editor)
+                filter_definition = catalog[0][2]
+                self.assertIn((True, 'c', filter_definition), catalog)
+                self.assertIn('[aa]', filter_definition)
+
+    def test_filtered_meta_index_retained_after_logical_rename(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFilteredIndexLogicalRename{suffix}'
+                index_name = f'idx_filtered_logical_rename{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                (
+                                    'a',
+                                    models.CharField(
+                                        max_length=20,
+                                        null=True,
+                                        db_column='stable_a',
+                                    ),
+                                ),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                    ],
+                    operations_c=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_index_logical_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
                 )
-        index_sql = next(
-            sql for sql in editor.collected_sql if 'idx_tuple_rhs_filtered' in sql
-        )
-        self.assertIn('[aa]', index_sql)
-        self.assertIn('[bb]', index_sql)
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['b'],
+                    'A logical rename did not update the filtered Meta.index reference.',
+                )
+                self.assertIn(
+                    '[stable_a]', self._get_index_catalog(result.model, index_name)[0][2]
+                )
+
+    def test_readded_meta_index_does_not_inherit_rename_replacements(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestReaddedFilteredIndex{suffix}'
+                index_name = f'idx_readded_filtered{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20, null=True)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['a'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AddField(
+                            model_name=model_name.lower(),
+                            name='a',
+                            field=models.CharField(max_length=20, null=True),
+                        ),
+                        migrations.RemoveIndex(
+                            model_name=model_name.lower(), name=index_name
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['a'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_c=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='aa',
+                            field=models.CharField(max_length=40, null=True),
+                        ),
+                    ],
+                    migration_name_prefix='test_readded_filtered_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['a'],
+                    'A re-added Meta index inherited replacements from a removed index.',
+                )
+                filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+                self.assertIn('[a]', filter_definition)
+                self.assertNotIn('[aa]', filter_definition)
+
+    def test_filtered_fk_meta_index_restored_after_constraint_removal(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                parent_model_name = f'TestFilteredFkParent{suffix}'
+                model_name = f'TestFilteredFkChild{suffix}'
+                index_name = f'idx_filtered_fk{suffix}'
+                parent_model = f'testapp.{parent_model_name}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=parent_model_name,
+                            fields=[('id', models.AutoField(primary_key=True))],
+                        ),
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                (
+                                    'parent',
+                                    models.ForeignKey(
+                                        parent_model,
+                                        on_delete=models.CASCADE,
+                                    ),
+                                ),
+                                ('flag', models.CharField(max_length=20, null=True)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['parent'],
+                                condition=models.Q(flag__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='parent',
+                            field=models.ForeignKey(
+                                parent_model,
+                                db_constraint=False,
+                                null=True,
+                                on_delete=models.CASCADE,
+                            ),
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_fk_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['parent_id'],
+                    'A filtered FK Meta index was not restored after its constraint dropped.',
+                )
+                self.assertIn(
+                    '[flag]', self._get_index_catalog(result.model, index_name)[0][2]
+                )
+
+    def test_filtered_meta_index_tracks_tuple_rhs_expression(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestTupleRhsFilteredIndex{suffix}'
+                index_name = f'idx_tuple_rhs_filtered{suffix}'
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                            ('b', models.CharField(max_length=20)),
+                            ('c', models.CharField(max_length=20)),
+                        ],
+                    ),
+                    migrations.AddIndex(
+                        model_name=model_name.lower(),
+                        index=models.Index(
+                            fields=['c'],
+                            condition=models.Q(a=models.F('b')),
+                            name=index_name,
+                        ),
+                    ),
+                ]
+                operations_b = [
+                    migrations.RenameField(
+                        model_name=model_name.lower(), old_name='a', new_name='aa'
+                    ),
+                    migrations.RenameField(
+                        model_name=model_name.lower(), old_name='b', new_name='bb'
+                    ),
+                ]
+                operations_c = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='c',
+                        field=models.CharField(max_length=40),
+                    ),
+                ]
+                conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+                with patch.object(conn.features, 'connection_persists_old_columns', False):
+                    if use_single_migration:
+                        class CombinedMigration(migrations.Migration):
+                            initial = True
+                            operations = operations_a + operations_b + operations_c
+
+                        migration = CombinedMigration(
+                            name=f'test_tuple_rhs_filtered{suffix}', app_label='testapp'
+                        )
+                        with conn.schema_editor(collect_sql=True, atomic=False) as editor:
+                            project_state = migration.apply(ProjectState(), editor)
+                            model = project_state.apps.get_model('testapp', model_name)
+                            index = next(
+                                index for index in model._meta.indexes
+                                if index.name == index_name
+                            )
+                            self.assertEqual(
+                                editor._get_condition_field_names(index.condition), ['aa', 'bb']
+                            )
+                            editor.execute(
+                                editor._clone_index_with_replacements(index, {}).create_sql(
+                                    model, editor
+                                )
+                            )
+                    else:
+                        class MigrationA(migrations.Migration):
+                            initial = True
+                            operations = operations_a
+
+                        class MigrationB(migrations.Migration):
+                            operations = operations_b
+
+                        class MigrationC(migrations.Migration):
+                            operations = operations_c
+
+                        with conn.schema_editor(collect_sql=True, atomic=False) as editor_a:
+                            project_state = MigrationA(
+                                name=f'test_tuple_rhs_filtered{suffix}_a', app_label='testapp'
+                            ).apply(ProjectState(), editor_a)
+                        with conn.schema_editor(collect_sql=True, atomic=False) as editor_b:
+                            project_state = MigrationB(
+                                name=f'test_tuple_rhs_filtered{suffix}_b', app_label='testapp'
+                            ).apply(project_state, editor_b)
+                        with conn.schema_editor(collect_sql=True, atomic=False) as editor:
+                            project_state = MigrationC(
+                                name=f'test_tuple_rhs_filtered{suffix}_c', app_label='testapp'
+                            ).apply(project_state, editor)
+                            model = project_state.apps.get_model('testapp', model_name)
+                            index = next(
+                                index for index in model._meta.indexes
+                                if index.name == index_name
+                            )
+                            self.assertEqual(
+                                editor._get_condition_field_names(index.condition), ['aa', 'bb']
+                            )
+                            editor.execute(
+                                editor._clone_index_with_replacements(index, {}).create_sql(
+                                    model, editor
+                                )
+                            )
+                index_sql = editor.collected_sql[-1]
+                self.assertIn('[aa]', index_sql)
+                self.assertIn('[bb]', index_sql)
+                self.assertIn('[c]', index_sql)
 
     def test_expression_filtered_meta_index_retained_after_rename_and_alter(self):
         """
