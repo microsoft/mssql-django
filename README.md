@@ -87,6 +87,29 @@ DATABASE_CONNECTION_POOLING = False
 | `setencoding` / `setdecoding` | List | — | pyodbc [encoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) / [decoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding) config |
 | `return_rows_bulk_insert` | Boolean | `False` | Allow returning rows from bulk insert. Must be `False` if tables have triggers. |
 
+#### Disabling MARS
+
+The backend enables Multiple Active Result Sets (MARS) by default with Microsoft
+ODBC drivers on Windows. To connect to an endpoint that does not support MARS,
+such as Microsoft Fabric Warehouse, set `MARS_Connection=no` in that database
+alias's `extra_params`:
+
+```python
+'OPTIONS': {
+    'driver': 'ODBC Driver 18 for SQL Server',
+    'extra_params': 'Authentication=ActiveDirectoryServicePrincipal;MARS_Connection=no',
+},
+```
+
+Keep your existing `HOST`, `NAME`, `USER` (client ID), and `PASSWORD` (client
+secret) settings. For other authentication methods, keep the corresponding
+authentication settings and append `MARS_Connection=no` to `extra_params`.
+An explicit MARS setting is honored case-insensitively, without adding a
+conflicting default. With MARS disabled, ORM iteration buffers results before
+yielding them so nested queries can use the same connection; this can use more
+memory for large querysets. This connection setting does not imply full
+Warehouse support for Django migrations or other SQL Server features.
+
 ### Backend-Specific Settings
 
 | Setting | Type | Default | Description |

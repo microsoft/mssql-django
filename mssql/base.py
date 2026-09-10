@@ -239,6 +239,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         # capability for multiple result sets or cursors
         self.supports_mars = False
+        self._is_microsoft_driver = False
 
         # Some drivers need unicode encoded as UTF8. If this is left as
         # None, it will be determined based on the driver, namely it'll be
@@ -481,7 +482,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         cstr_parts['DATABASE'] = database
 
-        if ms_drivers.match(driver) and os.name == 'nt':
+        if (ms_drivers.match(driver) and os.name == 'nt' and
+                'mars_connection' not in self._parse_extra_params(options_extra_params)):
             cstr_parts['MARS_Connection'] = 'yes'
 
         connstr = encode_connection_string(cstr_parts)
@@ -602,16 +604,19 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         ms_drv_names = re.compile('^(LIB)?(SQLNCLI|MSODBCSQL)')
 
-        if ms_drv_names.match(drv_name):
+        settings_dict = self.settings_dict
+        options = settings_dict.get('OPTIONS', {})
+        self._is_microsoft_driver = bool(ms_drv_names.match(drv_name))
+
+        if self._is_microsoft_driver:
             self.driver_charset = None
             # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-            self.supports_mars = True
-            self.features.can_use_chunked_reads = True
+            extra_params = self._parse_extra_params(options.get('extra_params'))
+            self.supports_mars = extra_params.get('mars_connection', 'yes').strip().lower() == 'yes'
+            self.features.can_use_chunked_reads = self.supports_mars
 
-        settings_dict = self.settings_dict
         cursor = self.create_cursor()
 
-        options = settings_dict.get('OPTIONS', {})
         isolation_level = options.get('isolation_level', None)
         if isolation_level:
             cursor.execute('SET TRANSACTION ISOLATION LEVEL %s' % isolation_level)
@@ -942,7 +947,7 @@ class CursorWrapper(object):
             row = self.format_row(row)
         # Any remaining rows in the current set must be discarded
         # before changing autocommit mode when you use FreeTDS
-        if not self.connection.supports_mars:
+        if not self.connection.supports_mars and not self.connection._is_microsoft_driver:
             self.cursor.nextset()
         return row
 

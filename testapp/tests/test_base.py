@@ -328,6 +328,67 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
         self.assertIn("Encrypt=yes", result)
         self.assertIn("TrustServerCertificate=yes", result)
 
+    def test_mars_connection_defaults(self):
+        for platform in ("nt", "posix"):
+            for driver in ("ODBC Driver 17 for SQL Server",
+                           "ODBC Driver 18 for SQL Server",
+                           "SQL Server Native Client 11.0", "FreeTDS"):
+                with self.subTest(platform=platform, driver=driver):
+                    params = {"NAME": "testdb", "OPTIONS": {}}
+                    with mock.patch("mssql.base.os.name", platform):
+                        result = self.wrapper._build_connection_string(params, driver)
+                    expected = platform == "nt" and driver != "FreeTDS"
+                    self.assertEqual("MARS_Connection=yes" in result, expected)
+
+    def test_explicit_mars_connection_is_not_overridden(self):
+        for platform in ("nt", "posix"):
+            for driver in ("ODBC Driver 17 for SQL Server",
+                           "ODBC Driver 18 for SQL Server"):
+                for mars in ("MARS_Connection=no", "mars_connection=No",
+                             " MARS_Connection = {no}", "MARS_Connection=yes"):
+                    for dsn in (None, "FabricDSN"):
+                        with self.subTest(platform=platform, driver=driver,
+                                          mars=mars, dsn=dsn):
+                            extra = "Authentication=ActiveDirectoryServicePrincipal;" + mars
+                            params = {
+                                "NAME": "warehouse",
+                                "HOST": "example.datawarehouse.fabric.microsoft.com",
+                                "USER": "client-id",
+                                "PASSWORD": "client-secret",
+                                "OPTIONS": {"extra_params": extra, "dsn": dsn},
+                            }
+                            with mock.patch("mssql.base.os.name", platform):
+                                result = self.wrapper._build_connection_string(params, driver)
+                            self.assertEqual(result.lower().count("mars_connection"), 1)
+                            self.assertTrue(result.endswith(extra))
+                            self.assertNotIn("Trusted_Connection=", result)
+
+    def test_mars_keyword_inside_braced_value_does_not_override_default(self):
+        params = {
+            "NAME": "testdb",
+            "OPTIONS": {"extra_params": "APP={example;MARS_Connection=no}"},
+        }
+        with mock.patch("mssql.base.os.name", "nt"):
+            result = self.wrapper._build_connection_string(
+                params, "ODBC Driver 18 for SQL Server"
+            )
+        self.assertIn(";MARS_Connection=yes;", result)
+
+    def test_mars_opt_out_survives_driver_fallback(self):
+        params = {
+            "NAME": "testdb",
+            "OPTIONS": {"extra_params": "MARS_Connection=no"},
+        }
+        with mock.patch("mssql.base.os.name", "nt"), mock.patch(
+            "mssql.base.Database.connect",
+            side_effect=[Exception("Driver not found"), mock.MagicMock()],
+        ) as connect:
+            self.wrapper.get_new_connection(params)
+        self.assertEqual(connect.call_count, 2)
+        for call in connect.call_args_list:
+            self.assertEqual(call.args[0].count("MARS_Connection="), 1)
+            self.assertIn("MARS_Connection=no", call.args[0])
+
     def test_connection_string_freetds(self):
         """Test connection string building for FreeTDS driver."""
         conn_params = {
@@ -644,6 +705,92 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
         result = self.wrapper._build_connection_string(conn_params, driver)
 
         self.assertIn("Trusted_Connection=yes", result)
+
+
+class TestMarsConnectionState(SimpleTestCase):
+    def test_effective_mars_setting_and_reinitialization(self):
+        for driver in ("MSODBCSQL18.DLL", "libmsodbcsql.18.dylib",
+                       "SQLNCLI11.DLL", "libtdsodbc.so"):
+            with self.subTest(driver=driver):
+                wrapper = DatabaseWrapper({"OPTIONS": {}}, alias="mars_state")
+                wrapper.connection = mock.MagicMock()
+                wrapper.connection.getinfo.return_value = driver
+                wrapper.get_system_datetime = datetime.datetime(2026, 1, 1)
+                for extra, enabled in (
+                    ("", True), ("MARS_Connection=no", False),
+                    ("mars_connection={No}", False),
+                    ("MARS_Connection=no;MARS_Connection=yes", False),
+                    ("MARS_Connection=yes", True),
+                    ("APP={example;MARS_Connection=no}", True),
+                ):
+                    with self.subTest(extra=extra):
+                        wrapper.settings_dict["OPTIONS"]["extra_params"] = extra
+                        wrapper.init_connection_state()
+                        expected = enabled and driver != "libtdsodbc.so"
+                        self.assertEqual(wrapper.supports_mars, expected)
+                        self.assertEqual(wrapper.features.can_use_chunked_reads, expected)
+
+    def test_fetchone_does_not_discard_microsoft_driver_rows_without_mars(self):
+        wrapper = DatabaseWrapper(
+            {"OPTIONS": {"extra_params": "MARS_Connection=no"}}, alias="mars_rows"
+        )
+        wrapper.connection = mock.MagicMock()
+        wrapper.connection.getinfo.return_value = "MSODBCSQL18.DLL"
+        wrapper.get_system_datetime = datetime.datetime(2026, 1, 1)
+        wrapper.init_connection_state()
+        cursor = wrapper.create_cursor()
+        cursor.cursor.fetchone.side_effect = [(1,), (2,), None]
+        self.assertEqual(cursor.fetchone(), (1,))
+        self.assertEqual(cursor.fetchone(), (2,))
+        self.assertIsNone(cursor.fetchone())
+        cursor.cursor.nextset.assert_not_called()
+
+    def test_freetds_fetchone_keeps_nextset_workaround(self):
+        wrapper = DatabaseWrapper({"OPTIONS": {}}, alias="mars_freetds")
+        wrapper.connection = mock.MagicMock()
+        wrapper.connection.getinfo.return_value = "libtdsodbc.so"
+        wrapper.get_system_datetime = datetime.datetime(2026, 1, 1)
+        wrapper.init_connection_state()
+        cursor = wrapper.create_cursor()
+        cursor.cursor.fetchone.return_value = (1,)
+        self.assertEqual(cursor.fetchone(), (1,))
+        cursor.cursor.nextset.assert_called_once_with()
+
+
+class TestMarsConnectionLive(TestCase):
+    def setUp(self):
+        from django.db import connection
+
+        self.wrapper = connection.copy(alias="mars_live")
+        options = self.wrapper.settings_dict["OPTIONS"]
+        extra = options.get("extra_params") or ""
+        options["extra_params"] = "MARS_Connection=no;" + extra
+        self.addCleanup(self.wrapper.close)
+        self.wrapper.ensure_connection()
+
+    def test_fetchone_preserves_remaining_rows(self):
+        if not self.wrapper._is_microsoft_driver:
+            self.skipTest("Row preservation without MARS requires a Microsoft driver")
+        self.assertFalse(self.wrapper.supports_mars)
+        self.assertFalse(self.wrapper.features.can_use_chunked_reads)
+        with self.wrapper.cursor() as cursor:
+            cursor.execute("SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 ORDER BY n")
+            self.assertEqual(cursor.fetchone(), (1,))
+            self.assertEqual(cursor.fetchone(), (2,))
+            self.assertEqual(cursor.fetchall(), [(3,)])
+
+    def test_cursor_iteration_allows_nested_query(self):
+        from mssql.compiler import _cursor_iter
+
+        cursor = self.wrapper.cursor()
+        cursor.execute("SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 ORDER BY n")
+        rows = []
+        for chunk in _cursor_iter(cursor, [], None, 1):
+            with self.wrapper.cursor() as nested:
+                nested.execute("SELECT 42")
+                self.assertEqual(nested.fetchone(), (42,))
+            rows.extend(chunk)
+        self.assertEqual(rows, [(1,), (2,), (3,)])
 
 
 class TestCursorWrapperAsSqlType(SimpleTestCase):
