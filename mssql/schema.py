@@ -1914,6 +1914,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _create_deferred_unique_constraint_sql(self, model, constraint):
         """Create a conditional unique constraint as a deferred filtered index."""
+        if constraint.condition.connector != AND:
+            raise NotImplementedError(
+                "The backend does not support %s conditions on unique constraint %s." %
+                (constraint.condition.connector, constraint.name)
+            )
         condition = IndexCondition(model, constraint.condition, self)
         kwargs = {
             'name': constraint.name,
