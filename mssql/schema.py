@@ -1279,6 +1279,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             }
             self.execute(sql, params)
 
+        # A combined column rename with a type/nullability change drops a plain
+        # Meta.indexes entry via _delete_indexes() above without recreating it,
+        # because the "column alteration cleanup" restoration block is skipped
+        # whenever the column was renamed (see comment there).
+        if old_field.column != new_field.column:
+            self._restore_missing_meta_indexes(meta_model, old_field, new_field)
+
         # Reset connection if required
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
@@ -1355,7 +1362,36 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 replacements[index.name] = index_replacements
         return replacements
 
+    def _restore_missing_meta_indexes(self, model, old_field, new_field):
+        """Recreate a named Meta.indexes entry referencing the renamed field
+        that is missing from the table after this _alter_field() call.
 
+        The rename-restoration block above only recreates a Meta.indexes entry
+        whose filtered `condition` references the renamed field; a combined
+        column rename and type/nullability change drops a plain (non-
+        conditional) Meta.indexes entry via _delete_indexes() without
+        recreating it, because the later "column alteration cleanup"
+        restoration is skipped whenever the column was renamed.
+        """
+        existing_index_names = set(
+            self._db_table_constraint_names(model._meta.db_table, index=True)
+        )
+        for index in model._meta.indexes:
+            if index.name in existing_index_names:
+                continue
+            reference_names = (
+                [field_name for field_name, _ in index.fields_orders]
+                + list(index.include)
+                + self._get_condition_field_names(index.condition)
+            )
+            if old_field.name not in reference_names:
+                continue
+            restored_index = _clone_index_with_replacements(
+                index, {old_field.name: new_field.name}
+            )
+            statement = restored_index.create_sql(model, self)
+            if statement:
+                self.execute(statement)
 
     def _delete_indexes(self, model, old_field, new_field, meta_index_replacements=None):
         if (
