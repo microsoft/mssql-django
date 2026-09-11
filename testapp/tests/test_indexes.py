@@ -3086,6 +3086,78 @@ class TestMetaIndexesRetained(TransactionTestCase):
             editor._get_condition_field_names(transformed_condition), ['b', 'aa']
         )
 
+    def test_filtered_meta_index_restored_with_unbound_replacement_field(self):
+        """
+        schema_editor.alter_field() may be called directly (as
+        TestIndexesBeingDropped.test_unique_index_dropped already does
+        elsewhere) with an unbound replacement field that has no .model
+        attribute. The rename-restoration path must use the same meta_model
+        fallback _alter_field() establishes for old_field/new_field elsewhere,
+        not new_field.model directly.
+
+        `to_model` (obtained via AlterField.state_forwards(), like a real
+        migration's to_state) is passed as the `model` argument so meta_model's
+        fallback has correct post-alter field metadata to restore against,
+        while `new_field` itself is a manually constructed field deliberately
+        left unbound (no .model), reproducing the exact caller shape that
+        crashes without the fix.
+        """
+        model_name = 'TestUnboundRenameFilteredIndex'
+        index_name = 'idx_unbound_rename_filtered'
+
+        class SetupMigration(migrations.Migration):
+            initial = True
+            operations = [
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20, null=True)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                ),
+                migrations.AddIndex(
+                    model_name=model_name.lower(),
+                    index=models.Index(
+                        fields=['b'],
+                        condition=models.Q(a__isnull=False),
+                        name=index_name,
+                    ),
+                ),
+            ]
+
+        migration = SetupMigration(
+            name='test_unbound_rename_filtered', app_label='testapp'
+        )
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+        with conn.schema_editor(atomic=True) as editor:
+            from_state = migration.apply(ProjectState(), editor)
+
+        to_state = from_state.clone()
+        migrations.AlterField(
+            model_name=model_name.lower(),
+            name='a',
+            field=models.CharField(max_length=20, null=True, db_column='aa'),
+        ).state_forwards('testapp', to_state)
+
+        from_model = from_state.apps.get_model('testapp', model_name)
+        to_model = to_state.apps.get_model('testapp', model_name)
+        old_field = from_model._meta.get_field('a')
+        new_field = models.CharField(max_length=20, null=True, db_column='aa')
+        new_field.set_attributes_from_name('a')
+        with conn.schema_editor(atomic=True) as editor:
+            editor.alter_field(to_model, old_field, new_field, strict=True)
+
+        constraints = get_constraints(table_name=to_model._meta.db_table)
+        self._assert_named_index_columns(
+            constraints, index_name, ['b'],
+            'A filtered Meta.index was lost when alter_field() was called '
+            'directly with an unbound replacement field.',
+        )
+        self.assertIn(
+            '[aa]', self._get_index_catalog(to_model, index_name)[0][2]
+        )
+
 
 
 
