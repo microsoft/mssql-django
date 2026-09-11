@@ -3208,6 +3208,55 @@ class TestMetaIndexesRetained(TransactionTestCase):
             'migration.',
         )
 
+    def test_pk_alias_condition_survives_unrelated_alter(self):
+        """
+        A Meta.index condition may reference the 'pk' query alias (e.g.
+        Q(pk__gt=0)), which Options.get_field() does not recognize as a
+        literal field name. Altering the type of ANY field on the model
+        must not crash while resolving that index's reference names -
+        _delete_indexes() inspects every existing index on the model, not
+        just ones tied to the field being altered.
+        """
+        model_name = 'TestPkAliasCondition'
+        index_name = 'idx_pk_alias_condition'
+
+        operations_a = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                ],
+            ),
+            migrations.AddIndex(
+                model_name=model_name.lower(),
+                index=models.Index(
+                    fields=['a'], condition=models.Q(pk__gt=0), name=index_name
+                ),
+            ),
+        ]
+        operations_b = [
+            migrations.AlterField(
+                model_name=model_name.lower(),
+                name='a',
+                field=models.CharField(max_length=40),
+            ),
+        ]
+
+        result = self._run_migration_test(
+            operations_a=operations_a,
+            operations_b=operations_b,
+            migration_name_prefix='test_pk_alias_condition',
+            model_name=model_name,
+            use_single_migration=True,
+        )
+
+        self._assert_named_index_columns(
+            result.constraints, index_name, ['a'],
+            "A Meta.index filtered on the 'pk' alias was lost (or crashed) "
+            "when an unrelated field's type was altered.",
+        )
+
 
 
 
