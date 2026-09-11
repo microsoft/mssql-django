@@ -831,10 +831,29 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Have they renamed the column?
         if old_field.column != new_field.column:
             sql_restore_index = ''
+            # Identify Meta.constraints (UniqueConstraint) referencing the
+            # renamed field before the generic unique-index drop below runs,
+            # so the structured restoration further down - which alone knows
+            # about INCLUDE columns and preserves them via
+            # _clone_constraint_with_replacements() - has exclusive
+            # responsibility for dropping and recreating them. Left to the
+            # generic path (which rebuilds from an unfiltered
+            # sys.index_columns listing that doesn't distinguish key from
+            # INCLUDE columns), a covering constraint's INCLUDE column would
+            # be silently promoted into the unique key.
+            meta_constraint_names_to_protect = {
+                constraint.name
+                for constraint in model._meta.constraints
+                if isinstance(constraint, UniqueConstraint)
+                and old_field.name in (
+                    list(constraint.fields) + list(constraint.include)
+                    + self._get_condition_field_names(constraint.condition)
+                )
+            }
             # Drop any unique indexes which include the column to be renamed
             index_names = self._db_table_constraint_names(
                 db_table=model._meta.db_table, column_names=[old_field.column], column_match_any=True,
-                index=True, unique=True,
+                index=True, unique=True, exclude=meta_constraint_names_to_protect,
             )
             for index_name in index_names:
                 # Before dropping figure out how to recreate it afterwards
@@ -880,22 +899,21 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         )
                     )
 
-            # A filtered UniqueConstraint (Meta.constraints) whose condition
-            # references the renamed field is not caught by the unique-index
-            # drop above (that only matches by physical key column), so SQL
-            # Server would otherwise refuse the rename with "index is
-            # dependent on column". Mirror the Meta.indexes handling above.
+            # A UniqueConstraint (Meta.constraints) whose fields/include/
+            # condition reference the renamed field is protected from the
+            # generic unique-index drop above (see
+            # meta_constraint_names_to_protect), so it is still physically
+            # present here; recreate it through create_sql() - which
+            # preserves INCLUDE columns, unlike the generic path's raw
+            # sys.index_columns-based rebuild - rather than leaving it for
+            # the generic path to (incorrectly) handle.
             meta_constraints_to_restore = []
             for constraint in model._meta.constraints:
-                if not isinstance(constraint, UniqueConstraint) or not constraint.condition:
-                    continue
-                if constraint.name not in existing_index_names:
-                    continue
-                reference_names = (
-                    list(constraint.fields) + list(constraint.include)
-                    + self._get_condition_field_names(constraint.condition)
-                )
-                if old_field.name not in reference_names:
+                if (
+                    not isinstance(constraint, UniqueConstraint)
+                    or constraint.name not in meta_constraint_names_to_protect
+                    or constraint.name not in existing_index_names
+                ):
                     continue
                 restored_constraint = _clone_constraint_with_replacements(
                     constraint, {old_field.name: new_field.name}
