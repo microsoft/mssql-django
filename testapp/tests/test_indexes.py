@@ -2943,7 +2943,6 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     f"({self._get_context_description(use_single_migration)})."
                 )
 
-    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
     def test_conditional_unique_constraint_removable_after_rename(self):
         """
         RenameField rewrites structured Meta.indexes state but not
@@ -3082,6 +3081,11 @@ class TestMetaIndexesRetained(TransactionTestCase):
 
         transformed_condition = models.Q(b=models.F('a__year'))
         _replace_condition_field_names(transformed_condition, {'a': 'aa'})
+        # Assert the rewritten F() object directly: _get_condition_field_names()
+        # deliberately strips everything after '__', so it alone cannot tell
+        # apart a correctly preserved 'aa__year' from a broken 'aa' that lost
+        # the year transform entirely.
+        self.assertEqual(transformed_condition.children[0][1].name, 'aa__year')
         self.assertEqual(
             editor._get_condition_field_names(transformed_condition), ['b', 'aa']
         )
