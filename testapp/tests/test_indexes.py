@@ -2943,6 +2943,63 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     f"({self._get_context_description(use_single_migration)})."
                 )
 
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
+    def test_conditional_unique_constraint_removable_after_rename(self):
+        """
+        RenameField rewrites structured Meta.indexes state but not
+        Meta.constraints (UniqueConstraint.condition/fields/include), leaving a
+        stale field reference that raises FieldError when a later operation
+        (e.g. RemoveConstraint) renders it.
+
+        Uses split migrations (each operation committed in its own
+        schema_editor context) so the filtered unique index physically exists
+        before the rename, exercising the real rename-time DDL path rather
+        than racing CreateModel's deferred index-creation SQL.
+        """
+        model_name = 'TestStaleConstraintRename'
+        constraint_name = 'uq_stale_rename'
+
+        operations_a = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                ],
+                options={
+                    'constraints': [
+                        UniqueConstraint(
+                            fields=['b'],
+                            condition=models.Q(a__isnull=False),
+                            name=constraint_name,
+                        ),
+                    ],
+                },
+            ),
+        ]
+        operations_b = [
+            migrations.RenameField(
+                model_name=model_name.lower(), old_name='a', new_name='aa'
+            ),
+        ]
+        operations_c = [
+            migrations.RemoveConstraint(
+                model_name=model_name.lower(), name=constraint_name
+            ),
+        ]
+
+        result = self._run_migration_test(
+            operations_a=operations_a,
+            operations_b=operations_b,
+            operations_c=operations_c,
+            migration_name_prefix='test_stale_constraint_rename',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        self.assertNotIn(constraint_name, result.constraints)
+
 
 
 
