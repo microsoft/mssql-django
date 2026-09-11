@@ -125,6 +125,84 @@ class TestJSONField(TestCase):
         )
 
     @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
+    def test_json_null_key_lookups(self):
+        present = JSONModel.objects.create(
+            value={"nullable": None, "nested": {"nullable": None}}
+        )
+        non_null = JSONModel.objects.create(
+            value={"nullable": "value", "nested": {"nullable": "value"}}
+        )
+        JSONModel.objects.create(value={})
+
+        self.assertSequenceEqual(JSONModel.objects.filter(value__nullable=None), [present])
+        self.assertSequenceEqual(JSONModel.objects.filter(value__nested__nullable=None), [present])
+        self.assertSequenceEqual(JSONModel.objects.exclude(value__nullable=None), [non_null])
+        self.assertSequenceEqual(
+            JSONModel.objects.exclude(value__nested__nullable=None),
+            [non_null],
+        )
+        if VERSION >= (6, 1):
+            # iexact=None matches the JSON null value only from Django 6.1, where
+            # KeyTransformIExact delegates None to the exact lookup. Pre-6.1 keeps
+            # Django's native IS NULL semantics for iexact=None and is left alone.
+            self.assertSequenceEqual(
+                JSONModel.objects.filter(value__nullable__iexact=None), [present]
+            )
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
+    @skipUnless(
+        _check_jsonfield_supported_sqlite(),
+        "JSONField not supported by SQLite on this platform and Python version",
+    )
+    def test_json_null_iexact_none_secondary_database_unaffected(self):
+        # This backend must not alter iexact=None on a non-SQL-Server database.
+        # The fix is scoped to SQL Server, so a secondary database keeps Django's
+        # native semantics on every version: pre-6.1 a missing key matches (IS
+        # NULL), while 6.1 matches the JSON null value. Assert both the filter and
+        # the negated (exclude) direction so a future global patch that leaks into
+        # other backends is caught here.
+        json_null = JSONModel(value={"nullable": None})
+        json_null.save(using='sqlite')
+        missing = JSONModel(value={"other": "value"})
+        missing.save(using='sqlite')
+        present = JSONModel(value={"nullable": "value"})
+        present.save(using='sqlite')
+
+        included = JSONModel.objects.using('sqlite').filter(
+            value__nullable__iexact=None
+        ).order_by('pk')
+        excluded = JSONModel.objects.using('sqlite').exclude(
+            value__nullable__iexact=None
+        ).order_by('pk')
+        if VERSION >= (6, 1):
+            # 6.1 matches the JSON null value. The missing-key row yields a NULL
+            # predicate, so it drops out of both the filter and the exclude.
+            self.assertSequenceEqual(included, [json_null])
+            self.assertSequenceEqual(excluded, [present])
+        else:
+            # Pre-6.1 matches a missing key (IS NULL). exclude keeps the rows
+            # whose key resolves to a non-null JSON value.
+            self.assertSequenceEqual(included, [missing])
+            self.assertSequenceEqual(excluded, [json_null, present])
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
+    def test_json_null_numeric_key_uses_array_index_semantics(self):
+        array_null = JSONModel.objects.create(value=[None])
+        nested_array_null = JSONModel.objects.create(value={"items": [None]})
+        JSONModel.objects.create(value={"0": None})
+        JSONModel.objects.create(value={"items": {"0": None}})
+        JSONModel.objects.create(value=["value"])
+
+        self.assertSequenceEqual(JSONModel.objects.filter(value__0=None), [array_null])
+        self.assertSequenceEqual(
+            JSONModel.objects.filter(value__items__0=None),
+            [nested_array_null],
+        )
+
+        with self.assertRaises(NotSupportedError):
+            list(JSONModel.objects.filter(**{"value__-1": None}))
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_ordering_by_numeric_json_key_ascending(self):
         # Regression coverage for compiler ORDER BY rewrite:
         # JSON key transforms should sort numerically (not lexicographically)
@@ -191,4 +269,3 @@ class TestJSONField(TestCase):
         # the same order clause is requested twice.
         select_sql = captured[-1]["sql"]
         self.assertEqual(select_sql.upper().count("TRY_CONVERT(FLOAT"), 1)
-
