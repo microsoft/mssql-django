@@ -61,6 +61,35 @@ def _clone_index_with_replacements(index, replacements):
     return index.__class__(*args, **kwargs)
 
 
+def _clone_constraint_with_replacements(constraint, replacements):
+    """Clone a structured Meta.constraints UniqueConstraint with renamed
+    field references.
+
+    Mirrors _clone_index_with_replacements(): Django does not update
+    Meta.constraints references on ProjectState.rename_field() /
+    RenameField.state_forwards(), so a renamed field left in a preserved
+    UniqueConstraint.condition/fields/include raises FieldError when a
+    later migration operation renders it.
+    """
+    if not replacements or not isinstance(constraint, UniqueConstraint):
+        return constraint
+    _, args, kwargs = constraint.deconstruct()
+    kwargs['fields'] = tuple(
+        replacements.get(field_name, field_name)
+        for field_name in constraint.fields
+    )
+    if constraint.include:
+        kwargs['include'] = tuple(
+            replacements.get(field_name, field_name)
+            for field_name in constraint.include
+        )
+    if constraint.condition:
+        condition = copy.deepcopy(constraint.condition)
+        _replace_condition_field_names(condition, replacements)
+        kwargs['condition'] = condition
+    return constraint.__class__(*args, **kwargs)
+
+
 def _replace_condition_field_names(condition, replacements):
     """Rewrite lookup roots and nested F() references in a copied Q tree.
 
@@ -95,16 +124,33 @@ def _replace_expression_field_names(expression, replacements):
     return expression
 
 
-def _replace_meta_index_field_names(model_state, old_name, new_name):
-    """Replace renamed field references in structured Meta.indexes state."""
-    indexes = model_state.options.get('indexes')
+def _replace_options_field_names(options, old_name, new_name):
+    """Rewrite renamed field references in a Meta options mapping's
+    structured indexes/constraints (shared by ModelState.options and a raw
+    migration operation's .options dict)."""
+    indexes = options.get('indexes')
     if indexes is not None:
-        # ModelState.clone() shallow-copies options, so replace the list to protect
-        # the preserved state used by a migration operation.
-        model_state.options['indexes'] = [
+        options['indexes'] = [
             _clone_index_with_replacements(index, {old_name: new_name})
             for index in indexes
         ]
+    constraints = options.get('constraints')
+    if constraints is not None:
+        options['constraints'] = [
+            _clone_constraint_with_replacements(constraint, {old_name: new_name})
+            for constraint in constraints
+        ]
+
+
+def _replace_meta_index_field_names(model_state, old_name, new_name):
+    """Replace renamed field references in structured Meta.indexes/
+    .constraints state.
+
+    ModelState.clone() shallow-copies options, so _replace_options_field_names()
+    replaces each affected list rather than mutating it, to protect the
+    preserved state used by a migration operation.
+    """
+    _replace_options_field_names(model_state.options, old_name, new_name)
 
 
 def _rename_field_with_meta_indexes(self, app_label, model_name, old_name, new_name):
@@ -768,11 +814,41 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         )
                     )
 
+            # A filtered UniqueConstraint (Meta.constraints) whose condition
+            # references the renamed field is not caught by the unique-index
+            # drop above (that only matches by physical key column), so SQL
+            # Server would otherwise refuse the rename with "index is
+            # dependent on column". Mirror the Meta.indexes handling above.
+            meta_constraints_to_restore = []
+            for constraint in model._meta.constraints:
+                if not isinstance(constraint, UniqueConstraint) or not constraint.condition:
+                    continue
+                if constraint.name not in existing_index_names:
+                    continue
+                reference_names = (
+                    list(constraint.fields) + list(constraint.include)
+                    + self._get_condition_field_names(constraint.condition)
+                )
+                if old_field.name not in reference_names:
+                    continue
+                restored_constraint = _clone_constraint_with_replacements(
+                    constraint, {old_field.name: new_field.name}
+                )
+                statement = restored_constraint.create_sql(meta_model, self)
+                if statement:
+                    meta_constraints_to_restore.append(statement)
+                    self.execute(
+                        self._delete_constraint_sql(
+                            self.sql_delete_index, model, constraint.name
+                        )
+                    )
             self.execute(self._rename_field_sql(model._meta.db_table, old_field, new_field, new_type))
             # Restore index(es) now the column has been renamed
             if sql_restore_index:
                 self.execute(sql_restore_index.replace(f'[{old_field.column}]', f'[{new_field.column}]'))
             for statement in meta_indexes_to_restore:
+                self.execute(statement)
+            for statement in meta_constraints_to_restore:
                 self.execute(statement)
             # Rename all deferred references to the renamed column.
             for sql in self.deferred_sql:
