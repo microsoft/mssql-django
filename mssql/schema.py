@@ -25,6 +25,7 @@ from django import VERSION as django_version
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import F, NOT_PROVIDED, Index, UniqueConstraint
 from django.db.migrations.operations.fields import RenameField
+from django.db.migrations.operations.models import CreateModel
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.fields.related import ForeignKey
 from django.db.models.sql import Query
@@ -187,6 +188,36 @@ if (3, 2) <= django_version < (4, 0) and not hasattr(
 ):
     RenameField._mssql_original_state_forwards = RenameField.state_forwards
     RenameField.state_forwards = _rename_field_state_forwards_with_meta_indexes
+
+
+def _create_model_reduce_with_meta_indexes(self, operation, app_label):
+    """Keep structured Meta.indexes/.constraints consistent when the
+    migration optimizer folds a RenameField into this CreateModel.
+
+    CreateModel.reduce() rewrites only unique_together/index_together when
+    absorbing a RenameField (see Django's migrations/operations/models.py);
+    an optimizer pass that performs this fold (e.g. squashmigrations, or
+    autodetector-side optimization within one makemigrations run) leaves a
+    structured Index/UniqueConstraint predicate referencing the pre-rename
+    field name.
+    """
+    result = CreateModel._mssql_original_reduce(self, operation, app_label)
+    if (
+        isinstance(operation, RenameField)
+        and self.name_lower == operation.model_name_lower
+        and isinstance(result, list)
+        and len(result) == 1
+        and isinstance(result[0], CreateModel)
+    ):
+        _replace_options_field_names(
+            result[0].options, operation.old_name, operation.new_name
+        )
+    return result
+
+
+if not hasattr(CreateModel, '_mssql_original_reduce'):
+    CreateModel._mssql_original_reduce = CreateModel.reduce
+    CreateModel.reduce = _create_model_reduce_with_meta_indexes
 
 
 # Import CompositePrimaryKey only if Django version is 5.2 or higher
