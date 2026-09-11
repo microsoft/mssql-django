@@ -207,7 +207,6 @@ EXCLUDED_TESTS = [
 
     # JSONFields
     'model_fields.test_jsonfield.TestQuerying.test_key_quoted_string',
-    'model_fields.test_jsonfield.TestQuerying.test_isnull_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
     'model_fields.test_jsonfield.TestQuerying.test_key_escape',
