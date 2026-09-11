@@ -91,6 +91,11 @@ def _clone_constraint_with_replacements(constraint, replacements):
     return constraint.__class__(*args, **kwargs)
 
 
+def _split_field_lookup(name):
+    """Split a lookup/transform path into its root field name and suffix."""
+    return name.split('__', 1) if '__' in name else (name, '')
+
+
 def _replace_condition_field_names(condition, replacements):
     """Rewrite lookup roots and nested F() references in a copied Q tree.
 
@@ -100,9 +105,7 @@ def _replace_condition_field_names(condition, replacements):
         if hasattr(child, 'children'):
             _replace_condition_field_names(child, replacements)
         elif isinstance(child, tuple):
-            field_name, lookup = (
-                child[0].split('__', 1) if '__' in child[0] else (child[0], '')
-            )
+            field_name, lookup = _split_field_lookup(child[0])
             condition.children[index] = (
                 replacements.get(field_name, field_name) + ('__' + lookup if lookup else ''),
                 _replace_expression_field_names(child[1], replacements),
@@ -114,9 +117,20 @@ def _replace_condition_field_names(condition, replacements):
 
 
 def _replace_expression_field_names(expression, replacements):
-    """Rewrite F() references in a copied condition expression tree."""
+    """Rewrite F() references in a copied condition expression tree.
+
+    Recurses into list/tuple RHS values (e.g. `a__in=(F('b'),)`) and strips
+    a lookup/transform suffix before replacing only the root of an F() path
+    (e.g. `F('a__year')` renaming `a`, not the literal string `'a__year'`).
+    """
     if isinstance(expression, F):
-        return F(replacements.get(expression.name, expression.name))
+        root, suffix = _split_field_lookup(expression.name)
+        return F(replacements.get(root, root) + ('__' + suffix if suffix else ''))
+    if isinstance(expression, (list, tuple)):
+        return type(expression)(
+            _replace_expression_field_names(item, replacements)
+            for item in expression
+        )
     if hasattr(expression, 'get_source_expressions'):
         expression.set_source_expressions([
             _replace_expression_field_names(source_expression, replacements)
@@ -1418,7 +1432,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     def _get_expression_field_names(self, expression):
         """Return field names referenced recursively by an expression tree."""
         if isinstance(expression, F):
-            return [expression.name]
+            return [expression.name.split('__', 1)[0]]
+        if isinstance(expression, (list, tuple)):
+            return [
+                field_name
+                for item in expression
+                for field_name in self._get_expression_field_names(item)
+            ]
         if hasattr(expression, 'get_source_expressions'):
             return [
                 field_name
