@@ -121,7 +121,7 @@ def _rename_field_with_meta_indexes(self, app_label, model_name, old_name, new_n
 
 
 # The private ProjectState sentinel prevents a module reload from stacking wrappers.
-if not hasattr(ProjectState, '_mssql_original_rename_field'):
+if django_version >= (4, 0) and not hasattr(ProjectState, '_mssql_original_rename_field'):
     ProjectState._mssql_original_rename_field = ProjectState.rename_field
     ProjectState.rename_field = _rename_field_with_meta_indexes
 
@@ -1642,7 +1642,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     table=self.quote_name(table) if isinstance(table, str) else table,
                     name=name,
                     columns=columns,
-                    condition=' WHERE ' + condition,
+                    condition=(
+                        condition
+                        if isinstance(condition, NullableColumns)
+                        else ' WHERE ' + condition
+                    ),
                     **statement_args,
                     include=include,
                 ) if self.connection.features.supports_partial_indexes else None

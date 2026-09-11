@@ -11,7 +11,7 @@ from django.db.models import UniqueConstraint
 from django.db.models.lookups import Exact
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler, ProgrammingError
 from django.test import TestCase, TransactionTestCase
-from unittest import expectedFailure, skipIf
+from unittest import expectedFailure, skipIf, skipUnless
 from unittest.mock import patch
 
 from mssql.schema import _clone_index_with_replacements
@@ -2006,6 +2006,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn('[aa]', filter_definition)
                 self.assertIn("'[a]'", filter_definition)
                 self.assertNotIn("'[aa]'", filter_definition)
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
     def test_filtered_meta_index_ignores_bracketed_literal(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
@@ -2092,8 +2093,6 @@ class TestMetaIndexesRetained(TransactionTestCase):
         self.assertIn('[aa]', index_sql)
         self.assertIn("'[a]'", index_sql)
 
-    def test_filtered_meta_index_retained_after_rename_and_alter(self):
-
     def test_deferred_filtered_meta_index_after_field_rename_executes(self):
         index_name = 'idx_deferred_filtered_execution'
         result = self._run_migration_test(
@@ -2131,6 +2130,8 @@ class TestMetaIndexesRetained(TransactionTestCase):
         self.assertIn('[aa]', filter_definition)
         self.assertIn("'[a]'", filter_definition)
 
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
+    def test_filtered_meta_index_retained_after_rename_and_alter(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
                 suffix = '_combined' if use_single_migration else '_split'
@@ -2171,6 +2172,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 )
                 catalog = self._get_index_catalog(result.model, index_name)
                 self.assertIn('[aa]', catalog[0][2])
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
     def test_filtered_meta_index_retained_across_migration_rename(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
@@ -2223,6 +2225,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn((True, 'c', filter_definition), catalog)
                 self.assertIn('[aa]', filter_definition)
 
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
     def test_filtered_meta_index_survives_reconstructed_rename_state(self):
         """
         MigrationExecutor startup rebuilds applied-migration state without replaying
@@ -2295,6 +2298,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
         catalog = self._get_index_catalog(model, 'idx_filtered_reconstructed')
         self.assertIn('[aa]', catalog[0][2])
 
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
     def test_filtered_meta_index_retained_after_logical_rename(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
@@ -2482,6 +2486,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     '[flag]', self._get_index_catalog(result.model, index_name)[0][2]
                 )
 
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ expression conditions")
     def test_filtered_meta_index_tracks_tuple_rhs_expression(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
@@ -2588,6 +2593,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn('[bb]', index_sql)
                 self.assertIn('[c]', index_sql)
 
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
     def test_expression_filtered_meta_index_retained_after_rename_and_alter(self):
         """
         Field references nested in positional lookup expressions must be updated
@@ -2672,6 +2678,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn((False, 'b', None), catalog)
                 self.assertIn((True, 'aa', None), catalog)
 
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ expression conditions")
     def test_expression_filtered_meta_index_retained_after_alter(self):
         """
         A filtered Meta index may use a positional lookup expression instead of

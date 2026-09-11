@@ -1,8 +1,10 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 import logging
+from unittest import skipUnless
 
 import django.db.utils
+from django import VERSION
 from django.db import connections, migrations, models
 from django.db.migrations.state import ProjectState
 from django.db.utils import IntegrityError
@@ -163,6 +165,39 @@ class TestHandleOldStyleUniqueTogether(TransactionTestCase):
                 logger.exception('Failed to AlterField:')
                 self.fail('Check for regression of issue #137, AlterField failed with exception: %s' % e)
 
+
+
+@skipUnless(VERSION < (4, 0), "Django 3.2-specific _create_unique_sql branch")
+class TestCreateModelUniqueTogether(TransactionTestCase):
+    def test_create_model_with_unique_together_preserves_deferred_condition(self):
+        class TestMigration(migrations.Migration):
+            initial = True
+
+            operations = [
+                migrations.CreateModel(
+                    name='TestCreateModelUniqueTogether',
+                    fields=[
+                        ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                        ('a', models.CharField(max_length=50, null=True)),
+                        ('b', models.CharField(max_length=50)),
+                    ],
+                    options={'unique_together': {('a', 'b')}},
+                ),
+            ]
+
+        migration = TestMigration(
+            name='test_create_model_with_unique_together', app_label='testapp'
+        )
+        connection = connections['default']
+
+        with connection.schema_editor(atomic=True) as editor:
+            project_state = migration.apply(ProjectState(), editor)
+
+        model = project_state.apps.get_model('testapp', 'TestCreateModelUniqueTogether')
+        unique_index_names = get_constraint_names_where(
+            model._meta.db_table, index=True, unique=True
+        )
+        self.assertEqual(len(unique_index_names), 1)
 
 class TestRenameManyToManyField(TestCase):
     def test_uniqueness_still_enforced_afterwards(self):
