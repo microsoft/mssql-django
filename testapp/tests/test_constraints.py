@@ -262,3 +262,64 @@ class TestUniqueConstraints(TransactionTestCase):
                     NotImplementedError, "does not support OR conditions"
                 ):
                     return migration.apply(ProjectState(), editor)
+
+    def test_unsupportable_unique_constraint_via_create_model(self):
+        """
+        add_constraint() raises NotImplementedError for a conditional
+        UniqueConstraint with a top-level OR (see
+        test_unsupportable_unique_constraint above), but a constraint
+        declared inline via CreateModel(options={'constraints': [...]})
+        never reaches add_constraint() - create_model() calls
+        _create_deferred_unique_constraint_sql() directly. That path must
+        raise the same NotImplementedError instead of compiling an
+        unsupported OR predicate into a filtered index and letting SQL
+        Server fail with a raw syntax error.
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintCreateModel',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                        options={
+                            'constraints': [
+                                models.UniqueConstraint(
+                                    condition=models.Q(
+                                        ('status', 'in_progress'),
+                                        ('status', 'needs_changes'),
+                                        _connector='OR',
+                                    ),
+                                    fields=('_type',),
+                                    name='or_constraint_create_model',
+                                ),
+                            ],
+                        },
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_create_model', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support OR conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
