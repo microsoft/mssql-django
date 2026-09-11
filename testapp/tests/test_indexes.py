@@ -3314,6 +3314,63 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     f"({self._get_context_description(use_single_migration)}).",
                 )
 
+    def test_covering_unique_constraint_include_semantics_retained_after_rename(self):
+        """
+        A covering UniqueConstraint's INCLUDE column, when renamed, must stay
+        an INCLUDE column - not get silently promoted into the unique key.
+        The generic "drop any unique index whose physical columns include
+        the renamed column" path does not distinguish key from INCLUDE
+        columns (sys.index_columns doesn't either, without an explicit
+        filter), so it must not be allowed to rebuild this constraint; only
+        the structured restoration (via _clone_constraint_with_replacements())
+        preserves the key/include distinction.
+        """
+        model_name = 'TestCoveringConstraintRename'
+        constraint_name = 'uq_covering_constraint_rename'
+
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20, null=True)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                    options={
+                        'constraints': [
+                            UniqueConstraint(
+                                fields=['b'],
+                                include=['a'],
+                                condition=models.Q(a__isnull=False),
+                                name=constraint_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='a', new_name='aa'
+                ),
+            ],
+            migration_name_prefix='test_covering_constraint_rename',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        catalog = self._get_index_catalog(result.model, constraint_name)
+        included_by_column = {name: is_included for is_included, name, _ in catalog}
+        self.assertEqual(
+            included_by_column.get('b'), False,
+            "The constraint's key column 'b' should remain key-only.",
+        )
+        self.assertEqual(
+            included_by_column.get('aa'), True,
+            "The renamed INCLUDE column must stay an INCLUDE column, not be "
+            "promoted into the unique key.",
+        )
+
 
 
 
