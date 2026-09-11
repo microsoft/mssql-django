@@ -691,6 +691,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
 
         meta_index_replacements = self._get_meta_index_replacements(model)
+        # Names actually dropped by _delete_indexes() below, as opposed to an
+        # index merely not yet created (e.g. still queued in deferred_sql
+        # from a CreateModel(options={'indexes': [...]}) in the same
+        # migration) - _restore_missing_meta_indexes() must only recreate the
+        # former, or it races the still-pending deferred CREATE INDEX and
+        # collides with it once the schema editor context exits.
+        dropped_meta_index_names = set()
 
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
@@ -934,10 +941,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # Drop unique constraint, SQL Server requires explicit deletion
             self._delete_unique_constraints(model, old_field, new_field, strict)
             # Drop indexes, SQL Server requires explicit deletion
-            self._delete_indexes(
+            dropped_meta_index_names.update(self._delete_indexes(
                 meta_model, old_field, new_field,
                 meta_index_replacements=meta_index_replacements,
-            )
+            ))
 
         # db_default change?
         if django_version >= (5,0):
@@ -990,10 +997,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 # Drop unique constraint, SQL Server requires explicit deletion
                 self._delete_unique_constraints(model, old_field, new_field, strict)
                 # Drop indexes, SQL Server requires explicit deletion
-                self._delete_indexes(
+                dropped_meta_index_names.update(self._delete_indexes(
                     meta_model, old_field, new_field,
                     meta_index_replacements=meta_index_replacements,
-                )
+                ))
 
 
         # ================================================================================
@@ -1405,7 +1412,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # because the "column alteration cleanup" restoration block is skipped
         # whenever the column was renamed (see comment there).
         if old_field.column != new_field.column:
-            self._restore_missing_meta_indexes(meta_model, old_field, new_field)
+            self._restore_missing_meta_indexes(
+                meta_model, old_field, new_field, dropped_meta_index_names
+            )
 
         # Reset connection if required
         if self.connection.features.connection_persists_old_columns:
@@ -1489,9 +1498,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 replacements[index.name] = index_replacements
         return replacements
 
-    def _restore_missing_meta_indexes(self, model, old_field, new_field):
+    def _restore_missing_meta_indexes(self, model, old_field, new_field, dropped_index_names):
         """Recreate a named Meta.indexes entry referencing the renamed field
-        that is missing from the table after this _alter_field() call.
+        that was dropped from the table earlier in this _alter_field() call.
 
         The rename-restoration block above only recreates a Meta.indexes entry
         whose filtered `condition` references the renamed field; a combined
@@ -1499,12 +1508,21 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         conditional) Meta.indexes entry via _delete_indexes() without
         recreating it, because the later "column alteration cleanup"
         restoration is skipped whenever the column was renamed.
+
+        Restricting to `dropped_index_names` (rather than any index simply
+        absent from the catalog) is required: an index declared inline via
+        CreateModel(options={'indexes': [...]}) is legitimately absent until
+        its deferred CREATE INDEX statement runs at schema_editor context
+        exit, and would otherwise be recreated here too, colliding with that
+        still-pending statement once it finally executes.
         """
+        if not dropped_index_names:
+            return
         existing_index_names = set(
             self._db_table_constraint_names(model._meta.db_table, index=True)
         )
         for index in model._meta.indexes:
-            if index.name in existing_index_names:
+            if index.name not in dropped_index_names or index.name in existing_index_names:
                 continue
             reference_names = (
                 [field_name for field_name, _ in index.fields_orders]
