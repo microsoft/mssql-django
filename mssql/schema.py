@@ -96,6 +96,19 @@ def _split_field_lookup(name):
     return name.split('__', 1) if '__' in name else (name, '')
 
 
+def _resolve_pk_alias(model, field_name):
+    """Resolve the 'pk' query alias to the model's actual primary key field
+    name.
+
+    Django's Q()/F() lookups accept 'pk' as an alias for the primary key
+    (e.g. `Q(pk__gt=0)` in an Index/UniqueConstraint condition), but
+    `Options.get_field()` does not recognize it and raises
+    FieldDoesNotExist. Any reference-name resolution derived from a
+    condition must resolve this alias first.
+    """
+    return model._meta.pk.name if field_name == 'pk' else field_name
+
+
 def _replace_condition_field_names(condition, replacements):
     """Rewrite lookup roots and nested F() references in a copied Q tree.
 
@@ -1272,7 +1285,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     try:
                         fields.append(
                             meta_model._meta.get_field(
-                                replacements.get(field_name, field_name)
+                                _resolve_pk_alias(meta_model, replacements.get(field_name, field_name))
                             )
                         )
                     except FieldDoesNotExist as exc:
@@ -1577,7 +1590,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 try:
                     fields.append(
                         model._meta.get_field(
-                            replacements.get(field_name, field_name)
+                            _resolve_pk_alias(model, replacements.get(field_name, field_name))
                         )
                     )
                 except FieldDoesNotExist as exc:
