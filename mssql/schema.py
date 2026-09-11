@@ -144,8 +144,10 @@ if (3, 2) <= django_version < (4, 0) and not hasattr(
 
 
 # Import CompositePrimaryKey only if Django version is 5.2 or higher
-if django_version >= (5, 2):    
+if django_version >= (5, 2):
     from django.db.models.fields.composite import CompositePrimaryKey
+
+
 class Statement(DjStatement):
     def __hash__(self):
         return hash((self.template, str(self.parts['name'])))
@@ -163,7 +165,7 @@ class NullableColumns(Columns):
         )
 
 class IndexCondition(Expressions):
-    """Reference a filtered Meta.index condition in deferred schema SQL."""
+    """Reference any filtered-index predicate in deferred schema SQL."""
 
     def __init__(self, model, condition, schema_editor):
         query = Query(model=model, alias_cols=False)
@@ -1606,7 +1608,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if condition:
                 condition = (
                     condition
-                    if isinstance(condition, NullableColumns)
+                    if isinstance(condition, (NullableColumns, IndexCondition))
                     else ' WHERE ' + condition
                 )
                 return Statement(
@@ -1661,7 +1663,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     columns=columns,
                     condition=(
                         condition
-                        if isinstance(condition, NullableColumns)
+                        if isinstance(condition, (NullableColumns, IndexCondition))
                         else ' WHERE ' + condition
                     ),
                     **statement_args,
@@ -1697,6 +1699,34 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             db_tablespace=db_tablespace, col_suffixes=col_suffixes, sql=sql,
             opclasses=opclasses, condition=condition,
         )
+
+    def _create_deferred_unique_constraint_sql(self, model, constraint):
+        """Create a conditional unique constraint as a deferred filtered index."""
+        condition = IndexCondition(model, constraint.condition, self)
+        kwargs = {
+            'name': constraint.name,
+            'condition': condition,
+            'deferrable': constraint.deferrable,
+            'include': [
+                model._meta.get_field(field_name).column
+                for field_name in constraint.include
+            ],
+            'opclasses': constraint.opclasses,
+        }
+        if hasattr(constraint, '_get_index_expressions'):
+            kwargs['expressions'] = constraint._get_index_expressions(model, self)
+        if hasattr(constraint, 'nulls_distinct'):
+            kwargs['nulls_distinct'] = constraint.nulls_distinct
+        if django_version >= (4, 0):
+            fields = [
+                model._meta.get_field(field_name) for field_name in constraint.fields
+            ]
+        else:
+            fields = [
+                model._meta.get_field(field_name).column
+                for field_name in constraint.fields
+            ]
+        return self._create_unique_sql(model, fields, **kwargs)
 
     def create_model(self, model):
         """
@@ -1785,7 +1815,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             else:
                 self.deferred_sql.append(self._create_unique_sql(model, columns, condition=condition))
 
-        constraints = [constraint.constraint_sql(model, self) for constraint in model._meta.constraints]
+        constraints = []
+        for constraint in model._meta.constraints:
+            if isinstance(constraint, UniqueConstraint) and constraint.condition is not None:
+                statement = self._create_deferred_unique_constraint_sql(model, constraint)
+                if statement is not None:
+                    self.deferred_sql.append(statement)
+            else:
+                constraints.append(constraint.constraint_sql(model, self))
          # If a composite primary key SQL clause was generated, insert it at the beginning of the constraints list
         if composite_pk_sql:
           constraints.insert(0, composite_pk_sql)
