@@ -414,54 +414,82 @@ def json_KeyTransformExact(self, compiler, connection):
     if (
         self.rhs is None
         and isinstance(self.lhs, KeyTransform)
-        and connection.features.supports_json_openjson
     ):
-        lhs, lhs_params, key_transforms = self.lhs.preprocess_lhs(compiler, connection)
-        final_key = key_transforms.pop()
+        if connection.features.supports_json_openjson:
+            lhs, lhs_params, key_transforms = self.lhs.preprocess_lhs(compiler, connection)
+            final_key = key_transforms.pop()
 
-        try:
-            final_index = int(final_key)
-        except ValueError:
-            final_index = None
+            try:
+                final_index = int(final_key)
+            except ValueError:
+                final_index = None
 
-        if final_index is not None:
-            # Compile the final transform independently to preserve the backend's
-            # numeric parsing and negative-index validation.
-            connection.ops.compile_json_path([final_key])
+            if final_index is not None:
+                # Compile the final transform independently to preserve the backend's
+                # numeric parsing and negative-index validation.
+                connection.ops.compile_json_path([final_key])
+
+                if key_transforms:
+                    json_path = connection.ops.compile_json_path(key_transforms)
+                    json_path = json_path.replace("'", "''")
+                    parent_json = "JSON_QUERY(%s, '%s')" % (lhs, json_path)
+                else:
+                    parent_json = "JSON_QUERY(%s)" % lhs
+
+                # OPENJSON exposes both array indexes and numeric object properties as
+                # string keys. Guard the parent shape so __0 follows Django's array-index
+                # semantics and doesn't also match an object property named "0". MAX()
+                # returns SQL NULL when the index is missing, preserving Django's
+                # three-valued behavior when the lookup is negated by exclude().
+                return (
+                    "(SELECT MAX(CASE WHEN [item].[type] = 0 THEN 1 ELSE 0 END) "
+                    "FROM (SELECT %s AS [json]) AS [parent] "
+                    "CROSS APPLY OPENJSON([parent].[json]) AS [item] "
+                    "WHERE LEFT(LTRIM([parent].[json]), 1) = '[' "
+                    "AND [item].[key] = %%s) = 1" % parent_json,
+                    tuple(lhs_params) + (str(final_index),),
+                )
 
             if key_transforms:
                 json_path = connection.ops.compile_json_path(key_transforms)
                 json_path = json_path.replace("'", "''")
-                parent_json = "JSON_QUERY(%s, '%s')" % (lhs, json_path)
+                openjson = "OPENJSON(%s, '%s')" % (lhs, json_path)
             else:
-                parent_json = "JSON_QUERY(%s)" % lhs
+                openjson = "OPENJSON(%s)" % lhs
 
-            # OPENJSON exposes both array indexes and numeric object properties as
-            # string keys. Guard the parent shape so __0 follows Django's array-index
-            # semantics and doesn't also match an object property named "0". MAX()
-            # returns SQL NULL when the index is missing, preserving Django's
-            # three-valued behavior when the lookup is negated by exclude().
             return (
-                "(SELECT MAX(CASE WHEN [item].[type] = 0 THEN 1 ELSE 0 END) "
-                "FROM (SELECT %s AS [json]) AS [parent] "
-                "CROSS APPLY OPENJSON([parent].[json]) AS [item] "
-                "WHERE LEFT(LTRIM([parent].[json]), 1) = '[' "
-                "AND [item].[key] = %%s) = 1" % parent_json,
-                tuple(lhs_params) + (str(final_index),),
+                "(SELECT MAX(CASE WHEN [type] = 0 THEN 1 ELSE 0 END) "
+                "FROM %s WHERE [key] = %%s) = 1" % openjson,
+                tuple(lhs_params) + (final_key,),
             )
-
-        if key_transforms:
-            json_path = connection.ops.compile_json_path(key_transforms)
-            json_path = json_path.replace("'", "''")
-            openjson = "OPENJSON(%s, '%s')" % (lhs, json_path)
         else:
-            openjson = "OPENJSON(%s)" % lhs
+            if connection.sql_server_version >= 2022:
+                lhs, lhs_params, key_transforms = self.lhs.preprocess_lhs(compiler, connection)
+                
+                # For Django < 6.0, use Django's built-in compile_json_path
+                # For Django 6.0+, use connection.ops.compile_json_path()
+                if VERSION >= (6, 0):
+                    json_path = connection.ops.compile_json_path(key_transforms)
+                else:
+                    from django.db.models.fields.json import compile_json_path
+                    json_path = compile_json_path(key_transforms)
+                    
+                json_path = json_path.replace("'", "''")
+                
+                sql = (
+                    "JSON_PATH_EXISTS(%s, '%s') > 0 "
+                    "AND JSON_VALUE(%s, '%s') IS NULL "
+                    "AND JSON_QUERY(%s, '%s') IS NULL"
+                ) % (lhs, json_path, lhs, json_path, lhs, json_path)
+                
+                return sql, tuple(lhs_params) * 3
+            else:
+                from django.db.utils import NotSupportedError
+                raise NotSupportedError(
+                    "JSON-null key lookups require a database compatibility level of 130 or higher, "
+                    "or SQL Server 2022+."
+                )
 
-        return (
-            "(SELECT MAX(CASE WHEN [type] = 0 THEN 1 ELSE 0 END) "
-            "FROM %s WHERE [key] = %%s) = 1" % openjson,
-            tuple(lhs_params) + (final_key,),
-        )
     return self.as_sql(compiler, connection)
 
 
