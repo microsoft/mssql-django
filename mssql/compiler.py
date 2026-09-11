@@ -139,8 +139,9 @@ def _as_sql_keytransform_isnull(self, compiler, connection):
     # limitation, mirrors HasKey's own pre-2022 fallback.
     is_null_op = "IS NULL" if self.rhs else "IS NOT NULL"
     return (
-        "JSON_VALUE(%s, '%s') %s" % (lhs, json_path, is_null_op),
-        tuple(params),
+        "COALESCE(JSON_QUERY(%s, '%s'), JSON_VALUE(%s, '%s')) %s" %
+        ((lhs, json_path) * 2 + (is_null_op,)),
+        tuple(params) * 2,
     )
 
 def _as_sql_least(self, compiler, connection):

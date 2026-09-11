@@ -112,13 +112,16 @@ class DatabaseFeatures(BaseDatabaseFeatures):
         """
         if self.connection.sql_server_version < 2022:
             return False
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT compatibility_level FROM sys.databases "
-                "WHERE database_id = DB_ID()"
-            )
-            row = cursor.fetchone()
-            return bool(row) and row[0] >= 160
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT compatibility_level FROM sys.databases "
+                    "WHERE database_id = DB_ID()"
+                )
+                row = cursor.fetchone()
+                return bool(row) and row[0] >= 160
+        except Exception:
+            return False
 
     @cached_property
     def supports_json_openjson(self):
@@ -126,10 +129,13 @@ class DatabaseFeatures(BaseDatabaseFeatures):
         OPENJSON requires database compatibility level >= 130, independent of
         the SQL Server product version.
         """
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT compatibility_level FROM sys.databases "
-                "WHERE database_id = DB_ID()"
-            )
-            row = cursor.fetchone()
-            return bool(row) and row[0] >= 130
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT compatibility_level FROM sys.databases "
+                    "WHERE database_id = DB_ID()"
+                )
+                row = cursor.fetchone()
+                return bool(row) and row[0] >= 130
+        except Exception:
+            return False
