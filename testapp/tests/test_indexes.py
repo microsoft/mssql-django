@@ -3261,6 +3261,59 @@ class TestMetaIndexesRetained(TransactionTestCase):
             "when an unrelated field's type was altered.",
         )
 
+    def test_meta_index_retained_after_autofield_column_rename(self):
+        """
+        Altering an AutoField/BigAutoField field unconditionally drops every
+        index on the table (SQL Server requires this before an ALTER COLUMN
+        on an IDENTITY column). When that alteration also renames the
+        AutoField's own db_column, the normal "column alteration cleanup"
+        restoration is skipped (it only runs when the column was NOT
+        renamed), so a Meta.index on an unrelated field must still be
+        restored via the rename-restoration path, not silently dropped for
+        good.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestAutoFieldColumnRename{suffix}'
+                index_name = f'idx_autofield_column_rename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                        ],
+                    ),
+                    migrations.AddIndex(
+                        model_name=model_name.lower(),
+                        index=models.Index(fields=['a'], name=index_name),
+                    ),
+                ]
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='id',
+                        field=models.AutoField(primary_key=True, db_column='new_id'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_autofield_column_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_named_index_columns(
+                    result.constraints, index_name, ['a'],
+                    'A Meta.index was permanently lost after renaming an '
+                    "AutoField's own db_column "
+                    f"({self._get_context_description(use_single_migration)}).",
+                )
+
 
 
 
