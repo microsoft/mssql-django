@@ -110,9 +110,9 @@ class DatabaseFeatures(BaseDatabaseFeatures):
         JSON_PATH_EXISTS was introduced in SQL Server 2022 and requires the
         database compatibility level to be 160 or higher.
         """
-        if self.connection.sql_server_version < 2022:
-            return False
         try:
+            if self.connection.sql_server_version < 2022:
+               return False
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT compatibility_level FROM sys.databases "
