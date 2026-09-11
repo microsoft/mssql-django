@@ -14,7 +14,7 @@ from django.test import TestCase, TransactionTestCase
 from unittest import expectedFailure, skipIf, skipUnless
 from unittest.mock import patch
 
-from mssql.schema import _clone_index_with_replacements
+from mssql.schema import _clone_index_with_replacements, _replace_condition_field_names
 
 from . import get_constraints
 from ..models import (
@@ -3063,6 +3063,28 @@ class TestMetaIndexesRetained(TransactionTestCase):
         filter_definition = self._get_index_catalog(model, index_name)[0][2]
         self.assertIn('[aa]', filter_definition)
         self.assertNotIn('[a]', filter_definition)
+
+    def test_condition_field_names_rewritten_for_collection_and_transformed_rhs(self):
+        """
+        Field references nested in a tuple/list RHS value, or reached through
+        a lookup transform on an F() reference, must be rewritten on rename,
+        not silently left stale (or silently dropped from the referenced
+        field names used to decide which indexes are affected by a rename).
+        """
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+        editor = conn.schema_editor(collect_sql=True, atomic=False)
+
+        collection_condition = models.Q(a__in=(models.F('b'),))
+        _replace_condition_field_names(collection_condition, {'b': 'bb'})
+        self.assertEqual(
+            editor._get_condition_field_names(collection_condition), ['a', 'bb']
+        )
+
+        transformed_condition = models.Q(b=models.F('a__year'))
+        _replace_condition_field_names(transformed_condition, {'a': 'aa'})
+        self.assertEqual(
+            editor._get_condition_field_names(transformed_condition), ['b', 'aa']
+        )
 
 
 
