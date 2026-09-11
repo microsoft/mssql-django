@@ -24,6 +24,7 @@ from django.db.backends.ddl_references import (
 from django import VERSION as django_version
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import F, NOT_PROVIDED, Index, UniqueConstraint
+from django.db.migrations.operations.fields import RenameField
 from django.db.models.fields import AutoField, BigAutoField
 from django.db.models.fields.related import ForeignKey
 from django.db.models.sql import Query
@@ -94,6 +95,18 @@ def _replace_expression_field_names(expression, replacements):
     return expression
 
 
+def _replace_meta_index_field_names(model_state, old_name, new_name):
+    """Replace renamed field references in structured Meta.indexes state."""
+    indexes = model_state.options.get('indexes')
+    if indexes is not None:
+        # ModelState.clone() shallow-copies options, so replace the list to protect
+        # the preserved state used by a migration operation.
+        model_state.options['indexes'] = [
+            _clone_index_with_replacements(index, {old_name: new_name})
+            for index in indexes
+        ]
+
+
 def _rename_field_with_meta_indexes(self, app_label, model_name, old_name, new_name):
     """Keep structured Meta.indexes state consistent with Django field renames.
 
@@ -103,27 +116,31 @@ def _rename_field_with_meta_indexes(self, app_label, model_name, old_name, new_n
     MigrationExecutor builds state.
     """
     model_state = self.models[(app_label, model_name)]
-    if old_name not in model_state.fields:
-        return ProjectState._mssql_original_rename_field(
-            self, app_label, model_name, old_name, new_name
-        )
-    indexes = model_state.options.get('indexes')
-    if indexes is not None:
-        # ModelState.clone() shallow-copies options, so replace the list to protect
-        # the preserved state used by a migration operation.
-        model_state.options['indexes'] = [
-            _clone_index_with_replacements(index, {old_name: new_name})
-            for index in indexes
-        ]
+    if old_name in model_state.fields:
+        _replace_meta_index_field_names(model_state, old_name, new_name)
     return ProjectState._mssql_original_rename_field(
         self, app_label, model_name, old_name, new_name
     )
 
 
-# The private ProjectState sentinel prevents a module reload from stacking wrappers.
+def _rename_field_state_forwards_with_meta_indexes(self, app_label, state):
+    """Keep Django 3.2 Meta.indexes state consistent with field renames."""
+    model_state = state.models[(app_label, self.model_name_lower)]
+    if self.old_name in model_state.fields:
+        _replace_meta_index_field_names(model_state, self.old_name, self.new_name)
+    return RenameField._mssql_original_state_forwards(self, app_label, state)
+
+
+# The private sentinels prevent a module reload from stacking wrappers.
 if django_version >= (4, 0) and not hasattr(ProjectState, '_mssql_original_rename_field'):
     ProjectState._mssql_original_rename_field = ProjectState.rename_field
     ProjectState.rename_field = _rename_field_with_meta_indexes
+
+if (3, 2) <= django_version < (4, 0) and not hasattr(
+    RenameField, '_mssql_original_state_forwards'
+):
+    RenameField._mssql_original_state_forwards = RenameField.state_forwards
+    RenameField.state_forwards = _rename_field_state_forwards_with_meta_indexes
 
 
 # Import CompositePrimaryKey only if Django version is 5.2 or higher
