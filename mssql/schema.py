@@ -780,6 +780,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for t in (AutoField, BigAutoField):
             if isinstance(old_field, t) or isinstance(new_field, t):
                 index_names = self._constraint_names(model, index=True)
+                dropped_meta_index_names.update(index_names)
                 for index_name in index_names:
                     self.execute(
                         self._delete_constraint_sql(self.sql_delete_index, model, index_name)
@@ -1512,15 +1513,21 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         return replacements
 
     def _restore_missing_meta_indexes(self, model, old_field, new_field, dropped_index_names):
-        """Recreate a named Meta.indexes entry referencing the renamed field
-        that was dropped from the table earlier in this _alter_field() call.
+        """Recreate a named Meta.indexes entry that was dropped from the
+        table earlier in this _alter_field() call.
 
         The rename-restoration block above only recreates a Meta.indexes entry
         whose filtered `condition` references the renamed field; a combined
         column rename and type/nullability change drops a plain (non-
         conditional) Meta.indexes entry via _delete_indexes() without
         recreating it, because the later "column alteration cleanup"
-        restoration is skipped whenever the column was renamed.
+        restoration is skipped whenever the column was renamed. The
+        AutoField/BigAutoField "drop all indexes" path above drops every
+        index on the table regardless of which field it references, for the
+        same reason - so a dropped index here is not necessarily one that
+        references the renamed field at all; _clone_index_with_replacements()
+        is a no-op for names it doesn't contain, so restoring unconditionally
+        is safe.
 
         Restricting to `dropped_index_names` (rather than any index simply
         absent from the catalog) is required: an index declared inline via
@@ -1536,13 +1543,6 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         )
         for index in model._meta.indexes:
             if index.name not in dropped_index_names or index.name in existing_index_names:
-                continue
-            reference_names = (
-                [field_name for field_name, _ in index.fields_orders]
-                + list(index.include)
-                + self._get_condition_field_names(index.condition)
-            )
-            if old_field.name not in reference_names:
                 continue
             restored_index = _clone_index_with_replacements(
                 index, {old_field.name: new_field.name}
