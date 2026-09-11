@@ -37,24 +37,9 @@ steps:
     displayName: Restart SQL Server
 
   - powershell: |
-      $tag = "$(python.version)".Replace(".", "")
-      Write-Host "##vso[task.setvariable variable=pyTag]$tag"
-    displayName: Compute Python wheel tag
-
-  - powershell: |
       python -m pip install --upgrade pip wheel setuptools
       python -m pip install tox
       git clone https://github.com/django/django.git
-
-      # Use the mssql-python wheel committed under ci/mssql-python-wheels/. These
-      # wheels come from Build-Release-Package-Pipeline dev build 172271 and
-      # already carry the two pyodbc-parity fixes (microsoft/mssql-python#741
-      # Binary(memoryview) and microsoft/mssql-python#742 Decimal SQL_NUMERIC)
-      # with the native core rebuilt, which the published PyPI 1.14.0 wheel lacks.
-      $whl = Get-ChildItem -Path "$(Build.SourcesDirectory)/ci/mssql-python-wheels" -Filter "mssql_python-*-cp$(pyTag)-cp$(pyTag)-win_amd64.whl" | Select-Object -First 1
-      if (-not $whl) { Write-Error "mssql-python wheel for cp$(pyTag) not found under ci/mssql-python-wheels"; exit 1 }
-      Write-Host "Using mssql-python wheel: $($whl.FullName)"
-      $env:MSSQL_PYTHON_WHEEL = $whl.FullName
 
       python -m tox -e $(tox.env)
     displayName: Run tox

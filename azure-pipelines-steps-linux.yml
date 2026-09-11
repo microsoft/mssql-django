@@ -131,18 +131,7 @@ steps:
       git clone https://github.com/django/django.git
     displayName: Install Python requirements
 
-  - script: |
-      # Use the mssql-python Linux wheel committed under ci/mssql-python-wheels/.
-      # These wheels come from Build-Release-Package-Pipeline build 173176 and
-      # already carry the two pyodbc-parity fixes (microsoft/mssql-python#741
-      # Binary(memoryview) and microsoft/mssql-python#742 Decimal SQL_NUMERIC)
-      # with the native core rebuilt, which the published PyPI 1.14.0 wheel lacks.
-      TAG="cp$(echo '$(python.version)' | tr -d '.')"
-      WHL=$(ls "$(Build.SourcesDirectory)/ci/mssql-python-wheels/mssql_python-"*"-${TAG}-${TAG}-manylinux"*"_x86_64.whl" 2>/dev/null | head -1)
-      if [ -z "$WHL" ]; then echo "mssql-python wheel for ${TAG} not found under ci/mssql-python-wheels"; exit 1; fi
-      echo "Using mssql-python wheel: $WHL"
-      export MSSQL_PYTHON_WHEEL="$WHL"
-      tox -e $(tox.env)
+  - script: tox -e $(tox.env)
     displayName: Run tox
     env:
       MSSQL_PASSWORD: $(TestAppPassword)

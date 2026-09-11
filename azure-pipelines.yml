@@ -76,7 +76,7 @@ jobs:
 
   - job: Windows_Legacy
     displayName: Windows (EOL Django, nightly)
-    # Gated off for the Windows-only mssql-python wheel validation (fixes #741/#742).
+    # Legacy runtimes remain disabled for this Python 3.10+ driver validation.
     # Restore to: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
     condition: false
     pool:
@@ -205,7 +205,7 @@ jobs:
 
   - job: Linux_Legacy
     displayName: Linux (EOL Django, nightly)
-    # Gated off for the Windows-only mssql-python wheel validation (fixes #741/#742).
+    # Legacy runtimes remain disabled for this Python 3.10+ driver validation.
     # Restore to: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
     condition: false
     pool:

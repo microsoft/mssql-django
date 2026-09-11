@@ -49,7 +49,7 @@ setup(
     packages=find_packages(exclude=['testapp', 'testapp.*']),
     install_requires=[
         'django>=3.2,<6.2',
-        'mssql-python>=1.0',
+        'mssql-python>=1.15.0',
         'pytz',
     ],
     extras_require={
