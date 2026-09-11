@@ -850,7 +850,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     old_field.name: new_field.name,
                 }
                 restored_index = _clone_index_with_replacements(index, replacements)
-                statement = restored_index.create_sql(new_field.model, self)
+                statement = restored_index.create_sql(meta_model, self)
                 if statement:
                     meta_indexes_to_restore.append(statement)
                     self.execute(
