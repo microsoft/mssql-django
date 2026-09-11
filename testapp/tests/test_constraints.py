@@ -323,3 +323,84 @@ class TestUniqueConstraints(TransactionTestCase):
                     NotImplementedError, "does not support OR conditions"
                 ):
                     return migration.apply(ProjectState(), editor)
+
+    def test_covering_conditional_unique_constraint_include_uses_db_column(self):
+        """
+        _create_deferred_unique_constraint_sql() converts constraint.include
+        (field names) to physical columns before calling _create_unique_sql(),
+        matching Django's own UniqueConstraint.create_sql()/Index.create_sql()
+        convention - _index_include_sql() only quotes whatever string it is
+        given as a literal column identifier, it never resolves a field name
+        itself. An included field with a custom db_column must therefore
+        resolve to that db_column as the physical INCLUDE column, not the
+        field's Python name.
+        """
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestCoveringConstraintDbColumn',
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            (
+                                'a',
+                                models.CharField(
+                                    max_length=20, null=True, db_column='stable_a'
+                                ),
+                            ),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                        options={
+                            'constraints': [
+                                models.UniqueConstraint(
+                                    fields=['b'],
+                                    include=['a'],
+                                    condition=models.Q(a__isnull=False),
+                                    name='uq_covering_db_column',
+                                ),
+                            ],
+                        },
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_covering_constraint_db_column', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                project_state = migration.apply(ProjectState(), editor)
+
+            model = project_state.apps.get_model(
+                'testapp', 'TestCoveringConstraintDbColumn'
+            )
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT ic.is_included_column, c.name
+                    FROM sys.indexes AS i
+                    INNER JOIN sys.index_columns AS ic
+                        ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                    INNER JOIN sys.columns AS c
+                        ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                    WHERE i.object_id = OBJECT_ID(%s) AND i.name = %s
+                    """,
+                    [model._meta.db_table, 'uq_covering_db_column'],
+                )
+                included_by_column = dict(
+                    (name, bool(is_included)) for is_included, name in cursor.fetchall()
+                )
+
+            self.assertEqual(
+                included_by_column.get('stable_a'), True,
+                "The include field's db_column 'stable_a' must be the "
+                "INCLUDE column - not the field's Python name 'a', and not "
+                "missing.",
+            )
+            self.assertEqual(
+                included_by_column.get('b'), False,
+                "The constraint's key column 'b' should remain key-only.",
+            )
