@@ -3000,6 +3000,70 @@ class TestMetaIndexesRetained(TransactionTestCase):
 
         self.assertNotIn(constraint_name, result.constraints)
 
+    def test_squashed_create_model_rename_field_retains_meta_index(self):
+        """
+        When Django's migration optimizer folds a RenameField into a
+        preceding CreateModel (e.g. via squashmigrations, or autodetector-side
+        optimization within one makemigrations run), CreateModel.reduce()
+        rewrites only unique_together/index_together in its absorbed options,
+        never the structured Meta.indexes/.constraints - so a folded
+        CreateModel keeps referencing the pre-rename field name.
+        """
+        from django.db.migrations.optimizer import MigrationOptimizer
+
+        model_name = 'TestSquashedRenameIndex'
+        index_name = 'idx_squashed_rename'
+        operations = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                ],
+                options={
+                    'indexes': [
+                        models.Index(
+                            fields=['b'],
+                            condition=models.Q(a__isnull=False),
+                            name=index_name,
+                        ),
+                    ],
+                },
+            ),
+            migrations.RenameField(
+                model_name=model_name.lower(), old_name='a', new_name='aa'
+            ),
+        ]
+        optimized = MigrationOptimizer().optimize(operations, 'testapp')
+        # Precondition: confirm Django's optimizer actually folds CreateModel +
+        # RenameField into one CreateModel (the scenario this fix targets). If
+        # this assertion ever fails, Django's optimizer behavior changed and
+        # this test needs re-deriving, not weakening.
+        self.assertEqual(len(optimized), 1)
+        self.assertIsInstance(optimized[0], migrations.CreateModel)
+
+        class SquashedMigration(migrations.Migration):
+            initial = True
+            operations = optimized
+
+        migration = SquashedMigration(
+            name='test_squashed_rename_index', app_label='testapp'
+        )
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = migration.apply(ProjectState(), editor)
+
+        model = project_state.apps.get_model('testapp', model_name)
+        constraints = get_constraints(table_name=model._meta.db_table)
+        self._assert_named_index_columns(
+            constraints, index_name, ['b'],
+            'A Meta.index folded into CreateModel by the optimizer lost its key column.',
+        )
+        filter_definition = self._get_index_catalog(model, index_name)[0][2]
+        self.assertIn('[aa]', filter_definition)
+        self.assertNotIn('[a]', filter_definition)
+
 
 
 
