@@ -2130,6 +2130,50 @@ class TestMetaIndexesRetained(TransactionTestCase):
         self.assertIn('[aa]', filter_definition)
         self.assertIn("'[a]'", filter_definition)
 
+    def test_deferred_conditional_unique_constraint_after_field_rename(self):
+        index_name = 'idx_deferred_conditional_unique_rename'
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name='TestDeferredConditionalUniqueRename',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                    options={
+                        'constraints': [
+                            UniqueConstraint(
+                                fields=['b'],
+                                condition=models.Q(a='[a]'),
+                                name=index_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.RenameField(
+                    model_name='testdeferredconditionaluniquerename',
+                    old_name='a',
+                    new_name='aa',
+                ),
+            ],
+            migration_name_prefix='test_deferred_conditional_unique_rename',
+            model_name='TestDeferredConditionalUniqueRename',
+            use_single_migration=True,
+        )
+        self._assert_named_index_columns(
+            result.constraints,
+            index_name,
+            ['b'],
+            'A deferred conditional unique constraint was not created as an index.',
+        )
+        filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+        self.assertIn('[aa]', filter_definition)
+        self.assertIn("'[a]'", filter_definition)
+        self.assertNotIn("'[aa]'", filter_definition)
+
     def test_filtered_meta_index_condition_only_rename_before_unrelated_alter(self):
         for use_single_migration in [False, True]:
             with self.subTest(single_migration=use_single_migration):
