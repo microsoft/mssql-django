@@ -2889,6 +2889,60 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     f"that only executes when the field does NOT have unique=True."
                 )
 
+    def test_plain_meta_index_retained_after_combined_rename_and_alter(self):
+        """
+        A single AlterField that changes both db_column (rename) and max_length
+        (type) on the same field must not drop a plain (non-conditional)
+        Meta.indexes entry referencing that field without recreating it.
+
+        Unlike RenameField (which never changes type/null in the same
+        operation), AlterField can combine a db_column rename with a type
+        change in one call - this is the repro shape for this regression.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestPlainCombinedRename{suffix}'
+                index_name = f'idx_plain_combined_rename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                    ),
+                    migrations.AddIndex(
+                        model_name=model_name.lower(),
+                        index=models.Index(fields=['b'], name=index_name),
+                    ),
+                ]
+
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='b',
+                        field=models.CharField(max_length=40, db_column='bb'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_plain_combined_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_named_index_columns(
+                    result.constraints, index_name, ['bb'],
+                    "A plain Meta.index was dropped and not restored after "
+                    "a combined db_column rename and type change "
+                    f"({self._get_context_description(use_single_migration)})."
+                )
+
 
 
 
