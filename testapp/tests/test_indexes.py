@@ -3158,6 +3158,56 @@ class TestMetaIndexesRetained(TransactionTestCase):
             '[aa]', self._get_index_catalog(to_model, index_name)[0][2]
         )
 
+    def test_meta_index_restore_skips_still_deferred_creation(self):
+        """
+        A Meta.indexes entry declared inline via CreateModel(options={...})
+        is legitimately absent from the catalog until its deferred CREATE
+        INDEX statement runs at schema_editor context exit. A combined
+        db_column rename and type change on that index's field within the
+        SAME migration must not have _restore_missing_meta_indexes() treat
+        that still-pending index as one it needs to recreate - doing so
+        collides with the original deferred CREATE INDEX once it finally
+        executes.
+        """
+        model_name = 'TestDeferredIndexCollision'
+        index_name = 'idx_deferred_index_collision'
+
+        operations_a = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                ],
+                options={
+                    'indexes': [
+                        models.Index(fields=['b'], name=index_name),
+                    ],
+                },
+            ),
+            migrations.AlterField(
+                model_name=model_name.lower(),
+                name='b',
+                field=models.CharField(max_length=40, db_column='bb'),
+            ),
+        ]
+
+        result = self._run_migration_test(
+            operations_a=operations_a,
+            operations_b=[],
+            migration_name_prefix='test_deferred_index_collision',
+            model_name=model_name,
+            use_single_migration=True,
+        )
+
+        self._assert_named_index_columns(
+            result.constraints, index_name, ['bb'],
+            'A Meta.index declared inline via CreateModel was not correctly '
+            'restored after a combined rename and type change in the same '
+            'migration.',
+        )
+
 
 
 
