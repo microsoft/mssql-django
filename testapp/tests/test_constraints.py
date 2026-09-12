@@ -324,6 +324,217 @@ class TestUniqueConstraints(TransactionTestCase):
                 ):
                     return migration.apply(ProjectState(), editor)
 
+    def test_unsupportable_unique_constraint_nested_or(self):
+        """
+        The OR-connector guard in add_constraint() only inspected the root Q
+        node's connector. A root AND whose child is itself an OR (e.g.
+        Q(a=1) & (Q(b=2) | Q(c=3))) reports connector == 'AND' at the root
+        and slipped through, producing a filtered-index predicate SQL Server
+        rejects with a raw syntax error instead of this NotImplementedError.
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintNestedOr',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                    ),
+                    migrations.AddConstraint(
+                        model_name='testunsupportableuniqueconstraintnestedor',
+                        constraint=models.UniqueConstraint(
+                            condition=models.Q(_type='widget') & (
+                                models.Q(status='in_progress') | models.Q(status='needs_changes')
+                            ),
+                            fields=('_type',),
+                            name='nested_or_constraint',
+                        ),
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_nested_or', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support OR conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
+
+    def test_unsupportable_unique_constraint_nested_or_via_create_model(self):
+        """
+        Same nested-OR predicate as test_unsupportable_unique_constraint_nested_or
+        above, but declared inline via CreateModel(options={'constraints': [...]}),
+        which reaches _create_deferred_unique_constraint_sql() directly instead of
+        add_constraint().
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintNestedOrCreateModel',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                        options={
+                            'constraints': [
+                                models.UniqueConstraint(
+                                    condition=models.Q(_type='widget') & (
+                                        models.Q(status='in_progress') | models.Q(status='needs_changes')
+                                    ),
+                                    fields=('_type',),
+                                    name='nested_or_constraint_create_model',
+                                ),
+                            ],
+                        },
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_nested_or_create_model', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support OR conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
+
+    def test_unsupportable_unique_constraint_negated(self):
+        """
+        A negated Q (~Q(...)) still reports connector == 'AND' at the root, so
+        a guard that only checked the connector let it through, producing a
+        filtered-index predicate SQL Server rejects with a raw syntax error
+        instead of this NotImplementedError.
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintNegated',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                    ),
+                    migrations.AddConstraint(
+                        model_name='testunsupportableuniqueconstraintnegated',
+                        constraint=models.UniqueConstraint(
+                            condition=~models.Q(status='archived'),
+                            fields=('_type',),
+                            name='negated_constraint',
+                        ),
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_negated', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support negated conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
+
+    def test_unsupportable_unique_constraint_negated_via_create_model(self):
+        """
+        Same negated predicate as test_unsupportable_unique_constraint_negated
+        above, but declared inline via CreateModel(options={'constraints': [...]}),
+        which reaches _create_deferred_unique_constraint_sql() directly instead of
+        add_constraint().
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintNegatedCreateModel',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                        options={
+                            'constraints': [
+                                models.UniqueConstraint(
+                                    condition=~models.Q(status='archived'),
+                                    fields=('_type',),
+                                    name='negated_constraint_create_model',
+                                ),
+                            ],
+                        },
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_negated_create_model', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support negated conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
+
     def test_covering_conditional_unique_constraint_include_uses_db_column(self):
         """
         _create_deferred_unique_constraint_sql() converts constraint.include
