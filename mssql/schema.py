@@ -1912,13 +1912,32 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             opclasses=opclasses, condition=condition,
         )
 
-    def _create_deferred_unique_constraint_sql(self, model, constraint):
-        """Create a conditional unique constraint as a deferred filtered index."""
-        if constraint.condition.connector != AND:
+    def _validate_unique_constraint_condition(self, condition, constraint_name):
+        """Recursively verify a conditional UniqueConstraint's Q tree only uses
+        AND connectors with no negation, the only predicate shape SQL Server
+        supports in a filtered index. A root-only check lets a nested OR
+        (`Q(a=1) & (Q(b=2) | Q(c=3))`) or a negated Q (`~Q(a=1)`, which still
+        reports connector == AND at the root) through, producing a filtered-index
+        predicate SQL Server rejects with a raw syntax error instead of this
+        NotImplementedError.
+        """
+        if condition.negated:
+            raise NotImplementedError(
+                "The backend does not support negated conditions on unique constraint %s." %
+                constraint_name
+            )
+        if condition.connector != AND:
             raise NotImplementedError(
                 "The backend does not support %s conditions on unique constraint %s." %
-                (constraint.condition.connector, constraint.name)
+                (condition.connector, constraint_name)
             )
+        for child in condition.children:
+            if hasattr(child, 'children'):
+                self._validate_unique_constraint_condition(child, constraint_name)
+
+    def _create_deferred_unique_constraint_sql(self, model, constraint):
+        """Create a conditional unique constraint as a deferred filtered index."""
+        self._validate_unique_constraint_condition(constraint.condition, constraint.name)
         condition = IndexCondition(model, constraint.condition, self)
         kwargs = {
             'name': constraint.name,
@@ -2239,9 +2258,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.deferred_sql.remove(sql)
 
     def add_constraint(self, model, constraint):
-        if isinstance(constraint, UniqueConstraint) and constraint.condition and constraint.condition.connector != AND:
-            raise NotImplementedError("The backend does not support %s conditions on unique constraint %s." %
-                                      (constraint.condition.connector, constraint.name))
+        if isinstance(constraint, UniqueConstraint) and constraint.condition:
+            self._validate_unique_constraint_condition(constraint.condition, constraint.name)
         super().add_constraint(model, constraint)
 
     if django_version >= (4, 2):
