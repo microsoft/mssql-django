@@ -8,9 +8,13 @@ from django.db import models, migrations
 from django.db.migrations.migration import Migration
 from django.db.migrations.state import ProjectState
 from django.db.models import UniqueConstraint
+from django.db.models.lookups import Exact
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler, ProgrammingError
 from django.test import TestCase, TransactionTestCase
-from unittest import skipIf, expectedFailure
+from unittest import expectedFailure, skipIf, skipUnless
+from unittest.mock import patch
+
+from mssql.schema import _clone_index_with_replacements, _replace_condition_field_names
 
 from . import get_constraints
 from ..models import (
@@ -204,6 +208,7 @@ class TestMetaIndexesRetained(TransactionTestCase):
         migration_name_prefix: str,
         model_name: str,
         use_single_migration: bool,
+        operations_c=None,
     ) -> MigrationTestResult:
         """
         Helper to run migration tests with either combined or split schema_editor contexts.
@@ -222,13 +227,14 @@ class TestMetaIndexesRetained(TransactionTestCase):
         # Use django.db.connections to get a fresh connection for TransactionTestCase
         conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
         suffix = '_combined' if use_single_migration else '_split'
+        operations_c = operations_c or []
 
         if use_single_migration:
             # Combined: Create ONE migration with all operations combined
             # This simulates combining operations in a single migration file
             class CombinedMigration(migrations.Migration):
                 initial = True
-                operations = operations_a + operations_b
+                operations = operations_a + operations_b + operations_c
 
             migration = CombinedMigration(name=f'{migration_name_prefix}{suffix}', app_label='testapp')
 
@@ -247,11 +253,21 @@ class TestMetaIndexesRetained(TransactionTestCase):
 
             migration_a = MigrationA(name=f'{migration_name_prefix}{suffix}_a', app_label='testapp')
             migration_b = MigrationB(name=f'{migration_name_prefix}{suffix}_b', app_label='testapp')
+            if operations_c:
+                class MigrationC(migrations.Migration):
+                    operations = operations_c
+
+                migration_c = MigrationC(
+                    name=f'{migration_name_prefix}{suffix}_c', app_label='testapp'
+                )
 
             with conn.schema_editor(atomic=True) as editor:
                 project_state = migration_a.apply(ProjectState(), editor)
             with conn.schema_editor(atomic=True) as editor:
                 project_state = migration_b.apply(project_state, editor)
+            if operations_c:
+                with conn.schema_editor(atomic=True) as editor:
+                    project_state = migration_c.apply(project_state, editor)
 
         # Get the model and constraints for assertions
         model = project_state.apps.get_model('testapp', model_name)
@@ -276,6 +292,27 @@ class TestMetaIndexesRetained(TransactionTestCase):
 
     def _get_context_description(self, use_single_migration: bool) -> str:
         return "combined single migration" if use_single_migration else "split into 2 migrations"
+
+    def _assert_named_index_columns(self, constraints, index_name, expected_columns, error_msg):
+        self.assertIn(index_name, constraints, error_msg)
+        self.assertEqual(constraints[index_name]['columns'], expected_columns, error_msg)
+
+    def _get_index_catalog(self, model, index_name):
+        with django.db.connections[django.db.DEFAULT_DB_ALIAS].cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT ic.is_included_column, c.name, i.filter_definition
+                FROM sys.indexes AS i
+                INNER JOIN sys.index_columns AS ic
+                    ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                INNER JOIN sys.columns AS c
+                    ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE i.object_id = OBJECT_ID(%s) AND i.name = %s
+                ORDER BY ic.key_ordinal, ic.index_column_id
+                """,
+                [model._meta.db_table, index_name],
+            )
+            return cursor.fetchall()
 
     def test_index_from_meta_indexes_retained_after_type_change(self):
         """
@@ -599,18 +636,12 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     ),
                 )
 
-    @expectedFailure
     def test_index_from_meta_indexes_retained_after_rename_and_type_change(self):
         """
         Test that indexes from Meta.indexes are retained when a field is renamed
         AND has its type changed in the same migration.
 
-        This tests a known bug: the TYPE CHANGE PATH drops indexes, but the
-        RESTORE PHASE is skipped when column is renamed (old_field.column != new_field.column).
-
-        Additionally, _delete_indexes() fails with FieldDoesNotExist because it tries to
-        look up the index field by the old field name, but RenameField has already updated
-        the model state, so the old field name no longer exists.
+        Regression test for https://github.com/microsoft/mssql-django/issues/499
 
         Runs with both split and combined migrations
         """
@@ -830,18 +861,12 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     f"Expected unique_together to be retained."
                 )
 
-    @expectedFailure
     def test_index_from_meta_indexes_retained_after_rename_and_nullability_change(self):
         """
         Test that indexes from Meta.indexes are retained when a field is renamed
         AND has its nullability changed in the same migration.
 
-        This tests a known bug: the NULLABILITY CHANGE PATH drops indexes, but the
-        RESTORE PHASE is skipped when column is renamed (old_field.column != new_field.column).
-
-        Additionally, _delete_indexes() fails with FieldDoesNotExist because it tries to
-        look up the index field by the old field name, but RenameField has already updated
-        the model state, so the old field name no longer exists.
+        Regression test for https://github.com/microsoft/mssql-django/issues/499
 
         Runs with both split and combined migrations
         """
@@ -1725,6 +1750,1070 @@ class TestMetaIndexesRetained(TransactionTestCase):
                         f"Expected index_together to be restored for field without db_index=True."
                     ),
                 )
+    def test_stale_meta_index_not_retargeted_by_autofield_change(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestStaleIndexAuto{suffix}'
+                index_name = f'idx_stale_auto{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['a'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='id',
+                            field=models.BigAutoField(primary_key=True),
+                        ),
+                    ],
+                    migration_name_prefix='test_stale_index_auto',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['aa'],
+                    'A stale Meta.indexes field was retargeted during an AutoField change.',
+                )
+
+    def test_stale_meta_index_reconciles_reused_field_name(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestReusedIndexField{suffix}'
+                index_name = f'idx_reused_field{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['a'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AddField(
+                            model_name=model_name.lower(),
+                            name='a',
+                            field=models.CharField(max_length=20),
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='aa',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_reused_index_field',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['aa'],
+                    'A stale Meta.indexes field was not reconciled after its old name was reused.',
+                )
+
+    def test_removed_meta_index_not_retargeted_by_unrelated_alter(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestRemovedIndex{suffix}'
+                index_name = f'idx_removed{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['a'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RemoveField(model_name=model_name.lower(), name='a'),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_removed_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self.assertNotIn(
+                    index_name,
+                    result.constraints,
+                    'A removed Meta.indexes definition was recreated on an unrelated field.',
+                )
+
+    def test_meta_index_restored_after_multiple_renames(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestMultipleRenames{suffix}'
+                index_name = f'idx_multiple_renames{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['a', 'b'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='b', new_name='bb'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='aa',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_multiple_renames',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+
+                    ['aa', 'bb'],
+                    'A composite Meta.indexes definition was not restored after multiple renames.',
+                )
+    def test_filtered_meta_index_restored_after_multiple_renames(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFilteredMultipleRenames{suffix}'
+                index_name = f'idx_filtered_multiple{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('c', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['a'],
+                                condition=models.Q(c__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='c', new_name='cc'
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_multiple_renames',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['aa'],
+                    'A filtered Meta.indexes key was not restored after multiple renames.',
+                )
+                filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+                self.assertIn('[cc]', filter_definition)
+                self.assertNotIn('[c]', filter_definition)
+
+    def test_filtered_meta_index_preserves_literal_after_field_rename(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFilteredLiteral{suffix}'
+                index_name = f'idx_filtered_literal{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(a='[a]'),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_literal',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+                self.assertIn('[aa]', filter_definition)
+                self.assertIn("'[a]'", filter_definition)
+                self.assertNotIn("'[aa]'", filter_definition)
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
+    def test_filtered_meta_index_ignores_bracketed_literal(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestBracketedLiteral{suffix}'
+                index_name = f'idx_bracketed_literal{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(a='[b]'),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_bracketed_literal',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                catalog = self._get_index_catalog(result.model, index_name)
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['b'],
+                    'A filtered Meta.indexes key was not restored after an unrelated rename.',
+                )
+                self.assertIn('[aa]', catalog[0][2])
+                self.assertIn("'[b]'", catalog[0][2])
+                self.assertNotIn("'[aa]'", catalog[0][2])
+
+    def test_deferred_filtered_meta_index_after_field_rename(self):
+        """
+        A filtered Meta.indexes condition remains structured until deferred SQL
+        executes, so a following RenameField updates its identifier only.
+        """
+        migration = Migration('test_deferred_filtered_index', 'testapp')
+        migration.operations = [
+            migrations.CreateModel(
+                name='TestDeferredFilteredIndex',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                ],
+                options={
+                    'indexes': [
+                        models.Index(
+                            fields=['b'],
+                            condition=models.Q(a='[a]'),
+                            name='idx_deferred_filtered',
+                        ),
+                    ],
+                },
+            ),
+            migrations.RenameField(
+                model_name='testdeferredfilteredindex', old_name='a', new_name='aa'
+            ),
+        ]
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+        with patch.object(conn.features, 'connection_persists_old_columns', False):
+            with conn.schema_editor(collect_sql=True, atomic=False) as editor:
+                migration.apply(ProjectState(), editor)
+        index_sql = next(sql for sql in editor.collected_sql if 'idx_deferred_filtered' in sql)
+        self.assertIn('[aa]', index_sql)
+        self.assertIn("'[a]'", index_sql)
+
+    def test_deferred_filtered_meta_index_after_field_rename_executes(self):
+        index_name = 'idx_deferred_filtered_execution'
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name='TestDeferredFilteredIndexExecution',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                    options={
+                        'indexes': [
+                            models.Index(
+                                fields=['b'],
+                                condition=models.Q(a='[a]'),
+                                name=index_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.RenameField(
+                    model_name='testdeferredfilteredindexexecution',
+                    old_name='a',
+                    new_name='aa',
+                ),
+            ],
+            migration_name_prefix='test_deferred_filtered_index_execution',
+            model_name='TestDeferredFilteredIndexExecution',
+            use_single_migration=True,
+        )
+        filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+        self.assertIn('[aa]', filter_definition)
+        self.assertIn("'[a]'", filter_definition)
+
+    def test_deferred_conditional_unique_constraint_after_field_rename(self):
+        index_name = 'idx_deferred_conditional_unique_rename'
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name='TestDeferredConditionalUniqueRename',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                    options={
+                        'constraints': [
+                            UniqueConstraint(
+                                fields=['b'],
+                                condition=models.Q(a='[a]'),
+                                name=index_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.RenameField(
+                    model_name='testdeferredconditionaluniquerename',
+                    old_name='a',
+                    new_name='aa',
+                ),
+            ],
+            migration_name_prefix='test_deferred_conditional_unique_rename',
+            model_name='TestDeferredConditionalUniqueRename',
+            use_single_migration=True,
+        )
+        self._assert_named_index_columns(
+            result.constraints,
+            index_name,
+            ['b'],
+            'A deferred conditional unique constraint was not created as an index.',
+        )
+        filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+        self.assertIn('[aa]', filter_definition)
+        self.assertIn("'[a]'", filter_definition)
+        self.assertNotIn("'[aa]'", filter_definition)
+
+    def test_filtered_meta_index_condition_only_rename_before_unrelated_alter(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestConditionOnlyRename{suffix}'
+                index_name = f'idx_condition_only_rename{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_condition_only_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['b'],
+                    'A predicate-only filtered Meta.index was not restored after a rename.',
+                )
+                filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+                self.assertIn('[aa]', filter_definition)
+                self.assertNotIn('[a]', filter_definition)
+
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
+    def test_filtered_meta_index_retained_after_rename_and_alter(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFilteredIndex{suffix}'
+                index_name = f'idx_filtered{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20, null=True)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                catalog = self._get_index_catalog(result.model, index_name)
+                self.assertIn('[aa]', catalog[0][2])
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
+    def test_filtered_meta_index_retained_across_migration_rename(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFilteredIndexAcrossRename{suffix}'
+                index_name = f'idx_filtered_across_rename{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20, null=True)),
+                                ('b', models.CharField(max_length=20)),
+                                ('c', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                include=['c'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                    ],
+                    operations_c=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_index_across_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self.assertIn(index_name, result.constraints)
+                catalog = self._get_index_catalog(result.model, index_name)
+                self.assertEqual(
+                    [column for included, column, _ in catalog if not included], ['b']
+                )
+                filter_definition = catalog[0][2]
+                self.assertIn((True, 'c', filter_definition), catalog)
+                self.assertIn('[aa]', filter_definition)
+
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
+    def test_filtered_meta_index_survives_reconstructed_rename_state(self):
+        """
+        MigrationExecutor startup rebuilds applied-migration state without replaying
+        DDL, unlike the existing across-migration rename test.
+        """
+        class MigrationA(Migration):
+            initial = True
+            operations = [
+                migrations.CreateModel(
+                    name='TestFilteredIndexReconstructed',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20, null=True)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                ),
+                migrations.AddIndex(
+                    model_name='testfilteredindexreconstructed',
+                    index=models.Index(
+                        fields=['b'],
+                        condition=models.Q(a__isnull=False),
+                        name='idx_filtered_reconstructed',
+                    ),
+                ),
+            ]
+
+        class MigrationB(Migration):
+            operations = [
+                migrations.RenameField(
+                    model_name='testfilteredindexreconstructed',
+                    old_name='a',
+                    new_name='aa',
+                ),
+            ]
+
+        class MigrationC(Migration):
+            operations = [
+                migrations.AlterField(
+                    model_name='testfilteredindexreconstructed',
+                    name='b',
+                    field=models.CharField(max_length=40),
+                ),
+            ]
+
+        migration_a = MigrationA('test_filtered_index_reconstructed_a', 'testapp')
+        migration_b = MigrationB('test_filtered_index_reconstructed_b', 'testapp')
+        migration_c = MigrationC('test_filtered_index_reconstructed_c', 'testapp')
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+
+        with conn.schema_editor(atomic=True) as editor:
+            applied_state = migration_a.apply(ProjectState(), editor)
+        with conn.schema_editor(atomic=True) as editor:
+            migration_b.apply(applied_state, editor)
+
+        # Deliberately bypass Migration.apply(), as MigrationExecutor does while
+        # rebuilding applied state through mutate_state().
+        rebuilt_state = migration_a.mutate_state(ProjectState())
+        rebuilt_state = migration_b.mutate_state(rebuilt_state)
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = migration_c.apply(rebuilt_state, editor)
+
+        model = project_state.apps.get_model('testapp', 'TestFilteredIndexReconstructed')
+        constraints = get_constraints(table_name=model._meta.db_table)
+        self._assert_named_index_columns(
+            constraints,
+            'idx_filtered_reconstructed',
+            ['b'],
+            'A reconstructed filtered Meta.index was not restored after a rename.',
+        )
+        catalog = self._get_index_catalog(model, 'idx_filtered_reconstructed')
+        self.assertIn('[aa]', catalog[0][2])
+
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
+    def test_filtered_meta_index_retained_after_logical_rename(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFilteredIndexLogicalRename{suffix}'
+                index_name = f'idx_filtered_logical_rename{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                (
+                                    'a',
+                                    models.CharField(
+                                        max_length=20,
+                                        null=True,
+                                        db_column='stable_a',
+                                    ),
+                                ),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                    ],
+                    operations_c=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_index_logical_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['b'],
+                    'A logical rename did not update the filtered Meta.index reference.',
+                )
+                self.assertIn(
+                    '[stable_a]', self._get_index_catalog(result.model, index_name)[0][2]
+                )
+
+    def test_readded_meta_index_does_not_inherit_rename_replacements(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestReaddedFilteredIndex{suffix}'
+                index_name = f'idx_readded_filtered{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20, null=True)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['a'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AddField(
+                            model_name=model_name.lower(),
+                            name='a',
+                            field=models.CharField(max_length=20, null=True),
+                        ),
+                        migrations.RemoveIndex(
+                            model_name=model_name.lower(), name=index_name
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['a'],
+                                condition=models.Q(a__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_c=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='aa',
+                            field=models.CharField(max_length=40, null=True),
+                        ),
+                    ],
+                    migration_name_prefix='test_readded_filtered_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['a'],
+                    'A re-added Meta index inherited replacements from a removed index.',
+                )
+                filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+                self.assertIn('[a]', filter_definition)
+                self.assertNotIn('[aa]', filter_definition)
+
+    def test_filtered_fk_meta_index_restored_after_constraint_removal(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                parent_model_name = f'TestFilteredFkParent{suffix}'
+                model_name = f'TestFilteredFkChild{suffix}'
+                index_name = f'idx_filtered_fk{suffix}'
+                parent_model = f'testapp.{parent_model_name}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=parent_model_name,
+                            fields=[('id', models.AutoField(primary_key=True))],
+                        ),
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                (
+                                    'parent',
+                                    models.ForeignKey(
+                                        parent_model,
+                                        on_delete=models.CASCADE,
+                                    ),
+                                ),
+                                ('flag', models.CharField(max_length=20, null=True)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['parent'],
+                                condition=models.Q(flag__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='parent',
+                            field=models.ForeignKey(
+                                parent_model,
+                                db_constraint=False,
+                                null=True,
+                                on_delete=models.CASCADE,
+                            ),
+                        ),
+                    ],
+                    migration_name_prefix='test_filtered_fk_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['parent_id'],
+                    'A filtered FK Meta index was not restored after its constraint dropped.',
+                )
+                self.assertIn(
+                    '[flag]', self._get_index_catalog(result.model, index_name)[0][2]
+                )
+
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ expression conditions")
+    def test_filtered_meta_index_tracks_tuple_rhs_expression(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestTupleRhsFilteredIndex{suffix}'
+                index_name = f'idx_tuple_rhs_filtered{suffix}'
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                            ('b', models.CharField(max_length=20)),
+                            ('c', models.CharField(max_length=20)),
+                        ],
+                    ),
+                    migrations.AddIndex(
+                        model_name=model_name.lower(),
+                        index=models.Index(
+                            fields=['c'],
+                            condition=models.Q(a=models.F('b')),
+                            name=index_name,
+                        ),
+                    ),
+                ]
+                operations_b = [
+                    migrations.RenameField(
+                        model_name=model_name.lower(), old_name='a', new_name='aa'
+                    ),
+                    migrations.RenameField(
+                        model_name=model_name.lower(), old_name='b', new_name='bb'
+                    ),
+                ]
+                operations_c = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='c',
+                        field=models.CharField(max_length=40),
+                    ),
+                ]
+                conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+                with patch.object(conn.features, 'connection_persists_old_columns', False):
+                    if use_single_migration:
+                        class CombinedMigration(migrations.Migration):
+                            initial = True
+                            operations = operations_a + operations_b + operations_c
+
+                        migration = CombinedMigration(
+                            name=f'test_tuple_rhs_filtered{suffix}', app_label='testapp'
+                        )
+                        with conn.schema_editor(collect_sql=True, atomic=False) as editor:
+                            project_state = migration.apply(ProjectState(), editor)
+                            model = project_state.apps.get_model('testapp', model_name)
+                            index = next(
+                                index for index in model._meta.indexes
+                                if index.name == index_name
+                            )
+                            self.assertEqual(
+                                editor._get_condition_field_names(index.condition), ['aa', 'bb']
+                            )
+                            editor.execute(
+                                _clone_index_with_replacements(index, {}).create_sql(
+                                    model, editor
+                                )
+                            )
+                    else:
+                        class MigrationA(migrations.Migration):
+                            initial = True
+                            operations = operations_a
+
+                        class MigrationB(migrations.Migration):
+                            operations = operations_b
+
+                        class MigrationC(migrations.Migration):
+                            operations = operations_c
+
+                        with conn.schema_editor(collect_sql=True, atomic=False) as editor_a:
+                            project_state = MigrationA(
+                                name=f'test_tuple_rhs_filtered{suffix}_a', app_label='testapp'
+                            ).apply(ProjectState(), editor_a)
+                        with conn.schema_editor(collect_sql=True, atomic=False) as editor_b:
+                            project_state = MigrationB(
+                                name=f'test_tuple_rhs_filtered{suffix}_b', app_label='testapp'
+                            ).apply(project_state, editor_b)
+                        with conn.schema_editor(collect_sql=True, atomic=False) as editor:
+                            project_state = MigrationC(
+                                name=f'test_tuple_rhs_filtered{suffix}_c', app_label='testapp'
+                            ).apply(project_state, editor)
+                            model = project_state.apps.get_model('testapp', model_name)
+                            index = next(
+                                index for index in model._meta.indexes
+                                if index.name == index_name
+                            )
+                            self.assertEqual(
+                                editor._get_condition_field_names(index.condition), ['aa', 'bb']
+                            )
+                            editor.execute(
+                                _clone_index_with_replacements(index, {}).create_sql(
+                                    model, editor
+                                )
+                            )
+                index_sql = editor.collected_sql[-1]
+                self.assertIn('[aa]', index_sql)
+                self.assertIn('[bb]', index_sql)
+                self.assertIn('[c]', index_sql)
+
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
+    def test_expression_filtered_meta_index_retained_after_rename_and_alter(self):
+        """
+        Field references nested in positional lookup expressions must be updated
+        when a rename precedes an alteration that recreates the filtered index.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestExpressionFilteredRename{suffix}'
+                index_name = f'idx_expression_rename{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(Exact(models.F('a'), models.Value('value'))),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_expression_filtered_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self.assertIn('[aa]', self._get_index_catalog(result.model, index_name)[0][2])
+
+    def test_covering_meta_index_retained_after_rename_and_alter(self):
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestCoveringIndex{suffix}'
+                index_name = f'idx_covering{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(fields=['b'], include=['a'], name=index_name),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(), old_name='a', new_name='aa'
+                        ),
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='aa',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_covering_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                catalog = self._get_index_catalog(result.model, index_name)
+                self.assertIn((False, 'b', None), catalog)
+                self.assertIn((True, 'aa', None), catalog)
+
+    @skipUnless(VERSION >= (4, 0), "Django 4.0+ expression conditions")
+    def test_expression_filtered_meta_index_retained_after_alter(self):
+        """
+        A filtered Meta index may use a positional lookup expression instead of
+        a keyword-style Q tuple. Ensure altering its key field preserves the
+        index and doesn't treat the Exact expression as a subscriptable tuple.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestExpressionFilteredIndex{suffix}'
+                index_name = f'idx_expression_filtered{suffix}'
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                ('a', models.CharField(max_length=20)),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(Exact(models.F('a'), models.Value('value'))),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.AlterField(
+                            model_name=model_name.lower(),
+                            name='b',
+                            field=models.CharField(max_length=40),
+                        ),
+                    ],
+                    migration_name_prefix='test_expression_filtered_index',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+                self.assertIn('[a]', self._get_index_catalog(result.model, index_name)[0][2])
 
     @expectedFailure
     def test_unique_together_retained_when_field_also_has_unique_true(self):
@@ -1799,6 +2888,691 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     f"This is a bug in mssql/schema.py: unique_together restoration is in an 'else' block "
                     f"that only executes when the field does NOT have unique=True."
                 )
+
+    def test_plain_meta_index_retained_after_combined_rename_and_alter(self):
+        """
+        A single AlterField that changes both db_column (rename) and max_length
+        (type) on the same field must not drop a plain (non-conditional)
+        Meta.indexes entry referencing that field without recreating it.
+
+        Unlike RenameField (which never changes type/null in the same
+        operation), AlterField can combine a db_column rename with a type
+        change in one call - this is the repro shape for this regression.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestPlainCombinedRename{suffix}'
+                index_name = f'idx_plain_combined_rename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                    ),
+                    migrations.AddIndex(
+                        model_name=model_name.lower(),
+                        index=models.Index(fields=['b'], name=index_name),
+                    ),
+                ]
+
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='b',
+                        field=models.CharField(max_length=40, db_column='bb'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_plain_combined_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_named_index_columns(
+                    result.constraints, index_name, ['bb'],
+                    "A plain Meta.index was dropped and not restored after "
+                    "a combined db_column rename and type change "
+                    f"({self._get_context_description(use_single_migration)})."
+                )
+
+    def test_conditional_unique_constraint_removable_after_rename(self):
+        """
+        RenameField rewrites structured Meta.indexes state but not
+        Meta.constraints (UniqueConstraint.condition/fields/include), leaving a
+        stale field reference that raises FieldError when a later operation
+        (e.g. RemoveConstraint) renders it.
+
+        Uses split migrations (each operation committed in its own
+        schema_editor context) so the filtered unique index physically exists
+        before the rename, exercising the real rename-time DDL path rather
+        than racing CreateModel's deferred index-creation SQL.
+        """
+        model_name = 'TestStaleConstraintRename'
+        constraint_name = 'uq_stale_rename'
+
+        operations_a = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                ],
+                options={
+                    'constraints': [
+                        UniqueConstraint(
+                            fields=['b'],
+                            condition=models.Q(a__isnull=False),
+                            name=constraint_name,
+                        ),
+                    ],
+                },
+            ),
+        ]
+        operations_b = [
+            migrations.RenameField(
+                model_name=model_name.lower(), old_name='a', new_name='aa'
+            ),
+        ]
+        operations_c = [
+            migrations.RemoveConstraint(
+                model_name=model_name.lower(), name=constraint_name
+            ),
+        ]
+
+        result = self._run_migration_test(
+            operations_a=operations_a,
+            operations_b=operations_b,
+            operations_c=operations_c,
+            migration_name_prefix='test_stale_constraint_rename',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        self.assertNotIn(constraint_name, result.constraints)
+
+    def test_squashed_create_model_rename_field_retains_meta_index(self):
+        """
+        When Django's migration optimizer folds a RenameField into a
+        preceding CreateModel (e.g. via squashmigrations, or autodetector-side
+        optimization within one makemigrations run), CreateModel.reduce()
+        rewrites only unique_together/index_together in its absorbed options,
+        never the structured Meta.indexes/.constraints - so a folded
+        CreateModel keeps referencing the pre-rename field name.
+        """
+        from django.db.migrations.optimizer import MigrationOptimizer
+
+        model_name = 'TestSquashedRenameIndex'
+        index_name = 'idx_squashed_rename'
+        operations = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                ],
+                options={
+                    'indexes': [
+                        models.Index(
+                            fields=['b'],
+                            condition=models.Q(a__isnull=False),
+                            name=index_name,
+                        ),
+                    ],
+                },
+            ),
+            migrations.RenameField(
+                model_name=model_name.lower(), old_name='a', new_name='aa'
+            ),
+        ]
+        optimized = MigrationOptimizer().optimize(operations, 'testapp')
+        # Precondition: confirm Django's optimizer actually folds CreateModel +
+        # RenameField into one CreateModel (the scenario this fix targets). If
+        # this assertion ever fails, Django's optimizer behavior changed and
+        # this test needs re-deriving, not weakening.
+        self.assertEqual(len(optimized), 1)
+        self.assertIsInstance(optimized[0], migrations.CreateModel)
+
+        class SquashedMigration(migrations.Migration):
+            initial = True
+            operations = optimized
+
+        migration = SquashedMigration(
+            name='test_squashed_rename_index', app_label='testapp'
+        )
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = migration.apply(ProjectState(), editor)
+
+        model = project_state.apps.get_model('testapp', model_name)
+        constraints = get_constraints(table_name=model._meta.db_table)
+        self._assert_named_index_columns(
+            constraints, index_name, ['b'],
+            'A Meta.index folded into CreateModel by the optimizer lost its key column.',
+        )
+        filter_definition = self._get_index_catalog(model, index_name)[0][2]
+        self.assertIn('[aa]', filter_definition)
+        self.assertNotIn('[a]', filter_definition)
+
+    def test_condition_field_names_rewritten_for_collection_and_transformed_rhs(self):
+        """
+        Field references nested in a tuple/list RHS value, or reached through
+        a lookup transform on an F() reference, must be rewritten on rename,
+        not silently left stale (or silently dropped from the referenced
+        field names used to decide which indexes are affected by a rename).
+        """
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+        editor = conn.schema_editor(collect_sql=True, atomic=False)
+
+        collection_condition = models.Q(a__in=(models.F('b'),))
+        _replace_condition_field_names(collection_condition, {'b': 'bb'})
+        self.assertEqual(
+            editor._get_condition_field_names(collection_condition), ['a', 'bb']
+        )
+
+        transformed_condition = models.Q(b=models.F('a__year'))
+        _replace_condition_field_names(transformed_condition, {'a': 'aa'})
+        # Assert the rewritten F() object directly: _get_condition_field_names()
+        # deliberately strips everything after '__', so it alone cannot tell
+        # apart a correctly preserved 'aa__year' from a broken 'aa' that lost
+        # the year transform entirely.
+        self.assertEqual(transformed_condition.children[0][1].name, 'aa__year')
+        self.assertEqual(
+            editor._get_condition_field_names(transformed_condition), ['b', 'aa']
+        )
+
+    def test_filtered_meta_index_restored_with_unbound_replacement_field(self):
+        """
+        schema_editor.alter_field() may be called directly (as
+        TestIndexesBeingDropped.test_unique_index_dropped already does
+        elsewhere) with an unbound replacement field that has no .model
+        attribute. The rename-restoration path must use the same meta_model
+        fallback _alter_field() establishes for old_field/new_field elsewhere,
+        not new_field.model directly.
+
+        `to_model` (obtained via AlterField.state_forwards(), like a real
+        migration's to_state) is passed as the `model` argument so meta_model's
+        fallback has correct post-alter field metadata to restore against,
+        while `new_field` itself is a manually constructed field deliberately
+        left unbound (no .model), reproducing the exact caller shape that
+        crashes without the fix.
+        """
+        model_name = 'TestUnboundRenameFilteredIndex'
+        index_name = 'idx_unbound_rename_filtered'
+
+        class SetupMigration(migrations.Migration):
+            initial = True
+            operations = [
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20, null=True)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                ),
+                migrations.AddIndex(
+                    model_name=model_name.lower(),
+                    index=models.Index(
+                        fields=['b'],
+                        condition=models.Q(a__isnull=False),
+                        name=index_name,
+                    ),
+                ),
+            ]
+
+        migration = SetupMigration(
+            name='test_unbound_rename_filtered', app_label='testapp'
+        )
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+        with conn.schema_editor(atomic=True) as editor:
+            from_state = migration.apply(ProjectState(), editor)
+
+        to_state = from_state.clone()
+        migrations.AlterField(
+            model_name=model_name.lower(),
+            name='a',
+            field=models.CharField(max_length=20, null=True, db_column='aa'),
+        ).state_forwards('testapp', to_state)
+
+        from_model = from_state.apps.get_model('testapp', model_name)
+        to_model = to_state.apps.get_model('testapp', model_name)
+        old_field = from_model._meta.get_field('a')
+        new_field = models.CharField(max_length=20, null=True, db_column='aa')
+        new_field.set_attributes_from_name('a')
+        with conn.schema_editor(atomic=True) as editor:
+            editor.alter_field(to_model, old_field, new_field, strict=True)
+
+        constraints = get_constraints(table_name=to_model._meta.db_table)
+        self._assert_named_index_columns(
+            constraints, index_name, ['b'],
+            'A filtered Meta.index was lost when alter_field() was called '
+            'directly with an unbound replacement field.',
+        )
+        self.assertIn(
+            '[aa]', self._get_index_catalog(to_model, index_name)[0][2]
+        )
+
+    def test_meta_index_restore_skips_still_deferred_creation(self):
+        """
+        A Meta.indexes entry declared inline via CreateModel(options={...})
+        is legitimately absent from the catalog until its deferred CREATE
+        INDEX statement runs at schema_editor context exit. A combined
+        db_column rename and type change on that index's field within the
+        SAME migration must not have _restore_missing_meta_indexes() treat
+        that still-pending index as one it needs to recreate - doing so
+        collides with the original deferred CREATE INDEX once it finally
+        executes.
+        """
+        model_name = 'TestDeferredIndexCollision'
+        index_name = 'idx_deferred_index_collision'
+
+        operations_a = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                ],
+                options={
+                    'indexes': [
+                        models.Index(fields=['b'], name=index_name),
+                    ],
+                },
+            ),
+            migrations.AlterField(
+                model_name=model_name.lower(),
+                name='b',
+                field=models.CharField(max_length=40, db_column='bb'),
+            ),
+        ]
+
+        result = self._run_migration_test(
+            operations_a=operations_a,
+            operations_b=[],
+            migration_name_prefix='test_deferred_index_collision',
+            model_name=model_name,
+            use_single_migration=True,
+        )
+
+        self._assert_named_index_columns(
+            result.constraints, index_name, ['bb'],
+            'A Meta.index declared inline via CreateModel was not correctly '
+            'restored after a combined rename and type change in the same '
+            'migration.',
+        )
+
+    def test_pk_alias_condition_survives_unrelated_alter(self):
+        """
+        A Meta.index condition may reference the 'pk' query alias (e.g.
+        Q(pk__gt=0)), which Options.get_field() does not recognize as a
+        literal field name. Altering the type of ANY field on the model
+        must not crash while resolving that index's reference names -
+        _delete_indexes() inspects every existing index on the model, not
+        just ones tied to the field being altered.
+        """
+        model_name = 'TestPkAliasCondition'
+        index_name = 'idx_pk_alias_condition'
+
+        operations_a = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                ],
+            ),
+            migrations.AddIndex(
+                model_name=model_name.lower(),
+                index=models.Index(
+                    fields=['a'], condition=models.Q(pk__gt=0), name=index_name
+                ),
+            ),
+        ]
+        operations_b = [
+            migrations.AlterField(
+                model_name=model_name.lower(),
+                name='a',
+                field=models.CharField(max_length=40),
+            ),
+        ]
+
+        result = self._run_migration_test(
+            operations_a=operations_a,
+            operations_b=operations_b,
+            migration_name_prefix='test_pk_alias_condition',
+            model_name=model_name,
+            use_single_migration=True,
+        )
+
+        self._assert_named_index_columns(
+            result.constraints, index_name, ['a'],
+            "A Meta.index filtered on the 'pk' alias was lost (or crashed) "
+            "when an unrelated field's type was altered.",
+        )
+
+    def test_meta_index_retained_after_autofield_column_rename(self):
+        """
+        Altering an AutoField/BigAutoField field unconditionally drops every
+        index on the table (SQL Server requires this before an ALTER COLUMN
+        on an IDENTITY column). When that alteration also renames the
+        AutoField's own db_column, the normal "column alteration cleanup"
+        restoration is skipped (it only runs when the column was NOT
+        renamed), so a Meta.index on an unrelated field must still be
+        restored via the rename-restoration path, not silently dropped for
+        good.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestAutoFieldColumnRename{suffix}'
+                index_name = f'idx_autofield_column_rename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                        ],
+                    ),
+                    migrations.AddIndex(
+                        model_name=model_name.lower(),
+                        index=models.Index(fields=['a'], name=index_name),
+                    ),
+                ]
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='id',
+                        field=models.AutoField(primary_key=True, db_column='new_id'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_autofield_column_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_named_index_columns(
+                    result.constraints, index_name, ['a'],
+                    'A Meta.index was permanently lost after renaming an '
+                    "AutoField's own db_column "
+                    f"({self._get_context_description(use_single_migration)}).",
+                )
+
+    def test_db_index_retained_after_autofield_column_rename(self):
+        """
+        Same AutoField-own-db_column-rename scenario as
+        test_meta_index_retained_after_autofield_column_rename above, but for
+        a plain db_index=True column instead of a Meta.indexes entry. The
+        AutoField "drop all indexes" path drops this index too, and it must
+        be restored the same way the non-renamed "column alteration cleanup"
+        path restores db_index=True columns for a plain (non-renamed)
+        AutoField/BigAutoField change.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestDbIdxAutoFieldRename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20, db_index=True)),
+                        ],
+                    ),
+                ]
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='id',
+                        field=models.AutoField(primary_key=True, db_column='new_id'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_db_idx_autofield_column_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_index_exists(
+                    result.constraints,
+                    expected_columns={'a'},
+                    error_msg=(
+                        "A db_index=True column's index was permanently lost after renaming an "
+                        "AutoField's own db_column "
+                        f"({self._get_context_description(use_single_migration)})."
+                    ),
+                )
+
+    @skipIf(VERSION >= (5, 1), "index_together is removed in Django 5.1+")
+    def test_index_together_retained_after_autofield_column_rename(self):
+        """
+        Same AutoField-own-db_column-rename scenario as
+        test_meta_index_retained_after_autofield_column_rename above, but for
+        an index_together entry instead of a Meta.indexes entry.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestIdxTogetherAutoFieldRename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                        options={
+                            'index_together': {('a', 'b')},
+                        },
+                    ),
+                ]
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='id',
+                        field=models.AutoField(primary_key=True, db_column='new_id'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_idx_together_autofield_column_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_index_exists(
+                    result.constraints,
+                    expected_columns={'a', 'b'},
+                    error_msg=(
+                        "An index_together index was permanently lost after renaming an "
+                        "AutoField's own db_column "
+                        f"({self._get_context_description(use_single_migration)})."
+                    ),
+                )
+
+    def test_unique_together_retained_after_autofield_column_rename(self):
+        """
+        Same AutoField-own-db_column-rename scenario as
+        test_meta_index_retained_after_autofield_column_rename above, but for
+        a unique_together entry instead of a Meta.indexes entry. Unlike
+        test_unique_together_retained_after_rename_and_type_change (a
+        different, non-AutoField scenario left as a documented
+        @expectedFailure), the AutoField-wholesale-drop path here is the one
+        this fix restores.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestUniqTogetherAutoFieldRename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                        options={
+                            'unique_together': {('a', 'b')},
+                        },
+                    ),
+                ]
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='id',
+                        field=models.AutoField(primary_key=True, db_column='new_id'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_uniq_together_autofield_column_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                unique_constraints = [
+                    info for info in result.constraints.values()
+                    if info.get('unique') and set(info['columns']) == {'a', 'b'}
+                ]
+                self.assertTrue(
+                    len(unique_constraints) > 0,
+                    "unique_together constraint on ('a', 'b') was permanently lost after "
+                    "renaming an AutoField's own db_column "
+                    f"({self._get_context_description(use_single_migration)})."
+                )
+
+    def test_unique_constraint_retained_after_autofield_column_rename(self):
+        """
+        Same AutoField-own-db_column-rename scenario as
+        test_meta_index_retained_after_autofield_column_rename above, but for
+        a Meta.constraints UniqueConstraint unrelated to the renamed field
+        instead of a Meta.indexes entry.
+        """
+        model_name = 'TestUniqueConstraintAutoFieldRename'
+        constraint_name = 'uq_autofield_rename_unrelated'
+
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20, null=True)),
+                    ],
+                    options={
+                        'constraints': [
+                            UniqueConstraint(
+                                fields=['a'],
+                                condition=models.Q(a__isnull=False),
+                                name=constraint_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.AlterField(
+                    model_name=model_name.lower(),
+                    name='id',
+                    field=models.AutoField(primary_key=True, db_column='new_id'),
+                ),
+            ],
+            migration_name_prefix='test_unique_constraint_autofield_column_rename',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        self.assertIn(
+            constraint_name, result.constraints,
+            "A Meta.constraints UniqueConstraint unrelated to the renamed field was "
+            "permanently lost after renaming an AutoField's own db_column."
+        )
+
+    def test_covering_unique_constraint_include_semantics_retained_after_rename(self):
+        """
+        A covering UniqueConstraint's INCLUDE column, when renamed, must stay
+        an INCLUDE column - not get silently promoted into the unique key.
+        The generic "drop any unique index whose physical columns include
+        the renamed column" path does not distinguish key from INCLUDE
+        columns (sys.index_columns doesn't either, without an explicit
+        filter), so it must not be allowed to rebuild this constraint; only
+        the structured restoration (via _clone_constraint_with_replacements())
+        preserves the key/include distinction.
+        """
+        model_name = 'TestCoveringConstraintRename'
+        constraint_name = 'uq_covering_constraint_rename'
+
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20, null=True)),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                    options={
+                        'constraints': [
+                            UniqueConstraint(
+                                fields=['b'],
+                                include=['a'],
+                                condition=models.Q(a__isnull=False),
+                                name=constraint_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='a', new_name='aa'
+                ),
+            ],
+            migration_name_prefix='test_covering_constraint_rename',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        catalog = self._get_index_catalog(result.model, constraint_name)
+        included_by_column = {name: is_included for is_included, name, _ in catalog}
+        self.assertEqual(
+            included_by_column.get('b'), False,
+            "The constraint's key column 'b' should remain key-only.",
+        )
+        self.assertEqual(
+            included_by_column.get('aa'), True,
+            "The renamed INCLUDE column must stay an INCLUDE column, not be "
+            "promoted into the unique key.",
+        )
 
 
 
