@@ -1553,6 +1553,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         its deferred CREATE INDEX statement runs at schema_editor context
         exit, and would otherwise be recreated here too, colliding with that
         still-pending statement once it finally executes.
+
+        When the drop came from the AutoField/BigAutoField path, every index
+        and unique constraint on the table was unconditionally dropped, not
+        just Meta.indexes - also restore db_index=True columns,
+        index_together (Django < 5.1), unique_together, and Meta.constraints
+        UniqueConstraint objects, the same way the non-renamed "column
+        alteration cleanup" path restores them for a plain (non-renamed)
+        AutoField/BigAutoField change.
         """
         if not dropped_index_names:
             return
@@ -1566,6 +1574,48 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 index, {old_field.name: new_field.name}
             )
             statement = restored_index.create_sql(model, self)
+            if statement:
+                self.execute(statement)
+
+        is_autofield_change = (
+            isinstance(old_field, (AutoField, BigAutoField)) or
+            isinstance(new_field, (AutoField, BigAutoField))
+        )
+        if not is_autofield_change:
+            return
+
+        index_columns = []
+        for field in model._meta.fields:
+            if field.db_index:
+                index_columns.append([field])
+        if django_version < (5, 1):
+            for fields in model._meta.index_together:
+                index_columns.append([model._meta.get_field(f) for f in fields])
+        for columns in index_columns:
+            create_index_sql_statement = self._create_index_sql(model, columns)
+            if str(create_index_sql_statement) not in [str(sql) for sql in self.deferred_sql]:
+                self.execute(create_index_sql_statement)
+
+        for field_names in model._meta.unique_together:
+            columns = [model._meta.get_field(f).column for f in field_names]
+            fields = [model._meta.get_field(f) for f in field_names]
+            condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+            if django_version >= (4, 0):
+                self.execute(self._create_unique_sql(model, fields, condition=condition))
+            else:
+                self.execute(self._create_unique_sql(model, columns, condition=condition))
+
+        for constraint in model._meta.constraints:
+            if (
+                not isinstance(constraint, UniqueConstraint)
+                or constraint.name not in dropped_index_names
+                or constraint.name in existing_index_names
+            ):
+                continue
+            restored_constraint = _clone_constraint_with_replacements(
+                constraint, {old_field.name: new_field.name}
+            )
+            statement = restored_constraint.create_sql(model, self)
             if statement:
                 self.execute(statement)
 
