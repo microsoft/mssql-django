@@ -3314,6 +3314,209 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     f"({self._get_context_description(use_single_migration)}).",
                 )
 
+    def test_db_index_retained_after_autofield_column_rename(self):
+        """
+        Same AutoField-own-db_column-rename scenario as
+        test_meta_index_retained_after_autofield_column_rename above, but for
+        a plain db_index=True column instead of a Meta.indexes entry. The
+        AutoField "drop all indexes" path drops this index too, and it must
+        be restored the same way the non-renamed "column alteration cleanup"
+        path restores db_index=True columns for a plain (non-renamed)
+        AutoField/BigAutoField change.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestDbIdxAutoFieldRename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20, db_index=True)),
+                        ],
+                    ),
+                ]
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='id',
+                        field=models.AutoField(primary_key=True, db_column='new_id'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_db_idx_autofield_column_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_index_exists(
+                    result.constraints,
+                    expected_columns={'a'},
+                    error_msg=(
+                        "A db_index=True column's index was permanently lost after renaming an "
+                        "AutoField's own db_column "
+                        f"({self._get_context_description(use_single_migration)})."
+                    ),
+                )
+
+    @skipIf(VERSION >= (5, 1), "index_together is removed in Django 5.1+")
+    def test_index_together_retained_after_autofield_column_rename(self):
+        """
+        Same AutoField-own-db_column-rename scenario as
+        test_meta_index_retained_after_autofield_column_rename above, but for
+        an index_together entry instead of a Meta.indexes entry.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestIdxTogetherAutoFieldRename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                        options={
+                            'index_together': {('a', 'b')},
+                        },
+                    ),
+                ]
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='id',
+                        field=models.AutoField(primary_key=True, db_column='new_id'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_idx_together_autofield_column_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_index_exists(
+                    result.constraints,
+                    expected_columns={'a', 'b'},
+                    error_msg=(
+                        "An index_together index was permanently lost after renaming an "
+                        "AutoField's own db_column "
+                        f"({self._get_context_description(use_single_migration)})."
+                    ),
+                )
+
+    def test_unique_together_retained_after_autofield_column_rename(self):
+        """
+        Same AutoField-own-db_column-rename scenario as
+        test_meta_index_retained_after_autofield_column_rename above, but for
+        a unique_together entry instead of a Meta.indexes entry. Unlike
+        test_unique_together_retained_after_rename_and_type_change (a
+        different, non-AutoField scenario left as a documented
+        @expectedFailure), the AutoField-wholesale-drop path here is the one
+        this fix restores.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestUniqTogetherAutoFieldRename{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20)),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                        options={
+                            'unique_together': {('a', 'b')},
+                        },
+                    ),
+                ]
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='id',
+                        field=models.AutoField(primary_key=True, db_column='new_id'),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_uniq_together_autofield_column_rename',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                unique_constraints = [
+                    info for info in result.constraints.values()
+                    if info.get('unique') and set(info['columns']) == {'a', 'b'}
+                ]
+                self.assertTrue(
+                    len(unique_constraints) > 0,
+                    "unique_together constraint on ('a', 'b') was permanently lost after "
+                    "renaming an AutoField's own db_column "
+                    f"({self._get_context_description(use_single_migration)})."
+                )
+
+    def test_unique_constraint_retained_after_autofield_column_rename(self):
+        """
+        Same AutoField-own-db_column-rename scenario as
+        test_meta_index_retained_after_autofield_column_rename above, but for
+        a Meta.constraints UniqueConstraint unrelated to the renamed field
+        instead of a Meta.indexes entry.
+        """
+        model_name = 'TestUniqueConstraintAutoFieldRename'
+        constraint_name = 'uq_autofield_rename_unrelated'
+
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20, null=True)),
+                    ],
+                    options={
+                        'constraints': [
+                            UniqueConstraint(
+                                fields=['a'],
+                                condition=models.Q(a__isnull=False),
+                                name=constraint_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.AlterField(
+                    model_name=model_name.lower(),
+                    name='id',
+                    field=models.AutoField(primary_key=True, db_column='new_id'),
+                ),
+            ],
+            migration_name_prefix='test_unique_constraint_autofield_column_rename',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        self.assertIn(
+            constraint_name, result.constraints,
+            "A Meta.constraints UniqueConstraint unrelated to the renamed field was "
+            "permanently lost after renaming an AutoField's own db_column."
+        )
+
     def test_covering_unique_constraint_include_semantics_retained_after_rename(self):
         """
         A covering UniqueConstraint's INCLUDE column, when renamed, must stay
