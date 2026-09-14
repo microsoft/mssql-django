@@ -2290,6 +2290,79 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn('[guardian_id]', filter_definition)
                 self.assertNotIn('[parent_id]', filter_definition)
 
+    def test_filtered_meta_index_condition_retained_after_fk_pk_alias_rename(self):
+        """
+        A filtered Meta.Index condition may reference the primary key via
+        the 'pk' alias (Q(pk__gt=0)) rather than the PK field's own name or
+        attname - Django resolves 'pk' dynamically to whichever field is
+        currently the primary key. When that primary key is itself a
+        ForeignKey/OneToOneField (the parent-link pattern used by
+        multi-table inheritance) and gets renamed, the "does this
+        Meta.index reference the renamed field" check never resolves the
+        'pk' alias to the actual (renamed) field name, so the index is not
+        recognized as affected, is never dropped before the rename, and -
+        because the renamed column is also constrained by a live FOREIGN
+        KEY - SQL Server rejects the rename outright ('index ... is
+        dependent on column ...').
+        """
+        model_name = 'TestFkPkAliasIndexCondition'
+        target_name = 'TestFkPkAliasIndexTarget'
+        index_name = 'idx_fk_pk_alias_condition'
+
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name=target_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                    ],
+                ),
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        (
+                            'parent',
+                            models.OneToOneField(
+                                f'testapp.{target_name}',
+                                primary_key=True,
+                                on_delete=models.CASCADE,
+                                serialize=False,
+                            ),
+                        ),
+                        ('b', models.CharField(max_length=20)),
+                    ],
+                ),
+                migrations.AddIndex(
+                    model_name=model_name.lower(),
+                    index=models.Index(
+                        fields=['b'],
+                        condition=models.Q(pk__gt=0),
+                        name=index_name,
+                    ),
+                ),
+            ],
+            operations_b=[
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='parent', new_name='link',
+                ),
+            ],
+            migration_name_prefix='test_fk_pk_alias_condition',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        self._assert_named_index_columns(
+            result.constraints,
+            index_name,
+            ['b'],
+            "A filtered Meta.index condition referencing the primary key "
+            "via the 'pk' alias was not restored after renaming an "
+            "FK-backed primary key.",
+        )
+        filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+        self.assertIn('[link_id]', filter_definition)
+        self.assertNotIn('[parent_id]', filter_definition)
+
     @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
     def test_filtered_meta_index_retained_after_rename_and_alter(self):
         for use_single_migration in [False, True]:
