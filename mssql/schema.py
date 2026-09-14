@@ -109,6 +109,34 @@ def _resolve_pk_alias(model, field_name):
     return model._meta.pk.name if field_name == 'pk' else field_name
 
 
+def _field_rename_replacements(field, old_name, new_name):
+    """Build a Q()/F() condition replacement mapping for renaming a field
+    from `old_name` to `new_name`, covering both its logical name and its
+    physical attname (e.g. a ForeignKey's '<name>_id').
+
+    Django's Q()/F() lookups accept either form (`Q(parent_id__isnull=...)`
+    alongside `Q(parent__isnull=...)`), so a preserved index/constraint
+    condition referencing a renamed ForeignKey by attname must be rewritten
+    too, or it is left stale - still naming the pre-rename attname - once
+    the field's own name changes, and later resolves to FieldDoesNotExist
+    (or fails to be recognized as referencing the renamed field at all, so
+    it is never dropped before the rename and SQL Server rejects the
+    rename outright: "index '...' is dependent on column '...'").
+
+    Only ForeignKey/OneToOneField override Field.get_attname() to append
+    '_id' to the name; every other concrete field's attname equals its
+    name. `field` need not be bound to a model - a ModelState's cloned
+    Field instances have both .name and .attname unset until rendered into
+    a real model - only its concrete class is inspected, so this never
+    heuristically treats an unrelated field whose *name* happens to end in
+    '_id' as a relation.
+    """
+    replacements = {old_name: new_name}
+    if isinstance(field, ForeignKey):
+        replacements[old_name + '_id'] = new_name + '_id'
+    return replacements
+
+
 def _replace_condition_field_names(condition, replacements):
     """Rewrite lookup roots and nested F() references in a copied Q tree.
 
@@ -152,25 +180,25 @@ def _replace_expression_field_names(expression, replacements):
     return expression
 
 
-def _replace_options_field_names(options, old_name, new_name):
+def _replace_options_field_names(options, replacements):
     """Rewrite renamed field references in a Meta options mapping's
     structured indexes/constraints (shared by ModelState.options and a raw
     migration operation's .options dict)."""
     indexes = options.get('indexes')
     if indexes is not None:
         options['indexes'] = [
-            _clone_index_with_replacements(index, {old_name: new_name})
+            _clone_index_with_replacements(index, replacements)
             for index in indexes
         ]
     constraints = options.get('constraints')
     if constraints is not None:
         options['constraints'] = [
-            _clone_constraint_with_replacements(constraint, {old_name: new_name})
+            _clone_constraint_with_replacements(constraint, replacements)
             for constraint in constraints
         ]
 
 
-def _replace_meta_index_field_names(model_state, old_name, new_name):
+def _replace_meta_index_field_names(model_state, replacements):
     """Replace renamed field references in structured Meta.indexes/
     .constraints state.
 
@@ -178,7 +206,7 @@ def _replace_meta_index_field_names(model_state, old_name, new_name):
     replaces each affected list rather than mutating it, to protect the
     preserved state used by a migration operation.
     """
-    _replace_options_field_names(model_state.options, old_name, new_name)
+    _replace_options_field_names(model_state.options, replacements)
 
 
 def _rename_field_with_meta_indexes(self, app_label, model_name, old_name, new_name):
@@ -191,7 +219,10 @@ def _rename_field_with_meta_indexes(self, app_label, model_name, old_name, new_n
     """
     model_state = self.models[(app_label, model_name)]
     if old_name in model_state.fields:
-        _replace_meta_index_field_names(model_state, old_name, new_name)
+        field = model_state.fields[old_name]
+        _replace_meta_index_field_names(
+            model_state, _field_rename_replacements(field, old_name, new_name)
+        )
     return ProjectState._mssql_original_rename_field(
         self, app_label, model_name, old_name, new_name
     )
@@ -201,7 +232,11 @@ def _rename_field_state_forwards_with_meta_indexes(self, app_label, state):
     """Keep Django 3.2 Meta.indexes state consistent with field renames."""
     model_state = state.models[(app_label, self.model_name_lower)]
     if self.old_name in model_state.fields:
-        _replace_meta_index_field_names(model_state, self.old_name, self.new_name)
+        field = model_state.fields[self.old_name]
+        _replace_meta_index_field_names(
+            model_state,
+            _field_rename_replacements(field, self.old_name, self.new_name),
+        )
     return RenameField._mssql_original_state_forwards(self, app_label, state)
 
 
@@ -236,8 +271,10 @@ def _create_model_reduce_with_meta_indexes(self, operation, app_label):
         and len(result) == 1
         and isinstance(result[0], CreateModel)
     ):
+        field = dict(result[0].fields).get(operation.new_name)
         _replace_options_field_names(
-            result[0].options, operation.old_name, operation.new_name
+            result[0].options,
+            _field_rename_replacements(field, operation.old_name, operation.new_name),
         )
     return result
 
@@ -841,15 +878,17 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # sys.index_columns listing that doesn't distinguish key from
             # INCLUDE columns), a covering constraint's INCLUDE column would
             # be silently promoted into the unique key.
-            meta_constraint_names_to_protect = {
-                constraint.name
-                for constraint in model._meta.constraints
-                if isinstance(constraint, UniqueConstraint)
-                and old_field.name in (
-                    list(constraint.fields) + list(constraint.include)
-                    + self._get_condition_field_names(constraint.condition)
-                )
-            }
+            meta_constraint_names_to_protect = set()
+            for constraint in model._meta.constraints:
+                if not isinstance(constraint, UniqueConstraint):
+                    continue
+                condition_field_names = self._get_condition_field_names(constraint.condition)
+                if (
+                    old_field.name in list(constraint.fields) + list(constraint.include)
+                    or old_field.name in condition_field_names
+                    or old_field.attname in condition_field_names
+                ):
+                    meta_constraint_names_to_protect.add(constraint.name)
             # Drop any unique indexes which include the column to be renamed
             index_names = self._db_table_constraint_names(
                 db_table=model._meta.db_table, column_names=[old_field.column], column_match_any=True,
@@ -883,11 +922,15 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 if index.name not in existing_index_names:
                     continue
                 base_replacements = meta_index_replacements.get(index.name, {})
-                if old_field.name not in self._get_condition_field_names(index.condition):
+                condition_field_names = self._get_condition_field_names(index.condition)
+                if (
+                    old_field.name not in condition_field_names
+                    and old_field.attname not in condition_field_names
+                ):
                     continue
                 replacements = {
                     **base_replacements,
-                    old_field.name: new_field.name,
+                    **_field_rename_replacements(old_field, old_field.name, new_field.name),
                 }
                 restored_index = _clone_index_with_replacements(index, replacements)
                 statement = restored_index.create_sql(meta_model, self)
@@ -916,7 +959,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 ):
                     continue
                 restored_constraint = _clone_constraint_with_replacements(
-                    constraint, {old_field.name: new_field.name}
+                    constraint, _field_rename_replacements(old_field, old_field.name, new_field.name)
                 )
                 statement = restored_constraint.create_sql(meta_model, self)
                 if statement:
@@ -1571,7 +1614,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if index.name not in dropped_index_names or index.name in existing_index_names:
                 continue
             restored_index = _clone_index_with_replacements(
-                index, {old_field.name: new_field.name}
+                index, _field_rename_replacements(old_field, old_field.name, new_field.name)
             )
             statement = restored_index.create_sql(model, self)
             if statement:
@@ -1613,7 +1656,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             ):
                 continue
             restored_constraint = _clone_constraint_with_replacements(
-                constraint, {old_field.name: new_field.name}
+                constraint, _field_rename_replacements(old_field, old_field.name, new_field.name)
             )
             statement = restored_constraint.create_sql(model, self)
             if statement:
