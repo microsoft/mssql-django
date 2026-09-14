@@ -2223,6 +2223,73 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertIn('[aa]', filter_definition)
                 self.assertNotIn('[a]', filter_definition)
 
+    def test_filtered_meta_index_condition_retained_after_fk_attname_rename(self):
+        """
+        A filtered Meta.Index condition may reference a ForeignKey by its
+        physical attname (e.g. Q(parent_id__isnull=False)) instead of its
+        logical name - Django's Q()/F() lookups accept either form.
+        Renaming the FK field itself (parent -> guardian) must rewrite the
+        attname reference too, not just the logical name, or 'parent_id' is
+        left stale. Worse, the "does this Meta.index reference the renamed
+        field" check that decides whether to drop/recreate the index at all
+        also only matched the logical name, so this index was not even
+        recognized as affected by the rename and was never dropped first -
+        and SQL Server rejects renaming a column a live index still depends
+        on.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestFkAttnameCondition{suffix}'
+                index_name = f'idx_fk_attname_condition{suffix}'
+
+                result = self._run_migration_test(
+                    operations_a=[
+                        migrations.CreateModel(
+                            name=model_name,
+                            fields=[
+                                ('id', models.AutoField(primary_key=True)),
+                                (
+                                    'parent',
+                                    models.ForeignKey(
+                                        'self', null=True, on_delete=models.CASCADE,
+                                    ),
+                                ),
+                                ('b', models.CharField(max_length=20)),
+                            ],
+                        ),
+                        migrations.AddIndex(
+                            model_name=model_name.lower(),
+                            index=models.Index(
+                                fields=['b'],
+                                condition=models.Q(parent_id__isnull=False),
+                                name=index_name,
+                            ),
+                        ),
+                    ],
+                    operations_b=[
+                        migrations.RenameField(
+                            model_name=model_name.lower(),
+                            old_name='parent',
+                            new_name='guardian',
+                        ),
+                    ],
+                    migration_name_prefix='test_fk_attname_condition',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                self._assert_named_index_columns(
+                    result.constraints,
+                    index_name,
+                    ['b'],
+                    "A filtered Meta.index condition referencing a renamed "
+                    "ForeignKey's attname was not restored after the rename.",
+                )
+                filter_definition = self._get_index_catalog(result.model, index_name)[0][2]
+                self.assertIn('[guardian_id]', filter_definition)
+                self.assertNotIn('[parent_id]', filter_definition)
+
     @skipUnless(VERSION >= (4, 0), "Django 4.0+ ProjectState.rename_field support")
     def test_filtered_meta_index_retained_after_rename_and_alter(self):
         for use_single_migration in [False, True]:
@@ -3573,6 +3640,74 @@ class TestMetaIndexesRetained(TransactionTestCase):
             "The renamed INCLUDE column must stay an INCLUDE column, not be "
             "promoted into the unique key.",
         )
+
+    def test_covering_unique_constraint_condition_retained_after_fk_attname_rename(self):
+        """
+        A covering UniqueConstraint's condition may reference a ForeignKey
+        by its physical attname (Q(parent_id__isnull=False)) instead of its
+        logical name. The "does this UniqueConstraint reference the renamed
+        field" protection check - which keeps a covering constraint's
+        INCLUDE column out of the generic drop/rebuild path, because that
+        path rebuilds from an unfiltered sys.index_columns listing that
+        doesn't distinguish key from INCLUDE columns - only matched the
+        logical name, so this constraint fell through to the generic path
+        and its 'c' INCLUDE column would have been silently promoted into
+        the unique key.
+        """
+        model_name = 'TestCoveringConstraintFkAttnameRename'
+        constraint_name = 'uq_covering_fk_attname_rename'
+
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        (
+                            'parent',
+                            models.ForeignKey(
+                                'self', null=True, on_delete=models.CASCADE,
+                            ),
+                        ),
+                        ('b', models.CharField(max_length=20)),
+                        ('c', models.CharField(max_length=20)),
+                    ],
+                    options={
+                        'constraints': [
+                            UniqueConstraint(
+                                fields=['b'],
+                                include=['c'],
+                                condition=models.Q(parent_id__isnull=False),
+                                name=constraint_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='parent', new_name='guardian',
+                ),
+            ],
+            migration_name_prefix='test_covering_constraint_fk_attname_rename',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        catalog = self._get_index_catalog(result.model, constraint_name)
+        included_by_column = {name: is_included for is_included, name, _ in catalog}
+        self.assertEqual(
+            included_by_column.get('b'), False,
+            "The constraint's key column 'b' should remain key-only.",
+        )
+        self.assertEqual(
+            included_by_column.get('c'), True,
+            "The 'c' INCLUDE column must stay an INCLUDE column, not be "
+            "promoted into the unique key.",
+        )
+        filter_definition = catalog[0][2]
+        self.assertIn('[guardian_id]', filter_definition)
+        self.assertNotIn('[parent_id]', filter_definition)
 
 
 
