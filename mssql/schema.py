@@ -882,7 +882,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             for constraint in model._meta.constraints:
                 if not isinstance(constraint, UniqueConstraint):
                     continue
-                condition_field_names = self._get_condition_field_names(constraint.condition)
+                condition_field_names = {
+                    _resolve_pk_alias(model, name)
+                    for name in self._get_condition_field_names(constraint.condition)
+                }
                 if (
                     old_field.name in list(constraint.fields) + list(constraint.include)
                     or old_field.name in condition_field_names
@@ -922,7 +925,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 if index.name not in existing_index_names:
                     continue
                 base_replacements = meta_index_replacements.get(index.name, {})
-                condition_field_names = self._get_condition_field_names(index.condition)
+                condition_field_names = {
+                    _resolve_pk_alias(model, name)
+                    for name in self._get_condition_field_names(index.condition)
+                }
                 if (
                     old_field.name not in condition_field_names
                     and old_field.attname not in condition_field_names
