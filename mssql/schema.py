@@ -1501,23 +1501,29 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if self.connection.features.connection_persists_old_columns:
             self.connection.close()
 
-    def _get_index_metadata(self, model, index_name):
-        """Return key and INCLUDE columns for a physical index."""
+    def _get_all_index_metadata(self, model):
+        """Return key and INCLUDE columns for every physical index on the
+        table, keyed by index name.
+        """
         with self.connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT ic.is_included_column, c.name
+                SELECT i.name, ic.is_included_column, c.name
                 FROM sys.indexes AS i
                 INNER JOIN sys.index_columns AS ic
                     ON i.object_id = ic.object_id AND i.index_id = ic.index_id
                 INNER JOIN sys.columns AS c
                     ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                WHERE i.object_id = OBJECT_ID(%s) AND i.name = %s
-                ORDER BY ic.key_ordinal, ic.index_column_id
+                WHERE i.object_id = OBJECT_ID(%s)
+                ORDER BY i.name, ic.key_ordinal, ic.index_column_id
                 """,
-                [model._meta.db_table, index_name],
+                [model._meta.db_table],
             )
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+        metadata_by_index = defaultdict(list)
+        for index_name, is_included, column_name in rows:
+            metadata_by_index[index_name].append((is_included, column_name))
+        return metadata_by_index
 
     def _get_expression_field_names(self, expression):
         """Return field names referenced recursively by an expression tree."""
@@ -1554,12 +1560,15 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
     def _get_meta_index_replacements(self, model):
         """Map each reconciled Meta index to its unambiguous stale field replacements."""
+        if not model._meta.indexes:
+            return {}
         fields_by_column = {field.column: field for field in model._meta.fields}
+        all_metadata = self._get_all_index_metadata(model)
         replacements = {}
         for index in model._meta.indexes:
             field_names = [field_name for field_name, _ in index.fields_orders]
             include_names = list(index.include)
-            metadata = self._get_index_metadata(model, index.name)
+            metadata = all_metadata.get(index.name)
             if not metadata:
                 continue
             key_columns = [column for included, column in metadata if not included]
@@ -2124,7 +2133,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 autoinc_sql = self.connection.ops.autoinc_sql(model._meta.db_table, field.column)
                 if autoinc_sql:
                     self.deferred_sql.extend(autoinc_sql)
-                   
+
         # Initialize composite_pk_sql to None; will be set if composite primary key is detected
         composite_pk_sql = None
          # Check if Django version is >= 5.2 and the model has composite primary key fields
