@@ -3709,6 +3709,88 @@ class TestMetaIndexesRetained(TransactionTestCase):
         self.assertIn('[guardian_id]', filter_definition)
         self.assertNotIn('[parent_id]', filter_definition)
 
+    def test_covering_unique_constraint_condition_retained_after_fk_pk_alias_rename(self):
+        """
+        A covering UniqueConstraint's condition may reference the primary
+        key via the 'pk' alias (Q(pk__gt=0)) rather than the PK field's own
+        name or attname - Django resolves 'pk' dynamically to whatever the
+        model's current primary key is. When the primary key is itself a
+        ForeignKey/OneToOneField (e.g. the parent-link pattern used by
+        multi-table inheritance) and that field is renamed, the "does this
+        UniqueConstraint reference the renamed field" protection check
+        never resolves the 'pk' alias to the actual (renamed) field name,
+        so it doesn't recognize the constraint as affected, the constraint
+        is never dropped before the rename, and - because the renamed
+        column is also constrained by a live FOREIGN KEY - SQL Server
+        rejects the rename outright ('index ... is dependent on column
+        ...'), unlike an ordinary (non-FK) column rename under an
+        unrecognized filtered-index dependency, which SQL Server updates
+        automatically.
+        """
+        model_name = 'TestCoveringConstraintFkPkAliasRename'
+        target_name = 'TestCoveringConstraintFkPkAliasTarget'
+        constraint_name = 'uq_covering_fk_pk_alias_rename'
+
+        result = self._run_migration_test(
+            operations_a=[
+                migrations.CreateModel(
+                    name=target_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                    ],
+                ),
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        (
+                            'parent',
+                            models.OneToOneField(
+                                f'testapp.{target_name}',
+                                primary_key=True,
+                                on_delete=models.CASCADE,
+                                serialize=False,
+                            ),
+                        ),
+                        ('b', models.CharField(max_length=20)),
+                        ('c', models.CharField(max_length=20)),
+                    ],
+                    options={
+                        'constraints': [
+                            UniqueConstraint(
+                                fields=['b'],
+                                include=['c'],
+                                condition=models.Q(pk__gt=0),
+                                name=constraint_name,
+                            ),
+                        ],
+                    },
+                ),
+            ],
+            operations_b=[
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='parent', new_name='link',
+                ),
+            ],
+            migration_name_prefix='test_covering_constraint_fk_pk_alias_rename',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        catalog = self._get_index_catalog(result.model, constraint_name)
+        included_by_column = {name: is_included for is_included, name, _ in catalog}
+        self.assertEqual(
+            included_by_column.get('b'), False,
+            "The constraint's key column 'b' should remain key-only.",
+        )
+        self.assertEqual(
+            included_by_column.get('c'), True,
+            "The 'c' INCLUDE column must stay an INCLUDE column, not be "
+            "promoted into the unique key.",
+        )
+        filter_definition = catalog[0][2]
+        self.assertIn('[link_id]', filter_definition)
+        self.assertNotIn('[parent_id]', filter_definition)
+
 
 
 
