@@ -15,7 +15,14 @@ DATABASES = {
         "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
         "HOST": os.environ.get("MSSQL_HOST", "localhost"),
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
-        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "python_driver": os.environ.get("MSSQL_PYTHON_DRIVER", ""), "extra_params": os.environ.get("MSSQL_EXTRA_PARAMS", ""), "return_rows_bulk_insert": True},
+        "OPTIONS": {
+            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 18 for SQL Server"),
+            "python_driver": os.environ.get("MSSQL_PYTHON_DRIVER", "pyodbc"),
+            "extra_params": os.environ.get(
+                "MSSQL_EXTRA_PARAMS", "TrustServerCertificate=yes"
+            ),
+            "return_rows_bulk_insert": True,
+        },
     },
     'other': {
         "ENGINE": "mssql",
@@ -24,7 +31,14 @@ DATABASES = {
         "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
         "HOST": os.environ.get("MSSQL_HOST", "localhost"),
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
-        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "python_driver": os.environ.get("MSSQL_PYTHON_DRIVER", ""), "extra_params": os.environ.get("MSSQL_EXTRA_PARAMS", ""), "return_rows_bulk_insert": True},
+        "OPTIONS": {
+            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 18 for SQL Server"),
+            "python_driver": os.environ.get("MSSQL_PYTHON_DRIVER", "pyodbc"),
+            "extra_params": os.environ.get(
+                "MSSQL_EXTRA_PARAMS", "TrustServerCertificate=yes"
+            ),
+            "return_rows_bulk_insert": True,
+        },
     },
 }
 
