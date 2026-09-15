@@ -85,8 +85,18 @@ class TestMssqlPythonLifecycle(SimpleTestCase):
     def test_connection_initialization_uses_selected_driver_constants(self):
         self.wrapper.ensure_connection()
         self.driver.connect.return_value.getinfo.assert_called_once_with(self.driver.SQL_DRIVER_NAME)
-        self.assertTrue(self.wrapper.supports_mars)
-        self.assertTrue(self.wrapper.features.can_use_chunked_reads)
+        self.assertTrue(self.wrapper._is_microsoft_driver)
+        self.assertFalse(self.wrapper.supports_mars)
+        self.assertFalse(self.wrapper.features.can_use_chunked_reads)
+
+    def test_reconnection_refreshes_mars_capabilities_for_selected_driver(self):
+        for driver, expected in (("pyodbc", True), ("mssql_python", False), ("pyodbc", True)):
+            with self.subTest(driver=driver):
+                self.wrapper.close()
+                self.params["OPTIONS"]["python_driver"] = driver
+                self.wrapper.ensure_connection()
+                self.assertEqual(self.wrapper.supports_mars, expected)
+                self.assertEqual(self.wrapper.features.can_use_chunked_reads, expected)
 
     def test_cursor_errors_use_selected_driver_for_execute_and_executemany(self):
         self.wrapper.ensure_connection()

@@ -553,6 +553,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 'mars_connection' not in self._parse_extra_params(options_extra_params)):
             cstr_parts['MARS_Connection'] = 'yes'
 
+        if use_python_driver:
+            # mssql-python rejects duplicate keywords; explicit extras take precedence.
+            extra_params = self._parse_extra_params(options_extra_params)
+            cstr_parts = {
+                key: value for key, value in cstr_parts.items()
+                if key.lower() not in extra_params
+            }
+
         connstr = encode_connection_string(cstr_parts)
 
         # extra_params are glued on the end of the string without encoding,
@@ -674,13 +682,18 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         settings_dict = self.settings_dict
         options = settings_dict.get('OPTIONS', {})
         self._is_microsoft_driver = bool(ms_drv_names.match(drv_name))
+        self.supports_mars = False
 
         if self._is_microsoft_driver:
             self.driver_charset = None
             # http://msdn.microsoft.com/en-us/library/ms131686.aspx
             extra_params = self._parse_extra_params(options.get('extra_params'))
-            self.supports_mars = extra_params.get('mars_connection', 'yes').strip().lower() == 'yes'
-            self.features.can_use_chunked_reads = self.supports_mars
+            # The bundled mssql-python driver does not enable MARS.
+            self.supports_mars = (
+                not self._use_python_driver and
+                extra_params.get('mars_connection', 'yes').strip().lower() == 'yes'
+            )
+        self.features.can_use_chunked_reads = self.supports_mars
 
         cursor = self.create_cursor()
 
