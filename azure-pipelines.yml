@@ -2,7 +2,8 @@
 #
 # The matrix is split into two tiers so pull requests stay fast without losing coverage:
 #   * Core jobs (Windows_Core / Linux_Core) run on every PR and CI build. They cover the
-#     Django versions still supported upstream today: 5.2 (LTS), 6.0.
+#     Django versions still supported upstream today: 5.2 (LTS), 6.0, 6.1,
+#     with separate pyodbc and mssql-python legs for every supported combination.
 #   * Legacy jobs (Windows_Legacy / Linux_Legacy) cover end-of-life Django versions
 #     (3.2, 4.0, 4.1, 4.2, 5.0, 5.1). These only run on the nightly schedule (or a manual
 #     queue), so we keep full historical coverage without crowding every PR run.
@@ -12,6 +13,7 @@
 
 trigger:
   - dev
+  - bewithgaurav/mssql-python-optin-validation
 
 pr:
   branches:
@@ -26,6 +28,41 @@ schedules:
     - dev
   always: true
 
+parameters:
+  - name: coreMatrix
+    type: object
+    default:
+      Python3.14 - Django 6.1:
+        python.version: '3.14'
+        tox.env: 'py314-django61'
+      Python3.13 - Django 6.1:
+        python.version: '3.13'
+        tox.env: 'py313-django61'
+      Python3.12 - Django 6.1:
+        python.version: '3.12'
+        tox.env: 'py312-django61'
+      Python3.14 - Django 6.0:
+        python.version: '3.14'
+        tox.env: 'py314-django60'
+      Python3.13 - Django 6.0:
+        python.version: '3.13'
+        tox.env: 'py313-django60'
+      Python3.12 - Django 6.0:
+        python.version: '3.12'
+        tox.env: 'py312-django60'
+      Python3.13 - Django 5.2:
+        python.version: '3.13'
+        tox.env: 'py313-django52'
+      Python3.12 - Django 5.2:
+        python.version: '3.12'
+        tox.env: 'py312-django52'
+      Python3.11 - Django 5.2:
+        python.version: '3.11'
+        tox.env: 'py311-django52'
+      Python3.10 - Django 5.2:
+        python.version: '3.10'
+        tox.env: 'py310-django52'
+
 jobs:
   - job: Windows_Core
     displayName: Windows (supported Django)
@@ -37,36 +74,11 @@ jobs:
 
     strategy:
       matrix:
-        Python3.14 - Django 6.1:
-          python.version: '3.14'
-          tox.env: 'py314-django61'
-        Python3.13 - Django 6.1:
-          python.version: '3.13'
-          tox.env: 'py313-django61'
-        Python3.12 - Django 6.1:
-          python.version: '3.12'
-          tox.env: 'py312-django61'
-        Python3.14 - Django 6.0:
-          python.version: '3.14'
-          tox.env: 'py314-django60'
-        Python3.13 - Django 6.0:
-          python.version: '3.13'
-          tox.env: 'py313-django60'
-        Python3.12 - Django 6.0:
-          python.version: '3.12'
-          tox.env: 'py312-django60'
-        Python3.13 - Django 5.2:
-          python.version: '3.13'
-          tox.env: 'py313-django52'
-        Python3.12 - Django 5.2:
-          python.version: '3.12'
-          tox.env: 'py312-django52'
-        Python3.11 - Django 5.2:
-          python.version: '3.11'
-          tox.env: 'py311-django52'
-        Python3.10 - Django 5.2:
-          python.version: '3.10'
-          tox.env: 'py310-django52'
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}: ${{ stack.value }}
+          ${{ format('{0} - mssql-python', stack.key) }}:
+            python.version: ${{ stack.value['python.version'] }}
+            tox.env: ${{ format('{0}-mssqlpython', stack.value['tox.env']) }}
 
     steps:
       - template: azure-pipelines-steps-windows.yml
@@ -162,36 +174,11 @@ jobs:
 
     strategy:
       matrix:
-        Python3.14 - Django 6.1:
-          python.version: '3.14'
-          tox.env: 'py314-django61'
-        Python3.13 - Django 6.1:
-          python.version: '3.13'
-          tox.env: 'py313-django61'
-        Python3.12 - Django 6.1:
-          python.version: '3.12'
-          tox.env: 'py312-django61'
-        Python3.14 - Django 6.0:
-          python.version: '3.14'
-          tox.env: 'py314-django60'
-        Python3.13 - Django 6.0:
-          python.version: '3.13'
-          tox.env: 'py313-django60'
-        Python3.12 - Django 6.0:
-          python.version: '3.12'
-          tox.env: 'py312-django60'
-        Python3.13 - Django 5.2:
-          python.version: '3.13'
-          tox.env: 'py313-django52'
-        Python3.12 - Django 5.2:
-          python.version: '3.12'
-          tox.env: 'py312-django52'
-        Python3.11 - Django 5.2:
-          python.version: '3.11'
-          tox.env: 'py311-django52'
-        Python3.10 - Django 5.2:
-          python.version: '3.10'
-          tox.env: 'py310-django52'
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}: ${{ stack.value }}
+          ${{ format('{0} - mssql-python', stack.key) }}:
+            python.version: ${{ stack.value['python.version'] }}
+            tox.env: ${{ format('{0}-mssqlpython', stack.value['tox.env']) }}
 
     steps:
       - template: azure-pipelines-steps-linux.yml

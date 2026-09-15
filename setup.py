@@ -54,6 +54,8 @@ setup(
     ],
     extras_require={
         'test': ['unittest-xml-reporting>=3.2.0'],
+        # Explicit opt-in; its Python >=3.10 requirement must not be silently skipped.
+        'mssql-python': ['mssql-python>=1.15.0'],
     },
     package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,

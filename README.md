@@ -73,24 +73,25 @@ DATABASE_CONNECTION_POOLING = False
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `driver` | String | `"ODBC Driver 18 for SQL Server"` | ODBC driver to use. Auto-falls back to Driver 17 if 18 is not installed. |
+| `python_driver` | String | Unset | **Unreleased (planned 2.0).** Set to `"mssql_python"` to opt in to mssql-python. Omit it to use pyodbc. See [Selecting the database driver](#selecting-the-database-driver). |
+| `driver` | String | `"ODBC Driver 18 for SQL Server"` | ODBC driver to use (pyodbc path). Auto-falls back to Driver 17 if 18 is not installed. |
 | `isolation_level` | String | `None` | [Transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql): `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SNAPSHOT`, or `SERIALIZABLE` |
-| `dsn` | String | — | Named DSN, can be used instead of `HOST` |
-| `host_is_server` | Boolean | `False` | Set to `True` to use `HOST`/`PORT` directly with FreeTDS instead of a `freetds.conf` dataserver name. [Details](https://www.freetds.org/userguide/dsnless.html) |
+| `dsn` | String | Unset | Named DSN, can be used instead of `HOST` (pyodbc only) |
+| `host_is_server` | Boolean | `False` | Set to `True` to use `HOST`/`PORT` directly with FreeTDS instead of a `freetds.conf` dataserver name (pyodbc only). [Details](https://www.freetds.org/userguide/dsnless.html) |
 | `unicode_results` | Boolean | `False` | Activate pyodbc's unicode\_results feature |
-| `extra_params` | String | — | Additional ODBC params (`"param=value;param=value"`). Use for [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication). |
+| `extra_params` | String | Unset | Additional connection parameters (`"param=value;param=value"`), passed unchanged to the selected driver. See [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) and the [opt-in restrictions](#selecting-the-database-driver). |
 | `collation` | String | `None` | Collation for text field lookups (e.g. `"Chinese_PRC_CI_AS"`) |
 | `connection_timeout` | Integer | `0` | Connection timeout in seconds (`0` = disabled) |
 | `connection_retries` | Integer | `5` | Number of connection retry attempts |
 | `connection_retry_backoff_time` | Integer | `5` | Back-off time in seconds between retries |
 | `query_timeout` | Integer | `0` | Query timeout in seconds (`0` = disabled) |
-| `setencoding` / `setdecoding` | List | — | pyodbc [encoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) / [decoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding) config |
+| `setencoding` / `setdecoding` | List | Unset | Forwarded to the selected connection's encoding / decoding methods. See the pyodbc [encoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) / [decoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding) reference. |
 | `return_rows_bulk_insert` | Boolean | `False` | Allow returning rows from bulk insert. Must be `False` if tables have triggers. |
 
 #### Disabling MARS
 
-The backend enables Multiple Active Result Sets (MARS) by default with Microsoft
-ODBC drivers on Windows. To connect to an endpoint that does not support MARS,
+On the pyodbc path, the backend enables Multiple Active Result Sets (MARS) by
+default with Microsoft ODBC drivers on Windows. To connect to an endpoint that does not support MARS,
 such as Microsoft Fabric Warehouse, set `MARS_Connection=no` in that database
 alias's `extra_params`:
 
@@ -110,11 +111,76 @@ yielding them so nested queries can use the same connection; this can use more
 memory for large querysets. This connection setting does not imply full
 Warehouse support for Django migrations or other SQL Server features.
 
+### Selecting the database driver
+
+> **Unreleased (planned 2.0).** This option and the installation extra require
+> the backend and packaging changes in [#596](https://github.com/microsoft/mssql-django/pull/596)
+> and [#599](https://github.com/microsoft/mssql-django/pull/599).
+> Published mssql-django 1.x does not support them.
+
+mssql-django continues to install and use **pyodbc** by default. The opt-in
+[mssql-python](https://github.com/microsoft/mssql-python) path requires
+Python 3.10 or newer and **mssql-python >=1.15.0**. Once mssql-django 2.0 is
+released, install the optional driver with:
+
+```bash
+python -m pip install "mssql-django[mssql-python]>=2.0"
+```
+
+For development, use `python -m pip install ".[mssql-python]"` from a checkout
+containing both changes linked above. Installing mssql-python alone does not
+add this backend option to mssql-django 1.x.
+
+Select the driver per database alias without changing `ENGINE`:
+
+```python
+DATABASES = {
+    'default': {
+        'ENGINE': 'mssql',
+        'NAME': 'mydb',
+        'USER': 'user',
+        'PASSWORD': 'password',
+        'HOST': 'myserver.database.windows.net',
+        'PORT': '',
+        'OPTIONS': {
+            'python_driver': 'mssql_python',
+        },
+    },
+}
+```
+
+- **Default and rollback.** Omit `python_driver` or set it to `"pyodbc"` to
+  use pyodbc. Different aliases can use different drivers. Keep pyodbc
+  installed and retain its runtime prerequisites, even when opting in.
+- **Native dependencies.** pip installs the `mssql-python-odbc` companion
+  package automatically. By default, the opt-in connection loads its native driver from
+  that package, not from a separately installed ODBC Driver 17 or 18.
+  Follow mssql-python's [platform prerequisites](https://github.com/microsoft/mssql-python#installation),
+  including OpenSSL on macOS and the required Linux libraries.
+- **Encryption.** Use a trusted server certificate. For local development
+  with a self-signed certificate, `TrustServerCertificate=yes` in `extra_params`
+  bypasses certificate validation; do not use it as a production default.
+- **Driver-specific options.** On the opt-in path, `driver`, `dsn`,
+  `host_is_server`, and `unicode_results` are ignored. Supply `HOST` and
+  optionally `PORT`; they become `SERVER=host,port`. Driver 17 fallback is
+  available only on the pyodbc path.
+- **Connection keywords.** `extra_params` is passed unchanged, not filtered.
+  mssql-python 1.15.0 rejects `DRIVER`, `DSN`, `SERVERNAME`, and
+  `MARS_Connection`. Do not copy those keywords from a pyodbc connection
+  string. For endpoints requiring the [MARS opt-out](#disabling-mars), keep
+  using pyodbc.
+- **Authentication.** Use only authentication modes supported by
+  [mssql-python on your platform](https://github.com/microsoft/mssql-python/wiki/Microsoft-Entra-ID-support).
+  The backend forwards `Authentication` through `extra_params` and packs
+  `TOKEN` as an access-token connection attribute. When supplying `TOKEN`,
+  omit `USER`, `PASSWORD`, and `Authentication`; the application must manage
+  token acquisition and renewal.
+
 ### Backend-Specific Settings
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
-| `DATABASE_CONNECTION_POOLING` | Boolean | `True` | Set to `False` to disable pyodbc's connection pooling |
+| `DATABASE_CONNECTION_POOLING` | Boolean | `True` | Set to `False` before opening connections to disable driver pooling. Applies to pyodbc and the unreleased mssql-python opt-in path. |
 
 ## Known Limitations
 
