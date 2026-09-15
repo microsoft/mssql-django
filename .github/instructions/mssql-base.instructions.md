@@ -15,11 +15,11 @@ them carefully.
   if the user set the keyword explicitly in `extra_params`, skip our injection. Apply the
   same pattern to any newly injected keyword; parse `extra_params` (case-insensitive) to
   detect it.
-- **MARS is force-added on Windows for Microsoft drivers and cannot currently be turned
-  off**, which breaks backends that don't support it (e.g. Microsoft Fabric DWH). A fix
-  must (a) honor an explicit `MARS_Connection` in `extra_params`, and (b) keep the runtime
-  `supports_mars` feature flag consistent with the effective setting — the flag is derived
-  from the driver name, not from the actual connection string, so they can disagree. See #415.
+- **MARS defaults on for Microsoft drivers on Windows.** Honor an explicit
+  `MARS_Connection` in `extra_params` without injecting a duplicate, and keep
+  `supports_mars` and `can_use_chunked_reads` consistent with that setting. Disabling
+  MARS must not apply the FreeTDS `fetchone()` result-discard workaround to Microsoft
+  drivers. See #415.
 - **`extra_params` is appended verbatim.** A keyword the backend also sets can appear
   twice; dedupe rather than emit duplicates.
 
