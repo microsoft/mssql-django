@@ -61,13 +61,13 @@ def _load_mssql_python():
         raise ImproperlyConfigured(
             "The 'python_driver' connection option requests mssql-python, but "
             "the module could not be imported: %s. Install it with "
-            "'pip install mssql-django[mssql-python]'." % e
+            "'pip install \"mssql-python>=1.15.0\"'." % e
         )
 
     driver_ver = get_version_tuple(mssql_python.__version__)
-    if driver_ver < (1, 0):
+    if driver_ver < (1, 15, 0):
         raise ImproperlyConfigured(
-            "mssql-python 1.0 or newer is required; you have %s"
+            "mssql-python 1.15.0 or newer is required; you have %s"
             % mssql_python.__version__
         )
 
@@ -277,6 +277,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         # capability for multiple result sets or cursors
         self.supports_mars = False
+        self._is_microsoft_driver = False
 
         # Some drivers need unicode encoded as UTF8. If this is left as
         # None, it will be determined based on the driver, namely it'll be
@@ -548,7 +549,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         cstr_parts['DATABASE'] = database
 
-        if not use_python_driver and ms_drivers.match(driver) and os.name == 'nt':
+        if (not use_python_driver and ms_drivers.match(driver) and os.name == 'nt' and
+                'mars_connection' not in self._parse_extra_params(options_extra_params)):
             cstr_parts['MARS_Connection'] = 'yes'
 
         connstr = encode_connection_string(cstr_parts)
@@ -574,12 +576,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def get_new_connection(self, conn_params):
         options = conn_params.get('OPTIONS', {})
         use_python_driver = self._uses_mssql_python(conn_params)
-        if use_python_driver:
-            # Route this connection through mssql-python. self.Database shadows
-            # the class-level pyodbc module so Django's error wrapping and the
-            # cursor/connection paths use the driver that actually connected.
-            self.Database = _load_mssql_python()
-            self._use_python_driver = True
+        self.Database = _load_mssql_python() if use_python_driver else Database
+        self._use_python_driver = use_python_driver
         driver = options.get('driver', 'ODBC Driver 18 for SQL Server')
         driver_explicitly_set = 'driver' in options
 
@@ -595,7 +593,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         conn = None
         retry_count = 0
-        need_to_retry = False
         args = {
             'timeout': timeout,
         }
@@ -617,10 +614,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 # If driver not explicitly set and v18 failed with driver not found,
                 # try falling back to v17 (pyodbc path only).
                 if (not use_python_driver and
-                    not driver_explicitly_set and
-                    not attempted_v17_fallback and
-                    self._is_driver_not_found_error(e) and
-                    'ODBC Driver 18' in driver):
+                        not driver_explicitly_set and
+                        not attempted_v17_fallback and
+                        self._is_driver_not_found_error(e) and
+                        'ODBC Driver 18' in driver):
 
                     attempted_v17_fallback = True
                     driver = 'ODBC Driver 17 for SQL Server'
@@ -640,24 +637,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     )
                     continue
 
-                # pyodbc exposes the SQLSTATE at e.args[1]; mssql-python carries
-                # only the message text, so match the transient SQL Server error
-                # numbers against the appropriate source for the active driver.
-                error_haystack = str(e) if use_python_driver else e.args[1]
-                for error_number in self._transient_error_numbers:
-                    if error_number in error_haystack:
-                        if retry_count < retries:
-                            time.sleep(backoff_time)
-                            need_to_retry = True
-                            retry_count = retry_count + 1
-                        else:
-                            need_to_retry = False
-                        break
-                if not need_to_retry:
+                error_haystack = str(e)
+                if retry_count >= retries or not any(
+                        number in error_haystack for number in self._transient_error_numbers):
                     raise
-        # Handling values from DATETIMEOFFSET columns
-        # source: https://github.com/mkleehammer/pyodbc/wiki/Using-an-Output-Converter-function
-        conn.add_output_converter(SQL_TIMESTAMP_WITH_TIMEZONE, handle_datetimeoffset)
+                time.sleep(backoff_time)
+                retry_count += 1
+        if not use_python_driver:
+            # mssql-python already returns native datetimeoffset values.
+            conn.add_output_converter(SQL_TIMESTAMP_WITH_TIMEZONE, handle_datetimeoffset)
         conn.timeout = query_timeout
         if setencoding:
             for entry in setencoding:
@@ -683,16 +671,19 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         ms_drv_names = re.compile('^(LIB)?(SQLNCLI|MSODBCSQL)')
 
-        if ms_drv_names.match(drv_name):
+        settings_dict = self.settings_dict
+        options = settings_dict.get('OPTIONS', {})
+        self._is_microsoft_driver = bool(ms_drv_names.match(drv_name))
+
+        if self._is_microsoft_driver:
             self.driver_charset = None
             # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-            self.supports_mars = True
-            self.features.can_use_chunked_reads = True
+            extra_params = self._parse_extra_params(options.get('extra_params'))
+            self.supports_mars = extra_params.get('mars_connection', 'yes').strip().lower() == 'yes'
+            self.features.can_use_chunked_reads = self.supports_mars
 
-        settings_dict = self.settings_dict
         cursor = self.create_cursor()
 
-        options = settings_dict.get('OPTIONS', {})
         isolation_level = options.get('isolation_level', None)
         if isolation_level:
             cursor.execute('SET TRANSACTION ISOLATION LEVEL %s' % isolation_level)
@@ -1031,7 +1022,7 @@ class CursorWrapper(object):
             row = self.format_row(row)
         # Any remaining rows in the current set must be discarded
         # before changing autocommit mode when you use FreeTDS
-        if not self.connection.supports_mars:
+        if not self.connection.supports_mars and not self.connection._is_microsoft_driver:
             self.cursor.nextset()
         return row
 
