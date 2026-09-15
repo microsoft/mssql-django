@@ -1,14 +1,17 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 
-from contextlib import ExitStack
+import datetime
+from contextlib import ExitStack, closing
 from types import SimpleNamespace
 from unittest import mock
 
 from django.core.exceptions import ImproperlyConfigured
-from django.test import SimpleTestCase, override_settings
+from django.db import connection
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from mssql import base
+from mssql.compiler import _cursor_iter
 
 
 @override_settings(DATABASE_CONNECTION_POOLING=True)
@@ -80,6 +83,52 @@ class TestMssqlPythonConnection(SimpleTestCase):
         connection.add_output_converter.assert_not_called()
         self.pyodbc_connect.assert_not_called()
 
+    def test_explicit_extra_params_replace_generated_keywords(self):
+        generated = {
+            "SERVER": "example.test",
+            "UID": "testuser",
+            "PWD": "testpass",
+            "DATABASE": "testdb",
+        }
+        for key in generated:
+            with self.subTest(key=key):
+                extra = " %s = {override;value}}suffix}" % key.lower()
+                self.params["OPTIONS"]["extra_params"] = extra
+                self.wrapper.get_new_connection(self.params)
+                expected = {k: v for k, v in generated.items() if k != key}
+                self.assertEqual(
+                    self.driver.connect.call_args.args[0],
+                    base.encode_connection_string(expected) + ";" + extra,
+                )
+        self.pyodbc_connect.assert_not_called()
+
+    def test_explicit_trusted_connection_replaces_default(self):
+        self.params.update(USER="", PASSWORD="")
+        for value in ("yes", "no"):
+            with self.subTest(value=value):
+                extra = " trusted_connection = {%s}" % value
+                self.params["OPTIONS"]["extra_params"] = extra
+                self.wrapper.get_new_connection(self.params)
+                self.assertEqual(
+                    self.driver.connect.call_args.args[0],
+                    "SERVER=example.test;DATABASE=testdb;" + extra,
+                )
+
+    def test_braced_keyword_text_does_not_override_generated_server(self):
+        extra = "ApplicationIntent={ReadOnly;SERVER=not-a-server}"
+        self.params["OPTIONS"]["extra_params"] = extra
+        self.wrapper.get_new_connection(self.params)
+        connstr = self.driver.connect.call_args.args[0]
+        self.assertTrue(connstr.startswith("SERVER=example.test;"))
+        self.assertTrue(connstr.endswith(";" + extra))
+
+    def test_invalid_user_extras_are_preserved_for_driver_validation(self):
+        for extra in ("SERVER=first;server=second", "SERVER=", "UnknownKeyword=value"):
+            with self.subTest(extra=extra):
+                self.params["OPTIONS"]["extra_params"] = extra
+                self.wrapper.get_new_connection(self.params)
+                self.assertTrue(self.driver.connect.call_args.args[0].endswith(";" + extra))
+
     def test_default_driver_is_not_changed_by_another_wrapper(self):
         self.wrapper.get_new_connection(self.params)
         default_wrapper = object.__new__(base.DatabaseWrapper)
@@ -150,3 +199,59 @@ class TestMssqlPythonConnection(SimpleTestCase):
         self.assertIs(raised.exception, error)
         self.driver.connect.assert_called_once()
         self.pyodbc_connect.assert_not_called()
+
+
+class TestMssqlPythonConnectionState(SimpleTestCase):
+    def test_mars_capabilities_follow_driver_on_reinitialization(self):
+        wrapper = base.DatabaseWrapper({"OPTIONS": {}}, alias="optin_mars")
+        wrapper.connection = mock.MagicMock()
+        wrapper.get_system_datetime = datetime.datetime(2026, 1, 1)
+        for use_python_driver, native_driver, expected in (
+            (False, "MSODBCSQL18.DLL", True),
+            (True, "MSODBCSQL18.DLL", False),
+            (False, "MSODBCSQL18.DLL", True),
+            (True, "libmsodbcsql.18.dylib", False),
+            (False, "MSODBCSQL18.DLL", True),
+            (False, "libtdsodbc.so", False),
+        ):
+            with self.subTest(python_driver=use_python_driver, native_driver=native_driver):
+                wrapper._use_python_driver = use_python_driver
+                wrapper.connection.getinfo.return_value = native_driver
+                wrapper.init_connection_state()
+                self.assertEqual(wrapper.supports_mars, expected)
+                self.assertEqual(wrapper.features.can_use_chunked_reads, expected)
+                if use_python_driver:
+                    self.assertTrue(wrapper._is_microsoft_driver)
+                    cursor = wrapper.create_cursor()
+                    cursor.cursor.fetchone.side_effect = [(1,), (2,)]
+                    self.assertEqual(cursor.fetchone(), (1,))
+                    self.assertEqual(cursor.fetchone(), (2,))
+                    cursor.cursor.nextset.assert_not_called()
+
+
+class TestMssqlPythonIteration(TestCase):
+    def test_non_mars_iteration_allows_nested_query(self):
+        wrapper = connection.copy(alias="non_mars_iteration")
+        self.addCleanup(wrapper.close)
+        options = wrapper.settings_dict["OPTIONS"]
+        if not wrapper._uses_mssql_python(wrapper.settings_dict):
+            options["extra_params"] = "MARS_Connection=no;" + (options.get("extra_params") or "")
+        payload = "x" * 1024
+        # Exceed native result buffering so the first chunk leaves unread rows.
+        with wrapper.cursor() as cursor:
+            cursor.execute("""
+                WITH d(n) AS (SELECT n FROM
+                    (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9)) x(n))
+                SELECT TOP (2000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
+                    CAST(REPLICATE(N'x', 1024) AS nvarchar(1024))
+                FROM d a CROSS JOIN d b CROSS JOIN d c CROSS JOIN d e
+            """)
+            with closing(_cursor_iter(cursor, [], None, 2)) as chunks:
+                self.assertEqual(next(chunks), [(1, payload), (2, payload)])
+                with wrapper.cursor() as nested:
+                    nested.execute("SELECT 42")
+                    self.assertEqual(nested.fetchone(), (42,))
+                self.assertEqual(
+                    [row for chunk in chunks for row in chunk],
+                    [(i, payload) for i in range(3, 2001)],
+                )
