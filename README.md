@@ -165,10 +165,16 @@ DATABASES = {
   optionally `PORT`; they become `SERVER=host,port`. Driver 17 fallback is
   available only on the pyodbc path.
 - **Connection keywords.** `extra_params` is passed unchanged, not filtered.
+  On the opt-in path, explicit keywords in `extra_params` replace matching
+  backend-generated keywords rather than creating duplicates.
   mssql-python 1.15.0 rejects `DRIVER`, `DSN`, `SERVERNAME`, and
   `MARS_Connection`. Do not copy those keywords from a pyodbc connection
   string. For endpoints requiring the [MARS opt-out](#disabling-mars), keep
   using pyodbc.
+- **Result iteration.** The opt-in path does not enable MARS. The backend
+  buffers query results before yielding from `QuerySet.iterator()` so nested
+  queries can run on the same connection. Large result sets therefore require
+  memory for the complete result, even when a small `chunk_size` is requested.
 - **Authentication.** Use only authentication modes supported by
   [mssql-python on your platform](https://github.com/microsoft/mssql-python/wiki/Microsoft-Entra-ID-support).
   The backend forwards `Authentication` through `extra_params` and packs
