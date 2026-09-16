@@ -82,6 +82,11 @@ jobs:
           echo "REGRESSION_POLICE_WHEELHOUSE=$wheelhouse" >> "$GITHUB_ENV"
           python -m pip install -e ".[test]"
 
+      - name: Validate Regression Police harness
+        run: |
+          cd .github/skills/code-review
+          python test_run_differential.py
+
       - name: Wait for SQL Server
         run: |
           set -euo pipefail

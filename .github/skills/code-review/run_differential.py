@@ -141,7 +141,9 @@ def has_lifecycle_failure(output):
     return bool(
         re.search(
             r"\bin (?:setUp|tearDown|setUpClass|tearDownClass|"
-            r"setUpModule|tearDownModule|_callSetUp|_callTearDown)\b",
+            r"setUpModule|tearDownModule|_callSetUp|_callTearDown|"
+            r"cleanup|_callCleanup|doCleanups|doClassCleanups|"
+            r"doModuleCleanups)\b",
             output,
         )
     )
@@ -181,14 +183,27 @@ def terminate_process_tree(process):
         return
     try:
         os.killpg(process.pid, signal.SIGTERM)
-        process.wait(timeout=2)
     except ProcessLookupError:
-        return
+        pass
+    try:
+        process.wait(timeout=2)
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=2)
+
+
+def output_text(output):
+    if isinstance(output, bytes):
+        return output.decode(errors="replace")
+    return output or ""
 
 
 def run_process_group(command, *, cwd, env, timeout):
@@ -207,12 +222,14 @@ def run_process_group(command, *, cwd, env, timeout):
     try:
         stdout, _ = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as error:
+        stdout = output_text(error.stdout)
         terminate_process_tree(process)
-        stdout, _ = process.communicate()
+        if process.stdout:
+            process.stdout.close()
         raise subprocess.TimeoutExpired(
             command,
             timeout,
-            output=(error.stdout or "") + (stdout or ""),
+            output=stdout,
         ) from error
     return subprocess.CompletedProcess(command, process.returncode, stdout)
 

@@ -121,6 +121,20 @@ class ResultClassificationTests(unittest.TestCase):
             classify_test(1, cleanup_error, self.label, self.sentinel),
             "inconclusive",
         )
+        method_and_cleanup_failure = self.failure + (
+            "\nERROR: test_behavior (test.module.Class.test_behavior)\n"
+            '  File "/tmp/test_probe.py", line 25, in cleanup\n'
+            "RuntimeError: cleanup failed\n"
+        )
+        self.assertEqual(
+            classify_test(
+                1,
+                method_and_cleanup_failure,
+                self.label,
+                self.sentinel,
+            ),
+            "inconclusive",
+        )
 
     def test_failure_signature_includes_details(self):
         changed_failure = self.failure.replace("got 2", "got 3")
@@ -328,11 +342,18 @@ class ResultClassificationTests(unittest.TestCase):
             (source / "new.py").write_text("ADDED = True\n")
             with_untracked = source_fingerprint(source, Path("probe.py"))
             self.assertNotEqual(original, with_untracked)
+            first_target = source / "first-target"
+            second_target = source / "second-target"
+            first_target.write_text("first\n")
+            second_target.write_text("second\n")
             link = source / "link"
-            link.symlink_to("/dev/null")
+            try:
+                link.symlink_to(first_target)
+            except OSError as error:
+                self.skipTest(f"symlinks unavailable: {error}")
             null_link = source_fingerprint(source, Path("probe.py"))
             link.unlink()
-            link.symlink_to("/dev/zero")
+            link.symlink_to(second_target)
             zero_link = source_fingerprint(source, Path("probe.py"))
             self.assertNotEqual(null_link, zero_link)
 
@@ -342,7 +363,9 @@ class ResultClassificationTests(unittest.TestCase):
             pid_file = Path(temporary) / "child.pid"
             script = (
                 "import pathlib, subprocess, sys, time; "
-                "child=subprocess.Popen([sys.executable, '-c', 'import time; "
+                "child=subprocess.Popen([sys.executable, '-c', "
+                "'import signal, time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
                 "time.sleep(30)']); "
                 f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid)); "
                 "time.sleep(30)"
@@ -357,6 +380,18 @@ class ResultClassificationTests(unittest.TestCase):
             child_pid = int(pid_file.read_text())
             with self.assertRaises(ProcessLookupError):
                 os.kill(child_pid, 0)
+
+    def test_timeout_with_output_returns_text(self):
+        script = "import time; print('started', flush=True); time.sleep(30)"
+        with self.assertRaises(subprocess.TimeoutExpired) as raised:
+            run_process_group(
+                [sys.executable, "-c", script],
+                cwd=Path.cwd(),
+                env=os.environ.copy(),
+                timeout=0.5,
+            )
+        self.assertIsInstance(raised.exception.output, str)
+        self.assertIn("started", raised.exception.output)
 
 
 if __name__ == "__main__":
