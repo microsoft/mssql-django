@@ -81,11 +81,12 @@ Python-version coverage, and legacy-only configurations remain outside these pro
    still proves the behavior. Reuse existing code and point to the narrowest shared root-cause
    correction instead of proposing a new abstraction.
 
-Publish only `KEEP` findings on changed lines. Start a newly introduced defect with
-`Regression Police: Proven regression` and an incomplete claimed fix with
-`Regression Police: Proven incomplete fix`. Include concrete user impact, the minimal test,
-the exact command, base/head outcomes, and the smallest credible fix direction. Do not treat
-pending or absent Azure DevOps runs as evidence, and do not fetch routine successful logs.
+Publish only `KEEP` findings on changed lines. Begin every published Regression Police finding
+with the standalone header `**MSSQL-Django Regression Police Agent**`. Start a newly introduced
+defect with `Regression Police: Proven regression` and an incomplete claimed fix with
+`Regression Police: Proven incomplete fix`. Include concrete user impact, the minimal test, the
+exact command, base/head outcomes, and the smallest credible fix direction. Do not treat pending
+or absent Azure DevOps runs as evidence, and do not fetch routine successful logs.
 Always include a short `Regression Police` review-summary line with the number of probes,
 tested revisions/configurations, and outcome, including when all candidates were disproved.
 
