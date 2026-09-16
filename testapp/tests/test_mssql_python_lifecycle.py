@@ -65,6 +65,7 @@ class TestMssqlPythonLifecycle(SimpleTestCase):
         args, kwargs = self.driver.connect.call_args
         self.assertEqual(kwargs, {
             "timeout": 0,
+            "native_uuid": False,
             "attrs_before": {1256: struct.pack("=i", 4) + b"A\x00B\x00"},
         })
         for keyword in ("UID=", "PWD=", "Trusted_Connection=", "Integrated Security=", "TOKEN="):
@@ -125,7 +126,12 @@ class TestMssqlPythonLifecycle(SimpleTestCase):
     def test_network_error_clears_connection_and_reconnects(self):
         self.wrapper.ensure_connection()
         stale = self.wrapper.connection
-        self.wrapper._on_error(self.driver.Error("Communication link failure [08S01]"))
+        error = self.driver.Error(
+            "Driver Error: Communication link failure; "
+            "DDBC Error: [Microsoft]TCP Provider: Error code 0x2746"
+        )
+        error.driver_error = "Communication link failure"
+        self.wrapper._on_error(error)
         stale.close.assert_called_once_with()
         self.assertIsNone(self.wrapper.connection)
         fresh = mock.MagicMock()
