@@ -14,7 +14,7 @@ from django.db.models.aggregates import Count, Sum
 if VERSION >= (6, 0):
     from django.db.models import StringAgg
 
-from ..models import Author, Book, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes, Publisher
+from ..models import Author, Book, Comment, Post, Editor, ModelWithNullableFieldsOfDifferentTypes, Publisher, TestNullableUniqueTogetherModel
 
 
 DJANGO3 = VERSION[0] >= 3
@@ -214,6 +214,29 @@ class TestStringAggOrderingRegression(TestCase):
 
         self.assertEqual(values, ['Alpha'])
         self.assertNotIn('WITHIN GROUP', ctx[0]['sql'])
+
+
+class TestPatternLookupExpressionEscaping(TestCase):
+    """
+    Regression tests for https://github.com/microsoft/mssql-django/issues/573
+
+    Pattern lookups (contains/startswith/endswith) whose search term comes
+    from a column reference (F()) must escape SQL Server's '[' character-class
+    wildcard, matching the escaping already applied to literal patterns.
+    """
+
+    def setUp(self):
+        TestNullableUniqueTogetherModel.objects.create(a="Johnny", b="[J]ohnny", c="1")
+        self.john = TestNullableUniqueTogetherModel.objects.create(a="Johnny", b="John", c="2")
+        self.bracketed = TestNullableUniqueTogetherModel.objects.create(a="[J]ohnny", b="[J]ohnny", c="3")
+
+    def test_contains_with_f_expression_escapes_brackets(self):
+        qs = TestNullableUniqueTogetherModel.objects.filter(a__contains=F("b"))
+        self.assertCountEqual(qs, [self.john, self.bracketed])
+
+    def test_startswith_with_f_expression_escapes_brackets(self):
+        qs = TestNullableUniqueTogetherModel.objects.filter(a__startswith=F("b"))
+        self.assertCountEqual(qs, [self.john, self.bracketed])
 
 
 class TestSubtractTemporals(TestCase):
