@@ -18,40 +18,55 @@ vs. after the change, not to an abstract concern.
 
 ## Regression Police: executable review
 
-For behavior-changing pull requests, act as **Regression Police**: turn plausible SQL Server
-regressions into disposable, executable proofs before reporting them. Static reasoning may
-identify candidates, but it is not evidence when the behavior can be exercised in `testapp`.
+For every behavior-changing pull request under `mssql/` or `testapp/`, act as **Regression
+Police**: run at least one disposable, executable head/base probe before completing the review.
+Static reasoning may identify candidates, but it is not evidence when the behavior can be
+exercised in `testapp`. If no probe can run, state the concrete reason in the review summary.
 
 1. **Freeze the evidence target.** Record `git rev-parse HEAD` before testing and verify that it
    is the reviewed pull request's head SHA, not a synthetic merge commit. Publish evidence only
    for that SHA, and stop if the checkout changes during review.
-2. **Mine a small suspect set.** Trace changed code through its callers and choose at most three
-   high-value candidates. Prioritize silent wrong results, data loss, broken migrations, and
-   cross-version failures over style or speculative edge cases.
-3. **Write one minimal proof per candidate.** Add a disposable test under `testapp/tests/` using
-   existing models and helpers. Exercise the real ORM and SQL Server behavior, avoid mocks for
-   database behavior, and assert observable rows, schema, or errors rather than SQL text when
-   possible. Do not commit the generated test.
-4. **Run the identical test on head and base.** Run only the generated test on the reviewed SHA.
-   Resolve the pull request's base ref, fetch it if needed, then copy the test unchanged to a
-   detached worktree at `git merge-base HEAD origin/<base-ref>` and run the same command there.
-   Keep the two runs sequential so they do not collide on shared test databases.
-5. **Interpret the differential correctly.**
+2. **Prove the pull request's claim first.** Prefer one focused test added or changed by the pull
+   request. Run it on head, then overlay the same test file on the merge base and run the same
+   test label there. If it cannot run unchanged on base, write a smaller public-behavior probe.
+3. **Mine one or two adversarial neighbors.** Trace changed code through its callers. Prioritize
+   silent wrong results, data loss, broken migrations, and cross-version failures. For schema
+   changes, exercise forward/reverse migration and inspect catalog state after rename/alter;
+   include an adjacent filtered, expression, covering, remove/re-add, or repeated-rename shape.
+   For query changes, exercise filter/exclude plus an annotation, aggregate, or boundary input.
+4. **Write minimal proofs.** Put disposable tests under `testapp/tests/`, use existing models and
+   helpers, and assert observable rows, schema, or errors rather than SQL text when possible.
+   Do not commit generated tests.
+5. **Run the identical test on head and base.** Use `run-differential.py` from this skill
+   directory with the pull request's base ref, test file, and exact test label. The harness
+   verifies the reviewed SHA, refuses dependency-metadata differentials, creates isolated
+   worktrees and environments, uses distinct test databases, and runs revisions sequentially.
+   Set `SKILL_DIR` to the directory containing this loaded `SKILL.md`, then run:
+
+   ```bash
+   python "$SKILL_DIR/run-differential.py" \
+     --base-ref "$PR_BASE_REF" \
+     --head-sha "$(git rev-parse HEAD)" \
+     --test-file testapp/tests/test_regression_police_probe.py \
+     --test-label testapp.tests.test_regression_police_probe.RegressionProbe.test_behavior
+   ```
+6. **Interpret the differential correctly.**
 
    | Base | Head | Verdict |
    |------|------|---------|
    | Pass | Fail | The pull request introduces a regression. |
    | Fail | Pass | The pull request fixes the exercised behavior. |
    | Fail | Fail | Pre-existing or an incomplete claimed fix; not a new regression. |
-   | Pass | Pass | The candidate is disproved. |
+   | Pass | Pass | The candidate is disproved only in the tested configuration. |
 
    Setup failures, flaky outcomes, different tests, or a stale SHA are inconclusive and must
-   not be reported as proof.
-6. **Run the Devil's Advocate Rubber Duck.** Assume each candidate is wrong. Challenge the
+   not be reported as proof. When the changed code is version-gated, rerun the surviving probe
+   on the minimum and maximum affected Django versions; do not imply full-matrix coverage.
+7. **Run the Devil's Advocate Rubber Duck.** Assume each candidate is wrong. Challenge the
    test's trigger, attribution, determinism, user impact, nearby input shapes, and use of public
    behavior. Classify it internally as `KEEP`, `HARDEN`, or `DROP`. Rerun both revisions after
    hardening and drop anything that does not survive.
-7. **Apply Ponytail.** Shrink every surviving test and recommendation to the smallest case that
+8. **Apply Ponytail.** Shrink every surviving test and recommendation to the smallest case that
    still proves the behavior. Reuse existing code and point to the narrowest shared root-cause
    correction instead of proposing a new abstraction.
 
@@ -60,6 +75,8 @@ Publish only `KEEP` findings on changed lines. Start a newly introduced defect w
 `Regression Police: Proven incomplete fix`. Include concrete user impact, the minimal test,
 the exact command, base/head outcomes, and the smallest credible fix direction. Do not treat
 pending or absent Azure DevOps runs as evidence, and do not fetch routine successful logs.
+Always include a short `Regression Police` review-summary line with the number of probes,
+tested revisions/configurations, and outcome, including when all candidates were disproved.
 
 ## Review procedure
 
