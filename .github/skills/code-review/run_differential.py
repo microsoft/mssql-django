@@ -2,6 +2,7 @@
 """Run one unchanged Django test against a pull request head and merge base."""
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -9,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 
@@ -58,18 +60,35 @@ def validate_test_file(repo, value):
     return path
 
 
-def create_environment(python, environment_dir, packages):
+def create_environment(python, environment_dir, source_dir, wheelhouse, packages):
     subprocess.run(
-        [python, "-m", "venv", "--system-site-packages", environment_dir],
+        [python, "-m", "venv", environment_dir],
         check=True,
     )
     executable = "Scripts/python.exe" if os.name == "nt" else "bin/python"
     environment_python = environment_dir / executable
+    install_prefix = [
+        environment_python,
+        "-m",
+        "pip",
+        "install",
+        "--quiet",
+        "--no-index",
+        "--find-links",
+        wheelhouse,
+    ]
+    subprocess.run([*install_prefix, "setuptools", "wheel"], check=True)
+    subprocess.run(
+        [
+            *install_prefix,
+            "--no-build-isolation",
+            "--editable",
+            f"{source_dir}[test]",
+        ],
+        check=True,
+    )
     if packages:
-        subprocess.run(
-            [environment_python, "-m", "pip", "install", "--quiet", *packages],
-            check=True,
-        )
+        subprocess.run([*install_prefix, *packages], check=True)
     return environment_python
 
 
@@ -89,11 +108,8 @@ def classify_test(return_code, output):
     return "inconclusive"
 
 
-def run_test(python, source_dir, label, database_suffix, output_path):
-    environment = os.environ.copy()
-    environment["MSSQL_DB_NAME"] = f"rp_{database_suffix}"
-    environment["MSSQL_DB_NAME_OTHER"] = f"rp_{database_suffix}_other"
-    result = run(
+def execute_test(python, source_dir, label, environment):
+    return run(
         [
             python,
             "manage.py",
@@ -107,10 +123,33 @@ def run_test(python, source_dir, label, database_suffix, output_path):
         env=environment,
         capture=True,
     )
-    output_path.write_text(result.stdout, encoding="utf-8")
+
+
+def run_test(python, source_dir, label, database_suffix, output_path):
+    environment = os.environ.copy()
+    environment["MSSQL_DB_NAME"] = f"rp_{database_suffix}"
+    environment["MSSQL_DB_NAME_OTHER"] = f"rp_{database_suffix}_other"
+    result = execute_test(python, source_dir, label, environment)
+    attempts = [
+        {
+            "exit_code": result.returncode,
+            "status": classify_test(result.returncode, result.stdout),
+        }
+    ]
+    output = result.stdout
+    status = attempts[0]["status"]
+    if status == "fail":
+        rerun = execute_test(python, source_dir, label, environment)
+        rerun_status = classify_test(rerun.returncode, rerun.stdout)
+        attempts.append({"exit_code": rerun.returncode, "status": rerun_status})
+        output = f"{output}\n\n--- deterministic rerun ---\n\n{rerun.stdout}"
+        if rerun_status != "fail":
+            status = "inconclusive"
+    output_path.write_text(output, encoding="utf-8")
     return {
         "exit_code": result.returncode,
-        "status": classify_test(result.returncode, result.stdout),
+        "status": status,
+        "attempts": attempts,
     }
 
 
@@ -134,6 +173,10 @@ def parse_args():
     parser.add_argument("--head-sha", required=True)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument(
+        "--wheelhouse",
+        default=os.environ.get("REGRESSION_POLICE_WHEELHOUSE"),
+    )
+    parser.add_argument(
         "--package",
         action="append",
         default=[],
@@ -141,6 +184,22 @@ def parse_args():
     )
     parser.add_argument("--output-dir")
     return parser.parse_args()
+
+
+def make_run_id(args, head_sha, test_file):
+    configuration = json.dumps(
+        {
+            "base_ref": args.base_ref,
+            "head_sha": args.head_sha,
+            "packages": args.package,
+            "python": args.python,
+            "test_file": str(test_file),
+            "test_label": args.test_label,
+        },
+        sort_keys=True,
+    )
+    digest = hashlib.sha256(configuration.encode()).hexdigest()[:12]
+    return f"{head_sha[:8]}-{test_file.stem}-{digest}-{uuid.uuid4().hex[:8]}"
 
 
 def main():
@@ -153,7 +212,7 @@ def main():
     ).joinpath("regression-police")
     output_root = Path(args.output_dir or default_output)
     output_root.mkdir(parents=True, exist_ok=True)
-    run_id = f"{head_sha[:8]}-{test_file.stem}"
+    run_id = make_run_id(args, head_sha, test_file)
     report_path = output_root / f"{run_id}.json"
     head_log = output_root / f"{run_id}-head.log"
     base_log = output_root / f"{run_id}-base.log"
@@ -167,6 +226,13 @@ def main():
             raise RuntimeError("head SHA from pull request metadata must be 40 lowercase hex digits")
         if head_sha != args.head_sha:
             raise RuntimeError(f"stale checkout: expected {args.head_sha}, found {head_sha}")
+        if not args.wheelhouse:
+            raise RuntimeError(
+                "REGRESSION_POLICE_WHEELHOUSE or --wheelhouse is required"
+            )
+        wheelhouse = Path(args.wheelhouse).resolve()
+        if not wheelhouse.is_dir():
+            raise RuntimeError(f"wheelhouse does not exist: {wheelhouse}")
 
         git(repo, "check-ref-format", "--branch", args.base_ref)
         base_refspec = (
@@ -212,11 +278,15 @@ def main():
                 head_python = create_environment(
                     args.python,
                     temporary_path / "head-venv",
+                    repo,
+                    wheelhouse,
                     args.package,
                 )
                 base_python = create_environment(
                     args.python,
                     temporary_path / "base-venv",
+                    base_dir,
+                    wheelhouse,
                     args.package,
                 )
                 head_result = run_test(
@@ -255,13 +325,16 @@ def main():
         "base_sha": base_sha,
         "head_sha": head_sha,
         "python": args.python,
+        "wheelhouse": args.wheelhouse,
         "packages": args.package,
         "test_file": str(test_file),
         "test_label": args.test_label,
         "base_exit_code": base_result["exit_code"],
         "base_status": base_result["status"],
+        "base_attempts": base_result.get("attempts", []),
         "head_exit_code": head_result["exit_code"],
         "head_status": head_result["status"],
+        "head_attempts": head_result.get("attempts", []),
         "verdict": verdict(base_result, head_result),
         "failure": failure,
         "base_log": str(base_log),

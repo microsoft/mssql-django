@@ -68,6 +68,18 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip wheel setuptools
+          wheelhouse="$RUNNER_TEMP/regression-police-wheelhouse"
+          mkdir -p "$wheelhouse"
+          python -m pip download --dest "$wheelhouse" ".[test]"
+          python -m pip download --dest "$wheelhouse" setuptools wheel
+          for django_spec in \
+            "django>=5.2,<5.3" \
+            "django>=6.0,<6.1" \
+            "django>=6.1,<6.2"
+          do
+            python -m pip download --dest "$wheelhouse" "$django_spec"
+          done
+          echo "REGRESSION_POLICE_WHEELHOUSE=$wheelhouse" >> "$GITHUB_ENV"
           python -m pip install -e ".[test]"
 
       - name: Wait for SQL Server

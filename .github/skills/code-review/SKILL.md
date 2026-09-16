@@ -38,15 +38,16 @@ exercised in `testapp`. If no probe can run, state the concrete reason in the re
 4. **Write minimal proofs.** Put disposable tests under `testapp/tests/`, use existing models and
    helpers, and assert observable rows, schema, or errors rather than SQL text when possible.
    Do not commit generated tests.
-5. **Run the identical test on head and base.** Use `run-differential.py` from this skill
+5. **Run the identical test on head and base.** Use `run_differential.py` from this skill
    directory with the pull request's base ref, test file, and exact test label. The harness
    verifies the reviewed SHA, refuses dependency-metadata differentials, creates isolated
-   worktrees and environments, uses distinct test databases, and runs revisions sequentially.
+   worktrees and dependency environments, uses distinct test databases, confirms failing tests
+   with a deterministic rerun, and runs revisions sequentially.
    Set `SKILL_DIR` to the directory containing this loaded `SKILL.md`, `PR_HEAD_SHA` from pull
    request metadata, and `PR_BASE_REF` from the pull request's target branch, then run:
 
    ```bash
-   python "$SKILL_DIR/run-differential.py" \
+   python "$SKILL_DIR/run_differential.py" \
      --base-ref "$PR_BASE_REF" \
      --head-sha "$PR_HEAD_SHA" \
      --test-file testapp/tests/test_regression_police_probe.py \
