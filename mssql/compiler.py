@@ -348,6 +348,15 @@ class SQLCompiler(compiler.SQLCompiler):
                 result, params = self.get_combinator_sql(combinator, self.query.combinator_all)
             elif django.VERSION >= (4, 2) and self.qualify:
                 result, params = self.get_qualify_sql()
+                if do_limit and not do_offset:
+                    if not order_by:
+                        result.append('ORDER BY (SELECT NULL)')
+                    result.append(
+                        self.connection.ops.limit_offset_sql(
+                            self.query.low_mark,
+                            self.query.high_mark,
+                        )
+                    )
                 order_by = None
             else:
                 distinct_fields, distinct_params = self.get_distinct()
@@ -636,14 +645,6 @@ class SQLCompiler(compiler.SQLCompiler):
                         result.append('ORDER BY X.rn')
                 else:
                     result.append(self.connection.ops.limit_offset_sql(self.query.low_mark, self.query.high_mark))
-            elif do_limit and self.qualify:
-                # The qualify branch above (get_qualify_sql()) bypasses the
-                # `TOP %d` insertion that plain SELECTs get further up, so a
-                # limit-only qualify query (low_mark == 0) would otherwise be
-                # emitted with no row limit at all. Emit the FETCH-only form
-                # of the offset/limit clause on the outer query instead.
-                result.append(self.connection.ops.limit_offset_sql(self.query.low_mark, self.query.high_mark))
-
             if self.query.subquery and extra_select:
                 # If the query is used as a subquery, the extra selects would
                 # result in more columns than the left-hand side expression is
