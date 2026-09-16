@@ -441,12 +441,12 @@ def json_KeyTransformExact(self, compiler, connection):
             # semantics and doesn't also match an object property named "0". MAX()
             # returns SQL NULL when the index is missing, preserving Django's
             # three-valued behavior when the lookup is negated by exclude().
-            return (
-                "(SELECT MAX(CASE WHEN [item].[type] = 0 THEN 1 ELSE 0 END) "
+            return compiler._compile_json_null_predicate(
+                "SELECT MAX(CASE WHEN [item].[type] = 0 THEN 1 ELSE 0 END) AS [value] "
                 "FROM (SELECT %s AS [json]) AS [parent] "
                 "CROSS APPLY OPENJSON([parent].[json]) AS [item] "
                 "WHERE LEFT(LTRIM([parent].[json]), 1) = '[' "
-                "AND [item].[key] = %%s) = 1" % parent_json,
+                "AND [item].[key] = %%s" % parent_json,
                 tuple(lhs_params) + (str(final_index),),
             )
 
@@ -457,10 +457,13 @@ def json_KeyTransformExact(self, compiler, connection):
         else:
             openjson = "OPENJSON(%s)" % lhs
 
-        return (
-            "(SELECT MAX(CASE WHEN [type] = 0 THEN 1 ELSE 0 END) "
-            "FROM %s WHERE [key] = %%s) = 1" % openjson,
-            tuple(lhs_params) + (final_key,),
+        # SQL Server pads strings for equality, even under BIN2. Compare
+        # the UTF-16 byte lengths as well so trailing spaces stay significant.
+        return compiler._compile_json_null_predicate(
+            "SELECT MAX(CASE WHEN [type] = 0 THEN 1 ELSE 0 END) AS [value] "
+            "FROM %s WHERE [key] = %%s "
+            "AND DATALENGTH([key]) = DATALENGTH(CAST(%%s AS nvarchar(max)))" % openjson,
+            tuple(lhs_params) + (final_key, final_key),
         )
     return self.as_sql(compiler, connection)
 

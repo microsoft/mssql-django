@@ -5,7 +5,8 @@ from unittest import skipUnless
 
 from django import VERSION
 from django.db import NotSupportedError, connections
-from django.test import TestCase
+from django.db.models import Case, Count, IntegerField, JSONField, Q, Value, When
+from django.test import TestCase, skipUnlessDBFeature
 from django.test.utils import CaptureQueriesContext
 
 if VERSION >= (3, 1):
@@ -184,6 +185,79 @@ class TestJSONField(TestCase):
             # whose key resolves to a non-null JSON value.
             self.assertSequenceEqual(included, [missing])
             self.assertSequenceEqual(excluded, [json_null, present])
+
+    @skipUnlessDBFeature('supports_json_openjson')
+    def test_json_null_keys_preserve_trailing_spaces(self):
+        for key in ('key', 'café', '💡', "o'reilly"):
+            for nested in (False, True):
+                with self.subTest(key=key, nested=nested):
+                    values = [
+                        {key: None, key + ' ': 1},
+                        {key: 1, key + ' ': None},
+                        {key + ' ': None},
+                        {},
+                    ]
+                    rows = [JSONModel.objects.create(
+                        value={'nested': value} if nested else value
+                    ) for value in values]
+                    queryset = JSONModel.objects.filter(pk__in=[row.pk for row in rows])
+                    prefix = 'value__nested__' if nested else 'value__'
+                    lookup = {prefix + key: None}
+                    spaced_lookup = {prefix + key + ' ': None}
+                    self.assertSequenceEqual(queryset.filter(**lookup), [rows[0]])
+                    self.assertSequenceEqual(queryset.exclude(**lookup), [rows[1]])
+                    self.assertSequenceEqual(
+                        queryset.filter(**spaced_lookup).order_by('pk'), rows[1:3]
+                    )
+                    self.assertSequenceEqual(queryset.exclude(**spaced_lookup), [rows[0]])
+
+    @skipUnlessDBFeature('supports_json_openjson')
+    def test_json_null_keys_in_filtered_aggregates(self):
+        cases = [
+            ('value__key', [{'key': None}, {'key': 1}, {}]),
+            ('value__nested__key', [
+                {'nested': {'key': None}}, {'nested': {'key': 1}}, {'nested': {}}
+            ]),
+            ('value__0', [[None], [1], []]),
+            ('value__items__0', [{'items': [None]}, {'items': [1]}, {'items': []}]),
+        ]
+        for lookup_name, values in cases:
+            with self.subTest(lookup=lookup_name):
+                rows = [JSONModel.objects.create(value=value) for value in values]
+                queryset = JSONModel.objects.filter(pk__in=[row.pk for row in rows])
+                condition = Q(**{lookup_name: None})
+                for source in (queryset, queryset.distinct(), queryset.order_by('pk')[:3]):
+                    self.assertEqual(source.aggregate(
+                        null_count=Count('pk', filter=condition),
+                        non_null_count=Count('pk', filter=~condition),
+                    ), {'null_count': 1, 'non_null_count': 1})
+                self.assertEqual(queryset.annotate(
+                    payload=Value({'key': None}, output_field=JSONField())
+                ).aggregate(n=Count('pk', filter=Q(payload__key=None))), {'n': 3})
+
+    @skipUnlessDBFeature('supports_json_openjson')
+    def test_json_null_keys_in_grouped_case_annotations(self):
+        cases = [
+            ('value__key', [{'key': None}, {'key': 1}, {}]),
+            ('value__nested__key', [
+                {'nested': {'key': None}}, {'nested': {'key': 1}}, {'nested': {}}
+            ]),
+            ('value__0', [[None], [1], []]),
+            ('value__items__0', [{'items': [None]}, {'items': [1]}, {'items': []}]),
+        ]
+        for lookup_name, values in cases:
+            with self.subTest(lookup=lookup_name):
+                rows = [JSONModel.objects.create(value=value) for value in values]
+                queryset = JSONModel.objects.filter(pk__in=[row.pk for row in rows])
+                grouped = queryset.annotate(flag=Case(
+                    When(Q(**{lookup_name: None}), then=Value(1)),
+                    default=Value(0), output_field=IntegerField(),
+                )).values('flag').annotate(n=Count('pk')).order_by('flag')
+                compiler = grouped.query.get_compiler(using='default')
+                self.assertEqual(compiler.as_sql(), compiler.as_sql())
+                self.assertSequenceEqual(
+                    grouped, [{'flag': 0, 'n': 2}, {'flag': 1, 'n': 1}]
+                )
 
     @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
     def test_json_null_numeric_key_uses_array_index_semantics(self):

@@ -268,6 +268,41 @@ compiler.cursor_iter = _cursor_iter
 
 class SQLCompiler(compiler.SQLCompiler):
 
+    def _compile_json_null_predicate(self, sql, params):
+        # SELECT/GROUP BY and aggregate expressions cannot contain scalar
+        # subqueries on SQL Server. Evaluate the nullable indicator in FROM.
+        applies = getattr(self, '_json_null_applies', None)
+        if applies is None:
+            # UPDATE/DELETE and callers compiling expressions on their own do
+            # not have a SELECT FROM clause to attach an APPLY to.
+            return '(%s) = 1' % sql, params
+        params = tuple(params)
+        for alias, existing_sql, existing_params in applies:
+            if sql == existing_sql and params == existing_params:
+                return '%s.[value] = 1' % self.connection.ops.quote_name(alias), ()
+        used_aliases = {
+            alias.lower() for alias in (
+                *self.query.alias_map, *getattr(self.query, 'external_aliases', {}),
+                *(item[0] for item in applies), 'subquery',
+            )
+        }
+        index = len(applies)
+        alias = '__mssql_json_null_%d' % index
+        while alias.lower() in used_aliases:
+            index += 1
+            alias = '__mssql_json_null_%d' % index
+        applies.append((alias, sql, params))
+        return '%s.[value] = 1' % self.connection.ops.quote_name(alias), ()
+
+    def _get_json_null_apply_clauses(self):
+        clauses, params = [], []
+        for alias, sql, sql_params in self._json_null_applies:
+            clauses.append('OUTER APPLY (%s) AS %s' % (
+                sql, self.connection.ops.quote_name(alias),
+            ))
+            params.extend(sql_params)
+        return clauses, params
+
     def _resolve_order_by_source_expression(self, expression, dereference_ref=True):
         if expression is None:
             return None
@@ -324,6 +359,8 @@ class SQLCompiler(compiler.SQLCompiler):
         in the query.
         """
         refcounts_before = self.query.alias_refcount.copy()
+        previous_applies = getattr(self, '_json_null_applies', None)
+        self._json_null_applies = []
         try:
             extra_select, order_by, group_by = self.pre_sql_setup()
             for_update_part = None
@@ -481,6 +518,9 @@ class SQLCompiler(compiler.SQLCompiler):
                 if for_update_part and self.connection.features.for_update_after_from:
                     from_.insert(1, for_update_part)
 
+                applies, apply_params = self._get_json_null_apply_clauses()
+                from_.extend(applies)
+                f_params.extend(apply_params)
                 result += [', '.join(out_cols)]
                 if from_:
                     result += ['FROM', *from_]
@@ -668,6 +708,7 @@ class SQLCompiler(compiler.SQLCompiler):
         finally:
             # Finally do cleanup - get rid of the joins we created above.
             self.query.reset_refcounts(refcounts_before)
+            self._json_null_applies = previous_applies
 
     def compile(self, node, *args, **kwargs):
         node = self._as_microsoft(node)
@@ -998,4 +1039,14 @@ class SQLUpdateCompiler(compiler.SQLUpdateCompiler, SQLCompiler):
 
 
 class SQLAggregateCompiler(compiler.SQLAggregateCompiler, SQLCompiler):
-    pass
+    def as_sql(self):
+        previous_applies = getattr(self, '_json_null_applies', None)
+        self._json_null_applies = []
+        try:
+            sql, params = super().as_sql()
+            applies, apply_params = self._get_json_null_apply_clauses()
+            if applies:
+                sql += ' ' + ' '.join(applies)
+            return sql, tuple(params) + tuple(apply_params)
+        finally:
+            self._json_null_applies = previous_applies
