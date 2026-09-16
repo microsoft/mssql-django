@@ -23,9 +23,10 @@ Police**: run at least one disposable, executable head/base probe before complet
 Static reasoning may identify candidates, but it is not evidence when the behavior can be
 exercised in `testapp`. If no probe can run, state the concrete reason in the review summary.
 
-1. **Freeze the evidence target.** Record `git rev-parse HEAD` before testing and verify that it
-   is the reviewed pull request's head SHA, not a synthetic merge commit. Publish evidence only
-   for that SHA, and stop if the checkout changes during review.
+1. **Freeze the evidence target.** Read the expected head SHA from pull request metadata supplied
+   to the review, never from the current checkout. Compare it with `git rev-parse HEAD` before
+   testing so a synthetic merge commit cannot validate itself. Publish evidence only for that
+   SHA, and stop if the checkout changes during review.
 2. **Prove the pull request's claim first.** Prefer one focused test added or changed by the pull
    request. Run it on head, then overlay the same test file on the merge base and run the same
    test label there. If it cannot run unchanged on base, write a smaller public-behavior probe.
@@ -41,12 +42,13 @@ exercised in `testapp`. If no probe can run, state the concrete reason in the re
    directory with the pull request's base ref, test file, and exact test label. The harness
    verifies the reviewed SHA, refuses dependency-metadata differentials, creates isolated
    worktrees and environments, uses distinct test databases, and runs revisions sequentially.
-   Set `SKILL_DIR` to the directory containing this loaded `SKILL.md`, then run:
+   Set `SKILL_DIR` to the directory containing this loaded `SKILL.md`, `PR_HEAD_SHA` from pull
+   request metadata, and `PR_BASE_REF` from the pull request's target branch, then run:
 
    ```bash
    python "$SKILL_DIR/run-differential.py" \
      --base-ref "$PR_BASE_REF" \
-     --head-sha "$(git rev-parse HEAD)" \
+     --head-sha "$PR_HEAD_SHA" \
      --test-file testapp/tests/test_regression_police_probe.py \
      --test-label testapp.tests.test_regression_police_probe.RegressionProbe.test_behavior
    ```

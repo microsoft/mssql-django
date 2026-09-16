@@ -49,7 +49,11 @@ def validate_test_file(repo, value):
     if path.is_absolute() or ".." in path.parts:
         raise ValueError("test file must be relative to the repository")
     resolved = (repo / path).resolve()
-    if not resolved.is_relative_to(repo.resolve()) or not resolved.is_file():
+    try:
+        resolved.relative_to(repo.resolve())
+    except ValueError as error:
+        raise ValueError("test file must be inside the repository") from error
+    if not resolved.is_file():
         raise ValueError(f"test file does not exist: {value}")
     return path
 
@@ -59,7 +63,8 @@ def create_environment(python, environment_dir, packages):
         [python, "-m", "venv", "--system-site-packages", environment_dir],
         check=True,
     )
-    environment_python = environment_dir / "bin" / "python"
+    executable = "Scripts/python.exe" if os.name == "nt" else "bin/python"
+    environment_python = environment_dir / executable
     if packages:
         subprocess.run(
             [environment_python, "-m", "pip", "install", "--quiet", *packages],
@@ -69,9 +74,17 @@ def create_environment(python, environment_dir, packages):
 
 
 def classify_test(return_code, output):
-    if return_code == 0:
+    tests_run = re.search(r"Ran (\d+) tests?", output)
+    if not tests_run or int(tests_run.group(1)) == 0:
+        return "inconclusive"
+    if re.search(
+        r"(?:skipped|expected failures|unexpected successes)=[1-9]\d*",
+        output,
+    ):
+        return "inconclusive"
+    if return_code == 0 and re.search(r"^OK(?:\s|$)", output, re.MULTILINE):
         return "pass"
-    if re.search(r"Ran \d+ tests?", output) and "FAILED (" in output:
+    if return_code and "FAILED (" in output:
         return "fail"
     return "inconclusive"
 
@@ -118,7 +131,7 @@ def parse_args():
     parser.add_argument("--base-ref", required=True)
     parser.add_argument("--test-file", required=True)
     parser.add_argument("--test-label", required=True)
-    parser.add_argument("--head-sha")
+    parser.add_argument("--head-sha", required=True)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument(
         "--package",
@@ -135,29 +148,6 @@ def main():
     repo = Path(git(Path.cwd(), "rev-parse", "--show-toplevel"))
     test_file = validate_test_file(repo, args.test_file)
     head_sha = git(repo, "rev-parse", "HEAD")
-    if args.head_sha and head_sha != args.head_sha:
-        raise RuntimeError(f"stale checkout: expected {args.head_sha}, found {head_sha}")
-
-    base_remote_ref = f"refs/remotes/origin/{args.base_ref}"
-    if run(["git", "show-ref", "--verify", "--quiet", base_remote_ref], cwd=repo).returncode:
-        subprocess.run(["git", "fetch", "--no-tags", "origin", args.base_ref], cwd=repo, check=True)
-    base_sha = git(repo, "merge-base", head_sha, f"origin/{args.base_ref}")
-
-    changed_dependencies = git(
-        repo,
-        "diff",
-        "--name-only",
-        base_sha,
-        head_sha,
-        "--",
-        *DEPENDENCY_FILES,
-    ).splitlines()
-    if changed_dependencies:
-        joined = ", ".join(changed_dependencies)
-        raise RuntimeError(
-            f"dependency metadata changed ({joined}); use independently pinned environments"
-        )
-
     default_output = Path(
         os.environ.get("RUNNER_TEMP", tempfile.gettempdir())
     ).joinpath("regression-police")
@@ -168,56 +158,97 @@ def main():
     head_log = output_root / f"{run_id}-head.log"
     base_log = output_root / f"{run_id}-base.log"
 
-    with tempfile.TemporaryDirectory(prefix="regression-police-") as temporary:
-        temporary_path = Path(temporary)
-        base_dir = temporary_path / "base"
+    base_sha = None
+    failure = None
+    head_result = {"exit_code": None, "status": "inconclusive"}
+    base_result = {"exit_code": None, "status": "inconclusive"}
+    try:
+        if not re.fullmatch(r"[0-9a-f]{40}", args.head_sha):
+            raise RuntimeError("head SHA from pull request metadata must be 40 lowercase hex digits")
+        if head_sha != args.head_sha:
+            raise RuntimeError(f"stale checkout: expected {args.head_sha}, found {head_sha}")
+
+        git(repo, "check-ref-format", "--branch", args.base_ref)
+        base_refspec = (
+            f"+refs/heads/{args.base_ref}:refs/remotes/origin/{args.base_ref}"
+        )
         subprocess.run(
-            ["git", "worktree", "add", "--detach", base_dir, base_sha],
+            ["git", "fetch", "--no-tags", "origin", base_refspec],
             cwd=repo,
             check=True,
-            stdout=subprocess.DEVNULL,
         )
-        try:
-            base_test_file = base_dir / test_file
-            base_test_file.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(repo / test_file, base_test_file)
+        base_sha = git(repo, "merge-base", head_sha, f"origin/{args.base_ref}")
 
-            head_python = create_environment(
-                args.python,
-                temporary_path / "head-venv",
-                args.package,
+        changed_dependencies = git(
+            repo,
+            "diff",
+            "--name-only",
+            base_sha,
+            head_sha,
+            "--",
+            *DEPENDENCY_FILES,
+        ).splitlines()
+        if changed_dependencies:
+            joined = ", ".join(changed_dependencies)
+            raise RuntimeError(
+                f"dependency metadata changed ({joined}); "
+                "use independently pinned environments"
             )
-            base_python = create_environment(
-                args.python,
-                temporary_path / "base-venv",
-                args.package,
-            )
-            head_result = run_test(
-                head_python,
-                repo,
-                args.test_label,
-                f"head_{head_sha[:8]}",
-                head_log,
-            )
-            base_result = run_test(
-                base_python,
-                base_dir,
-                args.test_label,
-                f"base_{base_sha[:8]}",
-                base_log,
-            )
-        finally:
+
+        with tempfile.TemporaryDirectory(prefix="regression-police-") as temporary:
+            temporary_path = Path(temporary)
+            base_dir = temporary_path / "base"
             subprocess.run(
-                ["git", "worktree", "remove", "--force", base_dir],
+                ["git", "worktree", "add", "--detach", base_dir, base_sha],
                 cwd=repo,
-                check=False,
+                check=True,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
             )
+            try:
+                base_test_file = base_dir / test_file
+                base_test_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(repo / test_file, base_test_file)
 
-    final_head_sha = git(repo, "rev-parse", "HEAD")
-    if final_head_sha != head_sha:
-        raise RuntimeError(f"checkout changed during review: {head_sha} -> {final_head_sha}")
+                head_python = create_environment(
+                    args.python,
+                    temporary_path / "head-venv",
+                    args.package,
+                )
+                base_python = create_environment(
+                    args.python,
+                    temporary_path / "base-venv",
+                    args.package,
+                )
+                head_result = run_test(
+                    head_python,
+                    repo,
+                    args.test_label,
+                    f"head_{head_sha[:8]}",
+                    head_log,
+                )
+                base_result = run_test(
+                    base_python,
+                    base_dir,
+                    args.test_label,
+                    f"base_{base_sha[:8]}",
+                    base_log,
+                )
+            finally:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", base_dir],
+                    cwd=repo,
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+
+        final_head_sha = git(repo, "rev-parse", "HEAD")
+        if final_head_sha != head_sha:
+            raise RuntimeError(
+                f"checkout changed during review: {head_sha} -> {final_head_sha}"
+            )
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        failure = f"{type(error).__name__}: {error}"
 
     report = {
         "base_ref": args.base_ref,
@@ -232,13 +263,14 @@ def main():
         "head_exit_code": head_result["exit_code"],
         "head_status": head_result["status"],
         "verdict": verdict(base_result, head_result),
+        "failure": failure,
         "base_log": str(base_log),
         "head_log": str(head_log),
     }
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))
     print(f"report: {report_path}")
-    return 0
+    return 2 if report["verdict"] == "inconclusive" else 0
 
 
 if __name__ == "__main__":
