@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 import sys
 import tempfile
@@ -11,14 +12,17 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from run_differential import (
-    SUPPORTED_DJANGO,
     classify_test,
+    cleanup_databases,
+    create_execution_hook,
     failure_signature,
     final_verdict,
     make_run_id,
     run_process_group,
     run_test,
     source_fingerprint,
+    supported_django,
+    validate_test_label,
     verdict,
 )
 
@@ -98,6 +102,20 @@ class ResultClassificationTests(unittest.TestCase):
             ),
             "inconclusive",
         )
+        class_cleanup_error = self.failure + (
+            "\nERROR: tearDownClass (test.module.Class)\n"
+            '  File "/tmp/test_probe.py", line 30, in tearDownClass\n'
+            "RuntimeError: class cleanup failed\n"
+        )
+        self.assertEqual(
+            classify_test(
+                1,
+                class_cleanup_error,
+                self.label,
+                self.sentinel,
+            ),
+            "inconclusive",
+        )
         teardown_error = (
             f"{self.sentinel}:PASS\n"
             "ERROR: test_behavior (test.module.Class.test_behavior)\n"
@@ -166,6 +184,13 @@ class ResultClassificationTests(unittest.TestCase):
         )
         self.assertIsNone(failure_signature(no_frame, self.label))
 
+    def test_failure_signature_accepts_bare_assertion_error(self):
+        bare = self.failure.replace(
+            "AssertionError: expected 1, got 2",
+            "AssertionError",
+        )
+        self.assertIsNotNone(failure_signature(bare, self.label))
+
     def test_verdicts(self):
         def result(status):
             return {"status": status}
@@ -203,7 +228,9 @@ class ResultClassificationTests(unittest.TestCase):
         )
         execute_test.side_effect = [failure, success]
 
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "run_differential.cleanup_databases"
+        ):
             result = run_test(
                 "python",
                 Path("."),
@@ -226,7 +253,9 @@ class ResultClassificationTests(unittest.TestCase):
         )
         execute_test.side_effect = [failure, failure]
 
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "run_differential.cleanup_databases"
+        ):
             result = run_test(
                 "python",
                 Path("."),
@@ -250,7 +279,9 @@ class ResultClassificationTests(unittest.TestCase):
         )
         execute_test.side_effect = [first, second]
 
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "run_differential.cleanup_databases"
+        ):
             result = run_test(
                 "python",
                 Path("."),
@@ -268,7 +299,9 @@ class ResultClassificationTests(unittest.TestCase):
     def test_timeout_is_inconclusive(self, execute_test):
         execute_test.side_effect = TimeoutExpired(["python"], 1)
 
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "run_differential.cleanup_databases"
+        ):
             result = run_test(
                 "python",
                 Path("."),
@@ -317,15 +350,31 @@ class ResultClassificationTests(unittest.TestCase):
 
         self.assertNotEqual(first, second)
 
-    def test_supported_django_scope(self):
-        self.assertEqual(
-            SUPPORTED_DJANGO,
-            (
-                "django>=5.2,<5.3",
-                "django>=6.0,<6.1",
-                "django>=6.1,<6.2",
-            ),
+    def test_supported_django_comes_from_test_workflow(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            workflow = repo / ".github" / "workflows" / "test.yml"
+            workflow.parent.mkdir(parents=True)
+            workflow.write_text(
+                '- { django-spec: "django>=5.2,<5.3" }\n'
+                '- { django-spec: "django>=6.1,<6.2" }\n'
+            )
+            self.assertEqual(
+                supported_django(repo),
+                ["django>=5.2,<5.3", "django>=6.1,<6.2"],
+            )
+
+    def test_test_label_must_resolve_inside_copied_module(self):
+        test_file = Path("testapp/tests/test_probe.py")
+        validate_test_label(
+            test_file,
+            "testapp.tests.test_probe.ProbeTest.test_behavior",
         )
+        with self.assertRaises(ValueError):
+            validate_test_label(
+                test_file,
+                "testapp.tests.test_other.OtherTest.test_behavior",
+            )
 
     def test_harness_failure_forces_inconclusive_verdict(self):
         passing = {"status": "pass"}
@@ -403,6 +452,93 @@ class ResultClassificationTests(unittest.TestCase):
             )
         self.assertIsInstance(raised.exception.output, str)
         self.assertIn("started", raised.exception.output)
+
+    def test_execution_hook_marks_targeted_method_outcome(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            hook = directory / "hook"
+            create_execution_hook(hook)
+            script = directory / "probe.py"
+            script.write_text(
+                "import unittest\n"
+                "class Probe(unittest.TestCase):\n"
+                "    def test_pass(self):\n"
+                "        pass\n"
+                "    def test_fail(self):\n"
+                "        self.fail('boom')\n"
+                "unittest.main(verbosity=2)\n"
+            )
+            for method, marker, return_code in (
+                ("test_pass", "PASS", 0),
+                ("test_fail", "FAIL", 1),
+            ):
+                with self.subTest(method=method):
+                    sentinel = f"sentinel-{method}"
+                    environment = os.environ.copy()
+                    environment["REGRESSION_POLICE_TEST_ID"] = (
+                        f"__main__.Probe.{method}"
+                    )
+                    environment["REGRESSION_POLICE_SENTINEL"] = sentinel
+                    environment["PYTHONPATH"] = str(hook)
+                    result = run_process_group(
+                        [sys.executable, script, f"Probe.{method}"],
+                        cwd=directory,
+                        env=environment,
+                        timeout=5,
+                    )
+                    self.assertEqual(result.returncode, return_code)
+                    self.assertIn(f"{sentinel}:{marker}", result.stdout)
+
+    @patch("run_differential.run_process_group")
+    def test_cleanup_rejects_unsafe_database_names(self, run_group):
+        with self.assertRaises(RuntimeError):
+            cleanup_databases(
+                "python",
+                ["safe", "unsafe]; DROP DATABASE master"],
+                os.environ.copy(),
+            )
+        run_group.assert_not_called()
+
+    def test_setup_does_not_execute_checkout_package_metadata(self):
+        repo = Path(__file__).resolve().parents[3]
+        workflow = (
+            repo / ".github" / "workflows" / "copilot-setup-steps.yml"
+        ).read_text()
+        self.assertNotIn('pip install -e ".[test]"', workflow)
+
+    def test_invalid_label_writes_inconclusive_report(self):
+        repo = Path(__file__).resolve().parents[3]
+        head_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo,
+            text=True,
+        ).strip()
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    Path(__file__).with_name("run_differential.py"),
+                    "--base-ref",
+                    "dev",
+                    "--head-sha",
+                    head_sha,
+                    "--test-file",
+                    ".github/skills/code-review/test_run_differential.py",
+                    "--test-label",
+                    "wrong.module.Test.test_method",
+                    "--output-dir",
+                    temporary,
+                ],
+                cwd=repo,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            report_path = next(Path(temporary).glob("*.json"))
+            report = json.loads(report_path.read_text())
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(report["verdict"], "inconclusive")
+        self.assertIn("ValueError", report["failure"])
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - .github/workflows/copilot-setup-steps.yml
+      - .github/workflows/test.yml
+      - ".github/skills/code-review/**"
 
 permissions: {}
 
@@ -72,15 +74,26 @@ jobs:
           mkdir -p "$wheelhouse"
           python -m pip download --dest "$wheelhouse" \
             setuptools wheel pyodbc pytz "unittest-xml-reporting>=3.2.0"
-          for django_spec in \
-            "django>=5.2,<5.3" \
-            "django>=6.0,<6.1" \
-            "django>=6.1,<6.2"
+          mapfile -t django_specs < <(
+            python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+
+          path = Path(".github/skills/code-review/run_differential.py")
+          spec = importlib.util.spec_from_file_location("run_differential", path)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          print(*module.supported_django(Path.cwd()), sep="\n")
+          PY
+          )
+          for django_spec in "${django_specs[@]}"
           do
             python -m pip download --dest "$wheelhouse" "$django_spec"
           done
           echo "REGRESSION_POLICE_WHEELHOUSE=$wheelhouse" >> "$GITHUB_ENV"
-          python -m pip install -e ".[test]"
+          python -m pip install --no-index --find-links "$wheelhouse" \
+            pyodbc pytz "unittest-xml-reporting>=3.2.0" \
+            "${django_specs[-1]}"
 
       - name: Validate Regression Police harness
         run: |

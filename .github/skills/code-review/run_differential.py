@@ -28,14 +28,11 @@ DEPENDENCY_FILES = (
     "uv.lock",
 )
 BASE_PACKAGES = ("pyodbc", "pytz", "unittest-xml-reporting>=3.2.0")
-DEFAULT_DJANGO = "django>=6.1,<6.2"
-SUPPORTED_DJANGO = (
-    "django>=5.2,<5.3",
-    "django>=6.0,<6.1",
-    DEFAULT_DJANGO,
-)
 GIT_TIMEOUT = 60
 SETUP_TIMEOUT = 300
+DJANGO_SPEC_PATTERN = re.compile(
+    r'django-spec:\s*"(?P<spec>django>=\d+\.\d+,<\d+\.\d+)"'
+)
 
 
 def run(command, *, cwd, env=None, capture=False, timeout=None):
@@ -77,6 +74,29 @@ def validate_test_file(repo, value):
     return path
 
 
+def validate_test_label(test_file, test_label):
+    module = ".".join(test_file.with_suffix("").parts)
+    if not test_label.startswith(f"{module}."):
+        raise ValueError(
+            f"test label must resolve inside copied module {module}: {test_label}"
+        )
+
+
+def supported_django(repo):
+    workflow = repo / ".github" / "workflows" / "test.yml"
+    specs = list(
+        dict.fromkeys(
+            match.group("spec")
+            for match in DJANGO_SPEC_PATTERN.finditer(
+                workflow.read_text(encoding="utf-8")
+            )
+        )
+    )
+    if not specs:
+        raise RuntimeError(f"no Django matrix specs found in {workflow}")
+    return specs
+
+
 def create_environment(python, environment_dir, wheelhouse, django):
     subprocess.run(
         [python, "-m", "venv", environment_dir],
@@ -105,14 +125,17 @@ def create_environment(python, environment_dir, wheelhouse, django):
 
 def failure_signature(output, test_label):
     test_name = test_label.rsplit(".", 1)[-1]
-    headers = re.findall(
-        rf"^(?:FAIL|ERROR)(?: \[[^\]]+\])?: .*{re.escape(test_name)}.*$",
+    all_headers = re.findall(
+        r"^(?:FAIL|ERROR)(?: \[[^\]]+\])?: .+$",
         output,
         re.MULTILINE,
     )
+    headers = [
+        header for header in all_headers if re.search(re.escape(test_name), header)
+    ]
     headers = [re.sub(r" \[[^\]]+\]", "", header) for header in headers]
     details = re.findall(
-        r"^(?:[\w.]+(?:Error|Exception|Failure)|AssertionError): .+$",
+        r"^(?:[\w.]+(?:Error|Exception|Failure)|AssertionError)(?:: .+)?$",
         output,
         re.MULTILINE,
     )
@@ -128,7 +151,7 @@ def failure_signature(output, test_label):
             re.MULTILINE,
         )
     ]
-    if not headers or not details or not frames:
+    if len(all_headers) != 1 or len(headers) != 1 or not details or not frames:
         return None
     stable = json.dumps(
         {"headers": headers, "details": details, "frames": frames},
@@ -137,26 +160,13 @@ def failure_signature(output, test_label):
     return hashlib.sha256(stable.encode()).hexdigest()
 
 
-def has_lifecycle_failure(output):
-    return bool(
-        re.search(
-            r"\bin (?:setUp|tearDown|setUpClass|tearDownClass|"
-            r"setUpModule|tearDownModule|_callSetUp|_callTearDown|"
-            r"cleanup|_callCleanup|doCleanups|doClassCleanups|"
-            r"doModuleCleanups)\b",
-            output,
-        )
-    )
-
-
 def classify_test(return_code, output, test_label, sentinel):
     tests_run = re.search(r"Ran (\d+) tests?", output)
     executed_once = bool(tests_run and int(tests_run.group(1)) == 1)
     method_passed = f"{sentinel}:PASS" in output
     method_failed = f"{sentinel}:FAIL" in output
     method_executed = method_passed != method_failed
-    lifecycle_failed = has_lifecycle_failure(output)
-    if not executed_once or not method_executed or lifecycle_failed:
+    if not executed_once or not method_executed:
         return "inconclusive"
     if re.search(
         r"(?:skipped|expected failures|unexpected successes)=[1-9]\d*",
@@ -282,6 +292,51 @@ def execute_attempt(
     }, result.stdout
 
 
+def cleanup_databases(python, database_names, environment, timeout=30):
+    for name in database_names:
+        if not re.fullmatch(r"[A-Za-z0-9_]{1,100}", name):
+            raise RuntimeError(f"unsafe cleanup database name: {name}")
+    cleanup_environment = environment.copy()
+    cleanup_environment["REGRESSION_POLICE_DATABASES"] = json.dumps(database_names)
+    code = (
+        "import json, os, pyodbc\n"
+        "driver = os.environ['MSSQL_DRIVER']\n"
+        "host = os.environ['MSSQL_HOST']\n"
+        "port = os.environ.get('MSSQL_PORT', '1433')\n"
+        "user = os.environ.get('MSSQL_USER', 'sa')\n"
+        "password = os.environ['MSSQL_PASSWORD']\n"
+        "password_key = 'P' + 'WD'\n"
+        "extra = os.environ.get('MSSQL_EXTRA_PARAMS', '')\n"
+        "connection = pyodbc.connect(\n"
+        "    f'DRIVER={{{driver}}};SERVER={host},{port};UID={user};'\n"
+        "    f'{password_key}={password};DATABASE=master;{extra}',\n"
+        "    autocommit=True,\n"
+        "    timeout=5,\n"
+        ")\n"
+        "try:\n"
+        "    cursor = connection.cursor()\n"
+        "    for name in json.loads(os.environ['REGRESSION_POLICE_DATABASES']):\n"
+        "        cursor.execute('SELECT 1 FROM sys.databases WHERE name = ?', name)\n"
+        "        if cursor.fetchone():\n"
+        "            quoted = '[' + name.replace(']', ']]') + ']'\n"
+        "            cursor.execute(\n"
+        "                f'ALTER DATABASE {quoted} SET SINGLE_USER '\n"
+        "                'WITH ROLLBACK IMMEDIATE'\n"
+        "            )\n"
+        "            cursor.execute(f'DROP DATABASE {quoted}')\n"
+        "finally:\n"
+        "    connection.close()\n"
+    )
+    result = run_process_group(
+        [python, "-c", code],
+        cwd=Path.cwd(),
+        env=cleanup_environment,
+        timeout=timeout,
+    )
+    if result.returncode:
+        raise RuntimeError(f"database cleanup failed: {result.stdout.strip()}")
+
+
 def run_test(
     python,
     source_dir,
@@ -301,18 +356,13 @@ def run_test(
     environment["PYTHONPATH"] = os.pathsep.join(
         filter(None, (str(hook_dir), environment.get("PYTHONPATH")))
     )
-    first, output = execute_attempt(
-        python,
-        source_dir,
-        label,
-        environment,
-        timeout,
-        sentinel,
+    database_names = (
+        f"test_{environment['MSSQL_DB_NAME']}",
+        f"test_{environment['MSSQL_DB_NAME_OTHER']}",
     )
-    attempts = [first]
-    status = attempts[0]["status"]
-    if status == "fail":
-        rerun, rerun_output = execute_attempt(
+    cleanup_error = None
+    try:
+        first, output = execute_attempt(
             python,
             source_dir,
             label,
@@ -320,18 +370,42 @@ def run_test(
             timeout,
             sentinel,
         )
-        attempts.append(rerun)
-        output = f"{output}\n\n--- deterministic rerun ---\n\n{rerun_output}"
-        matching_failure = rerun["status"] == "fail" and (
-            rerun["signature"] == first["signature"]
+        attempts = [first]
+        status = attempts[0]["status"]
+        if status == "fail":
+            rerun, rerun_output = execute_attempt(
+                python,
+                source_dir,
+                label,
+                environment,
+                timeout,
+                sentinel,
+            )
+            attempts.append(rerun)
+            output = f"{output}\n\n--- deterministic rerun ---\n\n{rerun_output}"
+            matching_failure = rerun["status"] == "fail" and (
+                rerun["signature"] == first["signature"]
+            )
+            if not matching_failure:
+                status = "inconclusive"
+    finally:
+        try:
+            cleanup_databases(python, database_names, environment)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            cleanup_error = f"{type(error).__name__}: {error}"
+    if cleanup_error:
+        status = "inconclusive"
+        output = (
+            f"{output}\n\n--- database cleanup failure ---\n\n"
+            f"{cleanup_error}\n"
         )
-        if not matching_failure:
-            status = "inconclusive"
     output_path.write_text(output, encoding="utf-8")
     return {
         "exit_code": first["exit_code"],
         "status": status,
         "attempts": attempts,
+        "database_names": database_names,
+        "cleanup_error": cleanup_error,
     }
 
 
@@ -363,8 +437,7 @@ def parse_args():
     )
     parser.add_argument(
         "--django",
-        choices=SUPPORTED_DJANGO,
-        default=DEFAULT_DJANGO,
+        help="Exact Django spec from .github/workflows/test.yml.",
     )
     parser.add_argument("--timeout-seconds", type=int, default=300)
     parser.add_argument("--output-dir")
@@ -466,10 +539,10 @@ def verify_import_source(python, source_dir):
         "loaded=Path(mssql.__file__).resolve(); "
         "loaded.relative_to(source)"
     )
-    result = run(
+    result = run_process_group(
         [python, "-c", code],
         cwd=source_dir,
-        capture=True,
+        env=os.environ.copy(),
         timeout=30,
     )
     if result.returncode:
@@ -481,7 +554,7 @@ def verify_import_source(python, source_dir):
 def main():
     args = parse_args()
     repo = Path(git(Path.cwd(), "rev-parse", "--show-toplevel"))
-    test_file = validate_test_file(repo, args.test_file)
+    test_file = Path(args.test_file)
     head_sha = git(repo, "rev-parse", "HEAD")
     default_output = Path(
         os.environ.get("RUNNER_TEMP", tempfile.gettempdir())
@@ -498,6 +571,15 @@ def main():
     head_result = {"exit_code": None, "status": "inconclusive"}
     base_result = {"exit_code": None, "status": "inconclusive"}
     try:
+        django_specs = supported_django(repo)
+        args.django = args.django or django_specs[-1]
+        test_file = validate_test_file(repo, args.test_file)
+        validate_test_label(test_file, args.test_label)
+        if args.django not in django_specs:
+            raise RuntimeError(
+                f"unsupported Django probe spec {args.django}; "
+                f"choose one from {django_specs}"
+            )
         if not re.fullmatch(r"[0-9a-f]{40}", args.head_sha):
             raise RuntimeError("head SHA from pull request metadata must be 40 lowercase hex digits")
         if head_sha != args.head_sha:
@@ -633,7 +715,7 @@ def main():
             raise RuntimeError(
                 f"checkout changed during review: {head_sha} -> {final_head_sha}"
             )
-    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         failure = f"{type(error).__name__}: {error}"
 
     report = {
@@ -649,9 +731,13 @@ def main():
         "base_exit_code": base_result["exit_code"],
         "base_status": base_result["status"],
         "base_attempts": base_result.get("attempts", []),
+        "base_database_names": base_result.get("database_names", []),
+        "base_cleanup_error": base_result.get("cleanup_error"),
         "head_exit_code": head_result["exit_code"],
         "head_status": head_result["status"],
         "head_attempts": head_result.get("attempts", []),
+        "head_database_names": head_result.get("database_names", []),
+        "head_cleanup_error": head_result.get("cleanup_error"),
         "verdict": final_verdict(failure, base_result, head_result),
         "failure": failure,
         "base_log": str(base_log),
