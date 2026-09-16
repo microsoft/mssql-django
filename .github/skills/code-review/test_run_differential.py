@@ -12,11 +12,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from run_differential import (
+    bounded_file_digest,
     classify_test,
     cleanup_databases,
     create_execution_hook,
     failure_signature,
     final_verdict,
+    main,
     make_run_id,
     run_process_group,
     run_test,
@@ -231,6 +233,7 @@ class ResultClassificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, patch(
             "run_differential.cleanup_databases"
         ):
+            Path(temporary, "sitecustomize.py").write_text("hook\n")
             result = run_test(
                 "python",
                 Path("."),
@@ -256,6 +259,7 @@ class ResultClassificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, patch(
             "run_differential.cleanup_databases"
         ):
+            Path(temporary, "sitecustomize.py").write_text("hook\n")
             result = run_test(
                 "python",
                 Path("."),
@@ -282,6 +286,7 @@ class ResultClassificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, patch(
             "run_differential.cleanup_databases"
         ):
+            Path(temporary, "sitecustomize.py").write_text("hook\n")
             result = run_test(
                 "python",
                 Path("."),
@@ -302,6 +307,7 @@ class ResultClassificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, patch(
             "run_differential.cleanup_databases"
         ):
+            Path(temporary, "sitecustomize.py").write_text("hook\n")
             result = run_test(
                 "python",
                 Path("."),
@@ -315,6 +321,53 @@ class ResultClassificationTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "inconclusive")
         self.assertTrue(result["attempts"][0]["timed_out"])
+
+    @patch("run_differential.execute_test")
+    def test_hook_mutation_is_inconclusive(self, execute_test):
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "run_differential.cleanup_databases"
+        ):
+            hook = Path(temporary, "sitecustomize.py")
+            hook.write_text("original\n")
+
+            def mutate_hook(*args):
+                hook.write_text("mutated\n")
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=f"{self.sentinel}:PASS\nRan 1 test\n\nOK\n",
+                )
+
+            execute_test.side_effect = mutate_hook
+            result = run_test(
+                "python",
+                Path("."),
+                self.label,
+                "head",
+                Path(temporary) / "test.log",
+                300,
+                Path(temporary),
+                self.sentinel,
+            )
+
+        self.assertEqual(result["status"], "inconclusive")
+        self.assertTrue(result["hook_changed"])
+
+    def test_hook_digest_rejects_symlink_and_oversized_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            target = directory / "target"
+            target.write_text("hook\n")
+            link = directory / "link"
+            try:
+                link.symlink_to(target)
+            except OSError as error:
+                self.skipTest(f"symlinks unavailable: {error}")
+            with self.assertRaises(RuntimeError):
+                bounded_file_digest(link)
+            oversized = directory / "oversized"
+            oversized.write_bytes(b"x" * 16385)
+            with self.assertRaises(RuntimeError):
+                bounded_file_digest(oversized)
 
     @patch("run_differential.uuid.uuid4")
     def test_report_id_includes_the_full_probe_configuration(self, uuid4):
@@ -501,10 +554,98 @@ class ResultClassificationTests(unittest.TestCase):
 
     def test_setup_does_not_execute_checkout_package_metadata(self):
         repo = Path(__file__).resolve().parents[3]
-        workflow = (
+        setup_workflow = (
             repo / ".github" / "workflows" / "copilot-setup-steps.yml"
         ).read_text()
-        self.assertNotIn('pip install -e ".[test]"', workflow)
+        test_workflow = (
+            repo / ".github" / "workflows" / "test.yml"
+        ).read_text()
+        self.assertNotIn('pip install -e ".[test]"', setup_workflow)
+        self.assertIn("persist-credentials: false", setup_workflow)
+        self.assertIn("persist-credentials: false", test_workflow)
+
+    def test_successful_main_orchestration(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            output = Path(temporary) / "output"
+            wheelhouse = Path(temporary) / "wheelhouse"
+            test_file = Path("testapp/tests/test_probe.py")
+            (repo / test_file).parent.mkdir(parents=True)
+            (repo / test_file).write_text("probe = True\n")
+            workflow = repo / ".github" / "workflows" / "test.yml"
+            workflow.parent.mkdir(parents=True)
+            workflow.write_text(
+                '- { django-spec: "django>=6.1,<6.2" }\n'
+            )
+            wheelhouse.mkdir()
+            head_sha = "1" * 40
+            base_sha = "2" * 40
+
+            def fake_git(_repo, *arguments):
+                if arguments == ("rev-parse", "--show-toplevel"):
+                    return str(repo)
+                if arguments == ("rev-parse", "HEAD"):
+                    return head_sha
+                if arguments[0] == "merge-base":
+                    return base_sha
+                if arguments[0] == "diff":
+                    return ""
+                if arguments[0] == "check-ref-format":
+                    return ""
+                raise AssertionError(arguments)
+
+            def fake_subprocess(command, **kwargs):
+                if command[:3] == ["git", "worktree", "add"]:
+                    Path(command[4]).mkdir(parents=True)
+                return subprocess.CompletedProcess(command, 0)
+
+            passing = {
+                "exit_code": 0,
+                "status": "pass",
+                "attempts": [],
+                "database_names": [],
+                "cleanup_error": None,
+                "hook_changed": False,
+            }
+            arguments = [
+                "run_differential.py",
+                "--base-ref",
+                "dev",
+                "--head-sha",
+                head_sha,
+                "--wheelhouse",
+                str(wheelhouse),
+                "--test-file",
+                str(test_file),
+                "--test-label",
+                "testapp.tests.test_probe.Probe.test_behavior",
+                "--output-dir",
+                str(output),
+            ]
+            with (
+                patch("run_differential.git", side_effect=fake_git),
+                patch("run_differential.subprocess.run", side_effect=fake_subprocess),
+                patch("run_differential.source_fingerprint", return_value="stable"),
+                patch("run_differential.create_environment", return_value="python"),
+                patch("run_differential.verify_import_source"),
+                patch(
+                    "run_differential.run_test",
+                    side_effect=[passing.copy(), passing.copy()],
+                ) as run_probe,
+                patch.object(sys, "argv", arguments),
+            ):
+                return_code = main()
+
+            report = json.loads(next(output.glob("*.json")).read_text())
+            self.assertEqual(return_code, 0)
+            self.assertEqual(
+                report["verdict"],
+                "disproved-in-tested-configuration",
+            )
+            self.assertEqual(run_probe.call_count, 2)
+            head_call, base_call = run_probe.call_args_list
+            self.assertNotEqual(head_call.args[1], base_call.args[1])
+            self.assertNotEqual(head_call.args[6], base_call.args[6])
 
     def test_invalid_label_writes_inconclusive_report(self):
         repo = Path(__file__).resolve().parents[3]

@@ -54,10 +54,12 @@ Python-version coverage, and legacy-only configurations remain outside these pro
    python "$SKILL_DIR/run_differential.py" \
      --base-ref "$PR_BASE_REF" \
      --head-sha "$PR_HEAD_SHA" \
-     --django "django>=6.1,<6.2" \
      --test-file testapp/tests/test_regression_police_probe.py \
      --test-label testapp.tests.test_regression_police_probe.RegressionProbe.test_behavior
    ```
+
+   Omit `--django` to use the newest configuration from the current test matrix, or pass one
+   of the exact `django-spec` values from that matrix for a version-specific probe.
 6. **Interpret the differential correctly.**
 
    | Base | Head | Verdict |

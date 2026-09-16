@@ -241,7 +241,9 @@ def run_process_group(command, *, cwd, env, timeout):
             timeout,
             output=stdout,
         ) from error
-    return subprocess.CompletedProcess(command, process.returncode, stdout)
+    return_code = process.returncode
+    terminate_process_tree(process)
+    return subprocess.CompletedProcess(command, return_code, stdout)
 
 
 def execute_test(python, source_dir, label, environment, timeout):
@@ -356,6 +358,8 @@ def run_test(
     environment["PYTHONPATH"] = os.pathsep.join(
         filter(None, (str(hook_dir), environment.get("PYTHONPATH")))
     )
+    hook_path = hook_dir / "sitecustomize.py"
+    hook_digest = bounded_file_digest(hook_path)
     database_names = (
         f"test_{environment['MSSQL_DB_NAME']}",
         f"test_{environment['MSSQL_DB_NAME_OTHER']}",
@@ -372,7 +376,10 @@ def run_test(
         )
         attempts = [first]
         status = attempts[0]["status"]
-        if status == "fail":
+        hook_changed = not hook_matches(hook_path, hook_digest)
+        if hook_changed:
+            status = "inconclusive"
+        elif status == "fail":
             rerun, rerun_output = execute_attempt(
                 python,
                 source_dir,
@@ -386,7 +393,8 @@ def run_test(
             matching_failure = rerun["status"] == "fail" and (
                 rerun["signature"] == first["signature"]
             )
-            if not matching_failure:
+            hook_changed = not hook_matches(hook_path, hook_digest)
+            if not matching_failure or hook_changed:
                 status = "inconclusive"
     finally:
         try:
@@ -406,6 +414,7 @@ def run_test(
         "attempts": attempts,
         "database_names": database_names,
         "cleanup_error": cleanup_error,
+        "hook_changed": hook_changed,
     }
 
 
@@ -485,6 +494,34 @@ def create_execution_hook(directory):
         "unittest.TestCase._callTestMethod = _call_test_method\n",
         encoding="utf-8",
     )
+
+
+def bounded_file_digest(path, max_bytes=16384):
+    metadata = path.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > max_bytes:
+        raise RuntimeError(f"unsafe hook file: {path}")
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_size > max_bytes:
+            raise RuntimeError(f"unsafe hook file: {path}")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            contents = stream.read(max_bytes + 1)
+    finally:
+        os.close(descriptor)
+    if len(contents) > max_bytes:
+        raise RuntimeError(f"hook file exceeds {max_bytes} bytes: {path}")
+    return hashlib.sha256(contents).hexdigest()
+
+
+def hook_matches(path, expected_digest):
+    try:
+        return bounded_file_digest(path) == expected_digest
+    except (OSError, RuntimeError):
+        return False
 
 
 def source_fingerprint(source_dir, test_file):
@@ -626,8 +663,8 @@ def main():
             temporary_path = Path(temporary)
             head_dir = temporary_path / "head"
             base_dir = temporary_path / "base"
-            hook_dir = temporary_path / "hook"
-            create_execution_hook(hook_dir)
+            head_hook_dir = temporary_path / "head-hook"
+            base_hook_dir = temporary_path / "base-hook"
             subprocess.run(
                 ["git", "worktree", "add", "--detach", head_dir, head_sha],
                 cwd=repo,
@@ -672,15 +709,7 @@ def main():
                 verify_import_source(base_python, base_dir)
 
                 database_token = hashlib.sha256(run_id.encode()).hexdigest()[:12]
-                head_result = run_test(
-                    head_python,
-                    head_dir,
-                    args.test_label,
-                    f"h_{database_token}",
-                    head_log,
-                    args.timeout_seconds,
-                    hook_dir,
-                )
+                create_execution_hook(base_hook_dir)
                 base_result = run_test(
                     base_python,
                     base_dir,
@@ -688,7 +717,17 @@ def main():
                     f"b_{database_token}",
                     base_log,
                     args.timeout_seconds,
-                    hook_dir,
+                    base_hook_dir,
+                )
+                create_execution_hook(head_hook_dir)
+                head_result = run_test(
+                    head_python,
+                    head_dir,
+                    args.test_label,
+                    f"h_{database_token}",
+                    head_log,
+                    args.timeout_seconds,
+                    head_hook_dir,
                 )
                 if source_fingerprint(head_dir, test_file) != head_fingerprint:
                     raise RuntimeError("head source changed during probe execution")
@@ -733,11 +772,13 @@ def main():
         "base_attempts": base_result.get("attempts", []),
         "base_database_names": base_result.get("database_names", []),
         "base_cleanup_error": base_result.get("cleanup_error"),
+        "base_hook_changed": base_result.get("hook_changed"),
         "head_exit_code": head_result["exit_code"],
         "head_status": head_result["status"],
         "head_attempts": head_result.get("attempts", []),
         "head_database_names": head_result.get("database_names", []),
         "head_cleanup_error": head_result.get("cleanup_error"),
+        "head_hook_changed": head_result.get("hook_changed"),
         "verdict": final_verdict(failure, base_result, head_result),
         "failure": failure,
         "base_log": str(base_log),
