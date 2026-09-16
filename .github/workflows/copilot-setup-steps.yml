@@ -70,8 +70,8 @@ jobs:
           python -m pip install --upgrade pip wheel setuptools
           wheelhouse="$RUNNER_TEMP/regression-police-wheelhouse"
           mkdir -p "$wheelhouse"
-          python -m pip download --dest "$wheelhouse" ".[test]"
-          python -m pip download --dest "$wheelhouse" setuptools wheel
+          python -m pip download --dest "$wheelhouse" \
+            setuptools wheel pyodbc pytz "unittest-xml-reporting>=3.2.0"
           for django_spec in \
             "django>=5.2,<5.3" \
             "django>=6.0,<6.1" \

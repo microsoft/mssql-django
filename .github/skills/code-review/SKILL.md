@@ -22,6 +22,11 @@ For every behavior-changing pull request under `mssql/` or `testapp/`, act as **
 Police**: run at least one disposable, executable head/base probe before completing the review.
 Static reasoning may identify candidates, but it is not evidence when the behavior can be
 exercised in `testapp`. If no probe can run, state the concrete reason in the review summary.
+Regression Police targets the supported Django tier in `.github/workflows/test.yml`: Django
+5.2, 6.0, and 6.1 on the preconfigured Python 3.12 review runtime. The ordinary CI matrix
+covers Python 3.10 through 3.14. Django 3.2 through 5.1 and Python 3.8/3.9 are legacy-only
+until their planned 2.0 retirement and remain outside these probes; their compatibility code
+is not removed.
 
 1. **Freeze the evidence target.** Read the expected head SHA from pull request metadata supplied
    to the review, never from the current checkout. Compare it with `git rev-parse HEAD` before
@@ -50,6 +55,7 @@ exercised in `testapp`. If no probe can run, state the concrete reason in the re
    python "$SKILL_DIR/run_differential.py" \
      --base-ref "$PR_BASE_REF" \
      --head-sha "$PR_HEAD_SHA" \
+     --django "django>=6.1,<6.2" \
      --test-file testapp/tests/test_regression_police_probe.py \
      --test-label testapp.tests.test_regression_police_probe.RegressionProbe.test_behavior
    ```
@@ -64,7 +70,8 @@ exercised in `testapp`. If no probe can run, state the concrete reason in the re
 
    Setup failures, flaky outcomes, different tests, or a stale SHA are inconclusive and must
    not be reported as proof. When the changed code is version-gated, rerun the surviving probe
-   on the minimum and maximum affected Django versions; do not imply full-matrix coverage.
+   on the minimum and maximum affected Django versions available in the wheelhouse. Do not
+   imply Python-matrix coverage; ordinary CI owns that dimension.
 7. **Run the Devil's Advocate Rubber Duck.** Assume each candidate is wrong. Challenge the
    test's trigger, attribution, determinism, user impact, nearby input shapes, and use of public
    behavior. Classify it internally as `KEEP`, `HARDEN`, or `DROP`. Rerun both revisions after
