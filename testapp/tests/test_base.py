@@ -763,6 +763,8 @@ class TestMarsConnectionLive(TestCase):
 
         self.wrapper = connection.copy(alias="mars_live")
         options = self.wrapper.settings_dict["OPTIONS"]
+        # MARS opt-out is a pyodbc connection-string option.
+        options["python_driver"] = "pyodbc"
         extra = options.get("extra_params") or ""
         options["extra_params"] = "MARS_Connection=no;" + extra
         self.addCleanup(self.wrapper.close)
