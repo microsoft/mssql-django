@@ -348,15 +348,24 @@ class SQLCompiler(compiler.SQLCompiler):
                 result, params = self.get_combinator_sql(combinator, self.query.combinator_all)
             elif django.VERSION >= (4, 2) and self.qualify:
                 result, params = self.get_qualify_sql()
-                if do_limit and not do_offset:
+                # get_qualify_sql() wraps the query in a derived table, which
+                # bypasses both the `TOP %d` insertion plain SELECTs get above
+                # and the fallback ordering logic below (order_by is cleared
+                # here). It only repeats an outer ORDER BY when the query is
+                # ordered, but SQL Server requires one for OFFSET/FETCH, so
+                # supply a placeholder when there is none. A limit-only slice
+                # (low_mark == 0) must emit its own clause here; offsetting
+                # slices are handled by the `if do_offset:` block further down.
+                if (do_limit or do_offset) and supports_offset_clause:
                     if not order_by:
                         result.append('ORDER BY (SELECT NULL)')
-                    result.append(
-                        self.connection.ops.limit_offset_sql(
-                            self.query.low_mark,
-                            self.query.high_mark,
+                    if do_limit and not do_offset:
+                        result.append(
+                            self.connection.ops.limit_offset_sql(
+                                self.query.low_mark,
+                                self.query.high_mark,
+                            )
                         )
-                    )
                 order_by = None
             else:
                 distinct_fields, distinct_params = self.get_distinct()
@@ -645,6 +654,7 @@ class SQLCompiler(compiler.SQLCompiler):
                         result.append('ORDER BY X.rn')
                 else:
                     result.append(self.connection.ops.limit_offset_sql(self.query.low_mark, self.query.high_mark))
+
             if self.query.subquery and extra_select:
                 # If the query is used as a subquery, the extra selects would
                 # result in more columns than the left-hand side expression is
