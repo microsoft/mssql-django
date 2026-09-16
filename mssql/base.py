@@ -46,6 +46,40 @@ from .introspection import DatabaseIntrospection, SQL_TIMESTAMP_WITH_TIMEZONE  #
 from .operations import DatabaseOperations  # noqa
 from .schema import DatabaseSchemaEditor  # noqa
 
+
+def _load_mssql_python():
+    """Import and return the mssql-python module for the opt-in driver path.
+
+    pyodbc remains the default driver and is imported at module load. The
+    mssql-python module is imported lazily here, only when a connection selects
+    it via the ``python_driver`` OPTION, so installations that do not use it are
+    unaffected and are not required to have it installed.
+    """
+    try:
+        import mssql_python
+    except ImportError as e:
+        raise ImproperlyConfigured(
+            "The 'python_driver' connection option requests mssql-python, but "
+            "the module could not be imported: %s. Install it with "
+            "'pip install \"mssql-python>=1.15.0\"'." % e
+        )
+
+    driver_ver = get_version_tuple(mssql_python.__version__)
+    if driver_ver < (1, 15, 0):
+        raise ImproperlyConfigured(
+            "mssql-python 1.15.0 or newer is required; you have %s"
+            % mssql_python.__version__
+        )
+
+    # mssql-python auto-enables connection pooling; honour
+    # DATABASE_CONNECTION_POOLING the same way the pyodbc path does at import.
+    if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
+        if not settings.DATABASE_CONNECTION_POOLING:
+            mssql_python.PoolingManager.disable()
+
+    return mssql_python
+
+
 # EngineEdition values from SERVERPROPERTY('EngineEdition').
 # See: https://learn.microsoft.com/sql/t-sql/functions/serverproperty-transact-sql
 EDITION_AZURE_SQL_DB = 5
@@ -192,6 +226,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     }
 
     Database = Database
+    # Set to True per-connection in get_new_connection() when the
+    # ``python_driver`` OPTION selects mssql-python; the default is the
+    # pyodbc path.
+    _use_python_driver = False
     SchemaEditorClass = DatabaseSchemaEditor
     # Classes instantiated in __init__().
     client_class = DatabaseClient
@@ -421,8 +459,28 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             return None
         return value.strip().lower()
 
+    @staticmethod
+    def _uses_mssql_python(conn_params):
+        """Return True when the connection opts into the mssql-python driver.
+
+        Selected per-connection via ``OPTIONS = {"python_driver": "mssql_python"}``.
+        Any of ``mssql_python`` / ``mssql-python`` / ``python`` (case-insensitive)
+        enables it; an empty or absent value keeps the default pyodbc path.
+        """
+        value = conn_params.get('OPTIONS', {}).get('python_driver')
+        if not value:
+            return False
+        return str(value).strip().lower() in ('mssql_python', 'mssql-python', 'python')
+
     def _build_connection_string(self, conn_params, driver):
-        """Build ODBC connection string for the given driver."""
+        """Build the connection string for the given driver.
+
+        The default pyodbc path emits the ODBC ``DRIVER`` / ``DSN`` /
+        ``SERVERNAME`` / ``MARS_Connection`` keywords as before. When the
+        connection opts into mssql-python (``python_driver`` OPTION), the
+        bundled driver controls those, so they are omitted and ``SERVER`` uses
+        the ``host,port`` form that the Microsoft ODBC driver expects.
+        """
         database = conn_params['NAME']
         host = conn_params.get('HOST', 'localhost')
         user = conn_params.get('USER', None)
@@ -434,6 +492,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         dsn = options.get('dsn', None)
         options_extra_params = options.get('extra_params') or ''
         auth_mode = self._get_authentication_mode(options_extra_params)
+        use_python_driver = self._uses_mssql_python(conn_params)
 
         # Microsoft driver names assumed here are:
         # * SQL Server Native Client 10.0/11.0
@@ -448,7 +507,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # (FreeTDS)
         # http://www.freetds.org/userguide/odbcconnattr.htm
         cstr_parts = {}
-        if dsn:
+        if use_python_driver:
+            # mssql-python bundles its own SQL Server driver and rejects the
+            # ODBC-only DRIVER / DSN / SERVERNAME keywords, so none are emitted.
+            if port:
+                host = ','.join((host, str(port)))
+            cstr_parts['SERVER'] = host
+        elif dsn:
             cstr_parts['DSN'] = dsn
         else:
             # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
@@ -473,8 +538,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             if auth_mode is not None:
                 # User supplied an explicit Authentication= keyword;
                 # do not inject Trusted_Connection or Integrated Security
-                # as the ODBC driver rejects that combination (FA001).
+                # as the driver rejects that combination (FA001).
                 pass
+            elif use_python_driver:
+                cstr_parts['Trusted_Connection'] = trusted_connection
             elif ms_drivers.match(driver):
                 cstr_parts['Trusted_Connection'] = trusted_connection
             else:
@@ -482,9 +549,20 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         cstr_parts['DATABASE'] = database
 
-        if (ms_drivers.match(driver) and os.name == 'nt' and
+        if (not use_python_driver and ms_drivers.match(driver) and os.name == 'nt' and
                 'mars_connection' not in self._parse_extra_params(options_extra_params)):
             cstr_parts['MARS_Connection'] = 'yes'
+
+        if use_python_driver:
+            # mssql-python rejects duplicate keywords; explicit extras take precedence.
+            extra_params = self._parse_extra_params(options_extra_params)
+            extra_keys = set(extra_params)
+            if extra_keys & {'address', 'addr'}:
+                extra_keys.add('server')
+            cstr_parts = {
+                key: value for key, value in cstr_parts.items()
+                if key.lower() not in extra_keys
+            }
 
         connstr = encode_connection_string(cstr_parts)
 
@@ -508,6 +586,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def get_new_connection(self, conn_params):
         options = conn_params.get('OPTIONS', {})
+        use_python_driver = self._uses_mssql_python(conn_params)
+        self.Database = _load_mssql_python() if use_python_driver else Database
+        self._use_python_driver = use_python_driver
         driver = options.get('driver', 'ODBC Driver 18 for SQL Server')
         driver_explicitly_set = 'driver' in options
 
@@ -523,11 +604,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         conn = None
         retry_count = 0
-        need_to_retry = False
         args = {
-            'unicode_results': unicode_results,
             'timeout': timeout,
         }
+        if use_python_driver:
+            # Preserve the string UUID values expected by Django's converter.
+            args['native_uuid'] = False
+        else:
+            # ``unicode_results`` is a pyodbc-only connect keyword.
+            args['unicode_results'] = unicode_results
         if 'TOKEN' in conn_params:
             args['attrs_before'] = {
                 1256: prepare_token_for_odbc(conn_params['TOKEN'])
@@ -538,14 +623,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         while conn is None:
             try:
-                conn = Database.connect(connstr, **args)
+                conn = self.Database.connect(connstr, **args)
             except Exception as e:
                 # If driver not explicitly set and v18 failed with driver not found,
-                # try falling back to v17
-                if (not driver_explicitly_set and
-                    not attempted_v17_fallback and
-                    self._is_driver_not_found_error(e) and
-                    'ODBC Driver 18' in driver):
+                # try falling back to v17 (pyodbc path only).
+                if (not use_python_driver and
+                        not driver_explicitly_set and
+                        not attempted_v17_fallback and
+                        self._is_driver_not_found_error(e) and
+                        'ODBC Driver 18' in driver):
 
                     attempted_v17_fallback = True
                     driver = 'ODBC Driver 17 for SQL Server'
@@ -565,20 +651,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     )
                     continue
 
-                for error_number in self._transient_error_numbers:
-                    if error_number in e.args[1]:
-                        if error_number in e.args[1] and retry_count < retries:
-                            time.sleep(backoff_time)
-                            need_to_retry = True
-                            retry_count = retry_count + 1
-                        else:
-                            need_to_retry = False
-                        break
-                if not need_to_retry:
+                error_haystack = str(e)
+                if retry_count >= retries or not any(
+                        number in error_haystack for number in self._transient_error_numbers):
                     raise
-        # Handling values from DATETIMEOFFSET columns
-        # source: https://github.com/mkleehammer/pyodbc/wiki/Using-an-Output-Converter-function
-        conn.add_output_converter(SQL_TIMESTAMP_WITH_TIMEZONE, handle_datetimeoffset)
+                time.sleep(backoff_time)
+                retry_count += 1
+        if not use_python_driver:
+            # mssql-python already returns native datetimeoffset values.
+            conn.add_output_converter(SQL_TIMESTAMP_WITH_TIMEZONE, handle_datetimeoffset)
         conn.timeout = query_timeout
         if setencoding:
             for entry in setencoding:
@@ -589,11 +670,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         return conn
 
     def init_connection_state(self):
-        drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
+        drv_name = self.connection.getinfo(self.Database.SQL_DRIVER_NAME).upper()
 
         if drv_name.startswith('LIBTDSODBC'):
             try:
-                drv_ver = self.connection.getinfo(Database.SQL_DRIVER_VER)
+                drv_ver = self.connection.getinfo(self.Database.SQL_DRIVER_VER)
                 ver = get_version_tuple(drv_ver)[:2]
                 if ver < (0, 95):
                     raise ImproperlyConfigured(
@@ -607,13 +688,18 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         settings_dict = self.settings_dict
         options = settings_dict.get('OPTIONS', {})
         self._is_microsoft_driver = bool(ms_drv_names.match(drv_name))
+        self.supports_mars = False
 
         if self._is_microsoft_driver:
             self.driver_charset = None
             # http://msdn.microsoft.com/en-us/library/ms131686.aspx
             extra_params = self._parse_extra_params(options.get('extra_params'))
-            self.supports_mars = extra_params.get('mars_connection', 'yes').strip().lower() == 'yes'
-            self.features.can_use_chunked_reads = self.supports_mars
+            # The bundled mssql-python driver does not enable MARS.
+            self.supports_mars = (
+                not self._use_python_driver and
+                extra_params.get('mars_connection', 'yes').strip().lower() == 'yes'
+            )
+        self.features.can_use_chunked_reads = self.supports_mars
 
         cursor = self.create_cursor()
 
@@ -641,7 +727,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def is_usable(self):
         try:
             self.create_cursor().execute("SELECT 1")
-        except Database.Error:
+        except self.Database.Error:
             return False
         else:
             return True
@@ -727,7 +813,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             return cursor.execute('SELECT @@TRANCOUNT').fetchone()[0]
 
     def _on_error(self, e):
-        if e.args[0] in self._codes_for_networkerror:
+        if self._use_python_driver:
+            # mssql-python maps 08S01 to this driver error and drops the SQLSTATE.
+            network_error = (
+                getattr(e, 'driver_error', None) == 'Communication link failure' or
+                any(code in str(e) for code in self._codes_for_networkerror)
+            )
+        else:
+            network_error = e.args[0] in self._codes_for_networkerror
+        if network_error:
             try:
                 # close the stale connection
                 self.close()
@@ -908,7 +1002,7 @@ class CursorWrapper(object):
         self.last_params = params
         try:
             return self.cursor.execute(sql, params)
-        except Database.Error as e:
+        except self.connection.Database.Error as e:
             self.connection._on_error(e)
             raise
 
@@ -920,7 +1014,7 @@ class CursorWrapper(object):
         params_list = [self.format_params(p) for p in raw_pll]
         try:
             return self.cursor.executemany(sql, params_list)
-        except Database.Error as e:
+        except self.connection.Database.Error as e:
             self.connection._on_error(e)
             raise
 
