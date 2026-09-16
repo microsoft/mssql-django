@@ -552,17 +552,39 @@ class ResultClassificationTests(unittest.TestCase):
             )
         run_group.assert_not_called()
 
+    @patch("run_differential.run_process_group")
+    def test_cleanup_does_not_load_probe_hook(self, run_group):
+        run_group.return_value = subprocess.CompletedProcess([], 0, "")
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "PYTHONPATH": "/untrusted/hook",
+                "REGRESSION_POLICE_TEST_ID": "test.id",
+                "REGRESSION_POLICE_SENTINEL": "sentinel",
+            }
+        )
+        cleanup_databases("python", ["test_rp_safe"], environment)
+        cleanup_environment = run_group.call_args.kwargs["env"]
+        self.assertNotIn("PYTHONPATH", cleanup_environment)
+        self.assertNotIn("REGRESSION_POLICE_TEST_ID", cleanup_environment)
+        self.assertNotIn("REGRESSION_POLICE_SENTINEL", cleanup_environment)
+
     def test_setup_does_not_execute_checkout_package_metadata(self):
         repo = Path(__file__).resolve().parents[3]
-        setup_workflow = (
-            repo / ".github" / "workflows" / "copilot-setup-steps.yml"
-        ).read_text()
-        test_workflow = (
-            repo / ".github" / "workflows" / "test.yml"
-        ).read_text()
+        workflow_directory = repo / ".github" / "workflows"
+        setup_workflow = (workflow_directory / "copilot-setup-steps.yml").read_text()
         self.assertNotIn('pip install -e ".[test]"', setup_workflow)
-        self.assertIn("persist-credentials: false", setup_workflow)
-        self.assertIn("persist-credentials: false", test_workflow)
+        for workflow in workflow_directory.glob("*.yml"):
+            lines = workflow.read_text().splitlines()
+            for index, line in enumerate(lines):
+                if "uses: actions/checkout@" not in line:
+                    continue
+                checkout_block = "\n".join(lines[index:index + 8])
+                self.assertIn(
+                    "persist-credentials: false",
+                    checkout_block,
+                    workflow.name,
+                )
 
     def test_successful_main_orchestration(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -643,8 +665,9 @@ class ResultClassificationTests(unittest.TestCase):
                 "disproved-in-tested-configuration",
             )
             self.assertEqual(run_probe.call_count, 2)
-            head_call, base_call = run_probe.call_args_list
-            self.assertNotEqual(head_call.args[1], base_call.args[1])
+            base_call, head_call = run_probe.call_args_list
+            self.assertEqual(base_call.args[1].name, "base")
+            self.assertEqual(head_call.args[1].name, "head")
             self.assertNotEqual(head_call.args[6], base_call.args[6])
 
     def test_invalid_label_writes_inconclusive_report(self):
@@ -658,7 +681,7 @@ class ResultClassificationTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     sys.executable,
-                    Path(__file__).with_name("run_differential.py"),
+                    Path(__file__).resolve().with_name("run_differential.py"),
                     "--base-ref",
                     "dev",
                     "--head-sha",

@@ -299,6 +299,9 @@ def cleanup_databases(python, database_names, environment, timeout=30):
         if not re.fullmatch(r"[A-Za-z0-9_]{1,100}", name):
             raise RuntimeError(f"unsafe cleanup database name: {name}")
     cleanup_environment = environment.copy()
+    cleanup_environment.pop("PYTHONPATH", None)
+    cleanup_environment.pop("REGRESSION_POLICE_TEST_ID", None)
+    cleanup_environment.pop("REGRESSION_POLICE_SENTINEL", None)
     cleanup_environment["REGRESSION_POLICE_DATABASES"] = json.dumps(database_names)
     code = (
         "import json, os, pyodbc\n"

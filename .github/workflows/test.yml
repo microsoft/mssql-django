@@ -26,6 +26,26 @@ permissions:
   contents: read
 
 jobs:
+  regression-police:
+    name: Regression Police harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Validate Regression Police harness
+        working-directory: .github/skills/code-review
+        run: python test_run_differential.py
+
   testapp:
     name: Py ${{ matrix.python }} / Django ${{ matrix.django }}
     runs-on: ubuntu-latest
