@@ -53,19 +53,18 @@ class DatabaseOperations(BaseDatabaseOperations):
         # standard (non-DST) offset by probing January and July
         # and taking the month where dst() is zero.
         #
-        # the previous pytz version read timedelta.seconds directly,
-        # which is wrong for negative-DST zones. Europe/Dublin has a
-        # dst() of -1h, which normalizes to (days=-1, seconds=82800),
-        # so the offset came out as -82800 in winter and 3600 in
-        # summer instead of 0.
+        # Standard time follows the selected timezone database, not
+        # necessarily winter time. Packaged tzdata represents Dublin
+        # as UTC+1 standard time with negative DST in winter; some
+        # system databases instead represent UTC standard time.
         zone = zoneinfo.ZoneInfo(tzname)
         year = datetime.datetime.now().year
         for month in (1, 7):
             probe = datetime.datetime(year, month, 15, 12, tzinfo=zone)
             if (probe.dst() or datetime.timedelta(0)) == datetime.timedelta(0):
                 return int(probe.utcoffset().total_seconds())
-        # zone has DST year-round (not seen in real IANA data);
-        # fall back to January's offset.
+        # Neither probe has zero DST (possible with system timezone
+        # data, e.g. Casablanca). Fall back to January's offset.
         january = datetime.datetime(year, 1, 15, 12, tzinfo=zone)
         return int(january.utcoffset().total_seconds())
 

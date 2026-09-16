@@ -2,6 +2,10 @@
 # Licensed under the BSD license.
 
 import datetime
+import zoneinfo
+from importlib.resources import files
+from unittest import mock
+
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import override_settings
@@ -114,9 +118,8 @@ class TestGetUtcOffset(TestCase):
     Regression tests for DatabaseOperations._get_utcoffset.
 
     The helper returns the standard (non-DST) UTC offset of a time zone
-    in seconds and feeds directly into compiled SQL via DATEADD. these
-    values must stay stable across the year and across Python versions
-    to avoid silent SQL behavior changes.
+    in seconds and feeds directly into compiled SQL via DATEADD.
+    Standard-time labels can differ between timezone databases.
     """
 
     def setUp(self):
@@ -149,11 +152,20 @@ class TestGetUtcOffset(TestCase):
         self.assertEqual(self.ops._get_utcoffset('America/Inuvik'), -25200)
 
     def test_negative_dst_zone(self):
-        # Dublin reports dst() as -1h rather than a positive summer
-        # shift. reading timedelta.seconds on that (as the old pytz
-        # code did) gave 82800 instead of -3600, so the offset came
-        # out as -82800 in winter and 3600 in summer. standard is 0.
-        self.assertEqual(self.ops._get_utcoffset('Europe/Dublin'), 0)
+        # Load packaged data explicitly: some system databases label
+        # Dublin's winter as standard time and have no negative DST.
+        with files('tzdata.zoneinfo').joinpath('Europe', 'Dublin').open('rb') as data:
+            zone = zoneinfo.ZoneInfo.from_file(data, key='Europe/Dublin')
+        self.assertEqual(
+            datetime.datetime(2026, 1, 15, 12, tzinfo=zone).dst(),
+            datetime.timedelta(hours=-1),
+        )
+        for month in (1, 7):
+            with self.subTest(month=month):
+                with mock.patch('mssql.operations.zoneinfo.ZoneInfo', return_value=zone):
+                    with mock.patch('mssql.operations.datetime', wraps=datetime) as clock:
+                        clock.datetime.now.return_value = datetime.datetime(2026, month, 15, 12)
+                        self.assertEqual(self.ops._get_utcoffset('Europe/Dublin'), 3600)
 
     def test_returns_int(self):
         # the value flows into '%d' formatting in compiled SQL
