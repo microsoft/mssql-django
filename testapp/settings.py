@@ -15,7 +15,13 @@ DATABASES = {
         "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
         "HOST": os.environ.get("MSSQL_HOST", "localhost"),
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
-        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
+        "OPTIONS": {
+            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 18 for SQL Server"),
+            "extra_params": os.environ.get(
+                "MSSQL_EXTRA_PARAMS", "TrustServerCertificate=yes"
+            ),
+            "return_rows_bulk_insert": True,
+        },
     },
     'other': {
         "ENGINE": "mssql",
@@ -24,7 +30,13 @@ DATABASES = {
         "PASSWORD": os.environ.get("MSSQL_PASSWORD", "MyPassword42"),
         "HOST": os.environ.get("MSSQL_HOST", "localhost"),
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
-        "OPTIONS": {"driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server"), "return_rows_bulk_insert": True},
+        "OPTIONS": {
+            "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 18 for SQL Server"),
+            "extra_params": os.environ.get(
+                "MSSQL_EXTRA_PARAMS", "TrustServerCertificate=yes"
+            ),
+            "return_rows_bulk_insert": True,
+        },
     },
 }
 
@@ -347,11 +359,6 @@ if VERSION >= (6, 1):
         # omit the redundant "= True" comparison.
         # TODO: strip the redundant boolean comparison in the compiler.
         'lookup.tests.LookupTests.test_exact_booleanfield_annotation',
-
-        # SQL Server LIKE treats [ ] as a character-class wildcard; escaping a column
-        # reference (F()) used as a LIKE pattern doesn't cover the bracket case.
-        # TODO: escape []-wildcards for column-referencing __contains/__startswith.
-        'expressions.tests.ExpressionsTests.test_patterns_escape',
 
         # JSON key __iexact=None semantics (no native JSON null handling on SQL Server);
         # sibling to the existing JSONField exclusions.
