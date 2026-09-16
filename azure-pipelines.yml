@@ -27,6 +27,9 @@ schedules:
     - dev
   always: true
 
+variables:
+  MSSQL_EXPECTED_NATIVE_DRIVER: msodbcsql18
+
 parameters:
   - name: coreMatrix
     type: object

@@ -1,6 +1,4 @@
 import io
-import os
-import sys
 from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest import mock
@@ -12,25 +10,19 @@ from testapp.runners import ExcludedTestSuiteRunner
 
 
 class DriverCheckTests(SimpleTestCase):
-    def native_driver(self):
-        if os.name == "nt":
-            return "MSODBCSQL18.DLL"
-        if sys.platform == "darwin":
-            return "libmsodbcsql.18.dylib"
-        return "libmsodbcsql-18.6.so.2.1"
-
     def run_check(self, expected, actual, getinfo_error=None,
-                  native_driver=None, provider=None):
+                  native_driver="libmsodbcsql-18.6.so.2.1", provider=None,
+                  expected_native="msodbcsql18"):
         wrappers = {}
         for alias in ("default", "other"):
             wrapper = mock.Mock()
-            native_driver = native_driver or self.native_driver()
             wrapper.Database = SimpleNamespace(
                 __name__=actual, __version__="1.15.0", version="5.3.0",
                 SQL_DRIVER_NAME=6, SQL_DRIVER_VER=7,
                 get_native_provider_info=mock.Mock(return_value=provider or {
                     "id": "msodbcsql18",
                     "package": "mssql_python_odbc",
+                    "version": "18.6.2.1",
                     "driver_path": "/driver/" + native_driver,
                 }),
             )
@@ -43,9 +35,12 @@ class DriverCheckTests(SimpleTestCase):
             )
             wrappers[alias] = wrapper
         self.wrappers = wrappers
+        env = {"MSSQL_PYTHON_DRIVER": expected}
+        if expected_native:
+            env["MSSQL_EXPECTED_NATIVE_DRIVER"] = expected_native
         with mock.patch.object(check_driver, "connections", wrappers), \
                 mock.patch.object(check_driver.django, "setup"), \
-                mock.patch.dict("os.environ", {"MSSQL_PYTHON_DRIVER": expected}), \
+                mock.patch.dict("os.environ", env, clear=True), \
                 redirect_stdout(io.StringIO()) as output:
             check_driver.main()
         return output.getvalue()
@@ -61,10 +56,20 @@ class DriverCheckTests(SimpleTestCase):
             with self.subTest(configured=configured):
                 output = self.run_check(configured, actual)
                 for alias, wrapper in self.wrappers.items():
-                    self.assertIn("%s: %s" % (alias, actual), output)
+                    version = "1.15.0" if actual == "mssql_python" else "5.3.0"
+                    self.assertIn(
+                        "%s: %s %s; native driver: "
+                        "libmsodbcsql-18.6.so.2.1 18.6" %
+                        (alias, actual, version),
+                        output,
+                    )
                     wrapper.get_new_connection.assert_called_once_with({
                         "NAME": "master", "OPTIONS": {"python_driver": configured},
                     })
+                    self.assertEqual(
+                        wrapper.get_new_connection.return_value.getinfo.call_args_list,
+                        [mock.call(6), mock.call(7)],
+                    )
                     wrapper.get_new_connection.return_value.close.assert_called_once()
 
     def test_unknown_driver_alias_fails(self):
@@ -87,7 +92,8 @@ class DriverCheckTests(SimpleTestCase):
 
     def test_wrong_native_driver_fails_and_closes_connection(self):
         with self.assertRaisesRegex(
-                RuntimeError, "expected ODBC Driver 18, connected with libtdsodbc.so"):
+                RuntimeError,
+                "expected native driver msodbcsql18, connected with libtdsodbc.so"):
             self.run_check("pyodbc", "pyodbc", native_driver="libtdsodbc.so")
         self.wrappers["default"].get_new_connection.return_value.close.assert_called_once()
 
@@ -95,6 +101,7 @@ class DriverCheckTests(SimpleTestCase):
         provider = {
             "id": "mssql-odbc",
             "package": "mssql_python_rs",
+            "version": "1.0.0",
             "driver_path": "/driver/libmssql-odbc.so",
         }
         with self.assertRaisesRegex(
@@ -102,19 +109,25 @@ class DriverCheckTests(SimpleTestCase):
             self.run_check("mssql_python", "mssql_python", provider=provider)
         self.wrappers["default"].get_new_connection.return_value.close.assert_called_once()
 
-    def test_odbc_driver_18_names_are_platform_specific(self):
-        for os_name, platform, driver_name in (
-                ("nt", "win32", "MSODBCSQL18.DLL"),
-                ("posix", "darwin", "libmsodbcsql.18.dylib"),
-                ("posix", "linux", "libmsodbcsql-18.6.so.2.1")):
-            with self.subTest(platform=platform), \
-                    mock.patch.object(check_driver.os, "name", os_name), \
-                    mock.patch.object(check_driver.sys, "platform", platform):
-                self.assertTrue(check_driver._is_odbc_driver_18(driver_name))
+    def test_odbc_driver_18_names_are_normalized(self):
+        for driver_name in (
+                "MSODBCSQL18.DLL",
+                "libmsodbcsql.18.dylib",
+                "libmsodbcsql.18.so",
+                "libmsodbcsql-18.6.so.2.1"):
+            with self.subTest(driver_name=driver_name):
+                self.assertEqual(
+                    check_driver._native_driver_id(driver_name), "msodbcsql18")
+
+    def test_native_check_is_limited_to_configured_ci_jobs(self):
+        output = self.run_check(
+            "pyodbc", "pyodbc", native_driver="libtdsodbc.so",
+            expected_native=None)
+        self.assertIn("native driver: libtdsodbc.so", output)
 
     def test_xml_runner_preserves_requested_verbosity(self):
         suite = mock.Mock()
-        with mock.patch("testapp.runners.open", mock.mock_open()) as output, \
+        with mock.patch("builtins.open", mock.mock_open()) as output, \
                 mock.patch("testapp.runners.xmlrunner.XMLTestRunner") as runner:
             result = ExcludedTestSuiteRunner(verbosity=2).run_suite(suite)
         runner.assert_called_once_with(

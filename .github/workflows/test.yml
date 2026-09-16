@@ -62,6 +62,7 @@ jobs:
 
     env:
       MSSQL_PYTHON_DRIVER: ${{ matrix.driver }}
+      MSSQL_EXPECTED_NATIVE_DRIVER: msodbcsql18
       PYTHONUNBUFFERED: "1"
       MSSQL_PASSWORD: "MyPassword42"
       MSSQL_HOST: "127.0.0.1"

@@ -5,33 +5,33 @@ import sys
 import django
 from django.db import connections
 
-from mssql.base import DatabaseWrapper
-
-
-def _expected_dbapi(configured):
+def _expected_dbapi(configured, uses_mssql_python):
     value = (configured or '').strip()
     if not value or value.lower() == 'pyodbc':
         return 'pyodbc'
-    if DatabaseWrapper._uses_mssql_python(
-            {'OPTIONS': {'python_driver': value}}):
+    if uses_mssql_python({'OPTIONS': {'python_driver': value}}):
         return 'mssql_python'
     return value
 
 
-def _is_odbc_driver_18(driver_name):
+def _native_driver_id(driver_name):
     name = os.path.basename(str(driver_name)).lower()
-    if os.name == 'nt':
-        return name == 'msodbcsql18.dll'
-    if sys.platform == 'darwin':
-        return name == 'libmsodbcsql.18.dylib'
-    return name.startswith('libmsodbcsql-18.') and '.so' in name
+    if (name == 'msodbcsql18.dll' or
+            name in ('libmsodbcsql.18.dylib', 'libmsodbcsql.18.so') or
+            name.startswith('libmsodbcsql-18.') and '.so' in name):
+        return 'msodbcsql18'
+    return name
 
 
 def main():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "testapp.settings")
     django.setup()
+    from mssql.base import DatabaseWrapper
+
     expected = _expected_dbapi(
-        os.environ.get("MSSQL_PYTHON_DRIVER", "pyodbc"))
+        os.environ.get("MSSQL_PYTHON_DRIVER", "pyodbc"),
+        DatabaseWrapper._uses_mssql_python)
+    expected_native = os.environ.get("MSSQL_EXPECTED_NATIVE_DRIVER")
     print("Python: %s; Django: %s" % (sys.version, django.get_version()), flush=True)
     for alias in ("default", "other"):
         wrapper = connections[alias]
@@ -47,18 +47,19 @@ def main():
                 )
             native_driver = connection.getinfo(
                 wrapper.Database.SQL_DRIVER_NAME)
-            if not _is_odbc_driver_18(native_driver):
+            native_version = connection.getinfo(
+                wrapper.Database.SQL_DRIVER_VER)
+            native_id = _native_driver_id(native_driver)
+            if expected_native and native_id != expected_native:
                 raise RuntimeError(
-                    "%s: expected ODBC Driver 18, connected with %s" %
-                    (alias, native_driver)
+                    "%s: expected native driver %s, connected with %s" %
+                    (alias, expected_native, native_driver)
                 )
-            if actual == "mssql_python":
+            if actual == "mssql_python" and expected_native:
                 provider = wrapper.Database.get_native_provider_info()
-                provider_driver = os.path.basename(provider["driver_path"])
-                if (provider["id"] != "msodbcsql18" or
-                        provider["package"] != "mssql_python_odbc" or
-                        provider_driver.lower() !=
-                        os.path.basename(str(native_driver)).lower()):
+                if (provider["id"] != expected_native or
+                        provider["version"].split('.')[0] !=
+                        str(native_version).split('.')[0]):
                     raise RuntimeError(
                         "%s: unexpected mssql-python native provider %r" %
                         (alias, provider)
@@ -69,7 +70,7 @@ def main():
                 "%s: %s %s; native driver: %s %s" % (
                     alias, actual, version,
                     native_driver,
-                    connection.getinfo(wrapper.Database.SQL_DRIVER_VER),
+                    native_version,
                 ),
                 flush=True,
             )
