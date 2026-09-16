@@ -22,8 +22,9 @@ For behavior-changing pull requests, act as **Regression Police**: turn plausibl
 regressions into disposable, executable proofs before reporting them. Static reasoning may
 identify candidates, but it is not evidence when the behavior can be exercised in `testapp`.
 
-1. **Freeze the evidence target.** Record `git rev-parse HEAD` before testing. Publish evidence
-   only for that SHA, and stop if the checkout changes during review.
+1. **Freeze the evidence target.** Record `git rev-parse HEAD` before testing and verify that it
+   is the reviewed pull request's head SHA, not a synthetic merge commit. Publish evidence only
+   for that SHA, and stop if the checkout changes during review.
 2. **Mine a small suspect set.** Trace changed code through its callers and choose at most three
    high-value candidates. Prioritize silent wrong results, data loss, broken migrations, and
    cross-version failures over style or speculative edge cases.
@@ -31,10 +32,10 @@ identify candidates, but it is not evidence when the behavior can be exercised i
    existing models and helpers. Exercise the real ORM and SQL Server behavior, avoid mocks for
    database behavior, and assert observable rows, schema, or errors rather than SQL text when
    possible. Do not commit the generated test.
-4. **Run the identical test on head and base.** Run only the generated test on the reviewed SHA,
-   then copy it unchanged to a detached worktree at `git merge-base HEAD origin/dev` and run the
-   same command there. Keep the two runs sequential so they do not collide on shared test
-   databases.
+4. **Run the identical test on head and base.** Run only the generated test on the reviewed SHA.
+   Resolve the pull request's base ref, fetch it if needed, then copy the test unchanged to a
+   detached worktree at `git merge-base HEAD origin/<base-ref>` and run the same command there.
+   Keep the two runs sequential so they do not collide on shared test databases.
 5. **Interpret the differential correctly.**
 
    | Base | Head | Verdict |

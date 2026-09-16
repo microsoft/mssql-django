@@ -21,6 +21,8 @@ jobs:
         image: mcr.microsoft.com/mssql/server:2025-latest
         env:
           ACCEPT_EULA: "Y"
+          # Throwaway password for the ephemeral test container. Keep this in sync with
+          # the MSSQL_PASSWORD exported by Configure review environment below.
           MSSQL_SA_PASSWORD: "MyPassword42"
         ports:
           - 1433:1433
@@ -28,6 +30,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -42,7 +47,12 @@ jobs:
           curl -sSL -O "https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb"
           sudo dpkg -i packages-microsoft-prod.deb
           rm packages-microsoft-prod.deb
-          sudo apt-get update
+          # apt on the hosted runner occasionally holds the dpkg lock; retry a few times.
+          for i in 1 2 3 4 5; do
+            sudo apt-get update && break
+            echo "apt-get update failed (attempt $i), retrying in 10s..."
+            sleep 10
+          done
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
 
       - name: Configure review environment
