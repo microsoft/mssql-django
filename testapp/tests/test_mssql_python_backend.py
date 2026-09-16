@@ -2,6 +2,7 @@
 # Licensed under the BSD license.
 
 import datetime
+import uuid
 from contextlib import ExitStack, closing
 from types import SimpleNamespace
 from unittest import mock
@@ -12,6 +13,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 
 from mssql import base
 from mssql.compiler import _cursor_iter
+from testapp.models import UUIDModel
 
 
 @override_settings(DATABASE_CONNECTION_POOLING=True)
@@ -75,7 +77,7 @@ class TestMssqlPythonConnection(SimpleTestCase):
         self.assertIs(connection, self.driver.connect.return_value)
         self.assertIs(self.wrapper.Database, self.driver)
         args, kwargs = self.driver.connect.call_args
-        self.assertEqual(kwargs, {"timeout": 7})
+        self.assertEqual(kwargs, {"timeout": 7, "native_uuid": False})
         for keyword in ("DRIVER=", "DSN=", "SERVERNAME=", "MARS_Connection="):
             self.assertNotIn(keyword, args[0])
         self.assertIn("SERVER=example.test", args[0])
@@ -113,6 +115,16 @@ class TestMssqlPythonConnection(SimpleTestCase):
                     self.driver.connect.call_args.args[0],
                     "SERVER=example.test;DATABASE=testdb;" + extra,
                 )
+
+    def test_explicit_server_aliases_replace_generated_server(self):
+        for alias in ("Address", "Addr"):
+            with self.subTest(alias=alias):
+                extra = alias + "=override.example.test"
+                self.params["OPTIONS"]["extra_params"] = extra
+                self.wrapper.get_new_connection(self.params)
+                connstr = self.driver.connect.call_args.args[0]
+                self.assertNotIn("SERVER=example.test", connstr)
+                self.assertTrue(connstr.endswith(";" + extra))
 
     def test_braced_keyword_text_does_not_override_generated_server(self):
         extra = "ApplicationIntent={ReadOnly;SERVER=not-a-server}"
@@ -200,6 +212,23 @@ class TestMssqlPythonConnection(SimpleTestCase):
         self.driver.connect.assert_called_once()
         self.pyodbc_connect.assert_not_called()
 
+    def test_mssql_python_communication_failure_clears_connection(self):
+        stale = mock.Mock()
+        error = RuntimeError(
+            "Driver Error: Communication link failure; "
+            "DDBC Error: [Microsoft]TCP Provider: Error code 0x2746"
+        )
+        error.driver_error = "Communication link failure"
+        self.wrapper._use_python_driver = True
+        self.wrapper.connection = stale
+        self.wrapper.connection_recovery_interval_msec = 0
+        self.wrapper.close = mock.Mock()
+
+        self.wrapper._on_error(error)
+
+        self.wrapper.close.assert_called_once_with()
+        self.assertIsNone(self.wrapper.connection)
+
 
 class TestMssqlPythonConnectionState(SimpleTestCase):
     def test_mars_capabilities_follow_driver_on_reinitialization(self):
@@ -230,6 +259,13 @@ class TestMssqlPythonConnectionState(SimpleTestCase):
 
 
 class TestMssqlPythonIteration(TestCase):
+    def test_native_uniqueidentifier_converts_to_uuid(self):
+        value = uuid.UUID("01234567-89ab-cdef-0123-456789abcdef")
+        rows = UUIDModel.objects.raw(
+            "SELECT CAST(%s AS uniqueidentifier) AS id", [str(value)]
+        )
+        self.assertEqual(list(rows)[0].pk, value)
+
     def test_non_mars_iteration_allows_nested_query(self):
         wrapper = connection.copy(alias="non_mars_iteration")
         self.addCleanup(wrapper.close)
@@ -242,9 +278,11 @@ class TestMssqlPythonIteration(TestCase):
             cursor.execute("""
                 WITH d(n) AS (SELECT n FROM
                     (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9)) x(n))
-                SELECT TOP (2000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
+                SELECT TOP (2000)
+                    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n,
                     CAST(REPLICATE(N'x', 1024) AS nvarchar(1024))
                 FROM d a CROSS JOIN d b CROSS JOIN d c CROSS JOIN d e
+                ORDER BY n
             """)
             with closing(_cursor_iter(cursor, [], None, 2)) as chunks:
                 self.assertEqual(next(chunks), [(1, payload), (2, payload)])

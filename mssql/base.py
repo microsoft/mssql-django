@@ -556,9 +556,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if use_python_driver:
             # mssql-python rejects duplicate keywords; explicit extras take precedence.
             extra_params = self._parse_extra_params(options_extra_params)
+            extra_keys = set(extra_params)
+            if extra_keys & {'address', 'addr'}:
+                extra_keys.add('server')
             cstr_parts = {
                 key: value for key, value in cstr_parts.items()
-                if key.lower() not in extra_params
+                if key.lower() not in extra_keys
             }
 
         connstr = encode_connection_string(cstr_parts)
@@ -604,7 +607,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         args = {
             'timeout': timeout,
         }
-        if not use_python_driver:
+        if use_python_driver:
+            # Preserve the string UUID values expected by Django's converter.
+            args['native_uuid'] = False
+        else:
             # ``unicode_results`` is a pyodbc-only connect keyword.
             args['unicode_results'] = unicode_results
         if 'TOKEN' in conn_params:
@@ -808,10 +814,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def _on_error(self, e):
         if self._use_python_driver:
-            # mssql-python carries only the message text (no SQLSTATE at
-            # e.args[0]), so match the network-error SQLSTATEs against it.
-            network_error = any(
-                code in str(e) for code in self._codes_for_networkerror
+            # mssql-python maps 08S01 to this driver error and drops the SQLSTATE.
+            network_error = (
+                getattr(e, 'driver_error', None) == 'Communication link failure' or
+                any(code in str(e) for code in self._codes_for_networkerror)
             )
         else:
             network_error = e.args[0] in self._codes_for_networkerror
