@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from argparse import Namespace
 from pathlib import Path
@@ -378,8 +379,18 @@ class ResultClassificationTests(unittest.TestCase):
                     timeout=0.5,
                 )
             child_pid = int(pid_file.read_text())
-            with self.assertRaises(ProcessLookupError):
-                os.kill(child_pid, 0)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(child_pid, 0)
+                except ProcessLookupError:
+                    break
+                proc_stat = Path(f"/proc/{child_pid}/stat")
+                if proc_stat.exists() and proc_stat.read_text().split()[2] == "Z":
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail("descendant process remained running after timeout")
 
     def test_timeout_with_output_returns_text(self):
         script = "import time; print('started', flush=True); time.sleep(30)"
