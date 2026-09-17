@@ -15,8 +15,8 @@ This project is the continuation and evolution of earlier community efforts, and
 | Platforms | Windows x64; Windows ARM64 with Python 3.11+; macOS 15+ on Intel or Apple silicon; Linux x64/ARM64 with glibc 2.28+ or musl 1.2+ |
 | SQL Server | 2016, 2017, 2019, 2022, 2025 |
 | Azure SQL | Database, Managed Instance, SQL Database in Microsoft Fabric |
-| ODBC Driver | Microsoft ODBC Driver 17 or 18 for SQL Server |
-| FreeTDS | Supported via FreeTDS ODBC driver |
+| Database driver | pyodbc (default), mssql-python |
+| Native connectivity | Microsoft ODBC Driver 17/18 or FreeTDS with pyodbc; bundled ODBC Driver 18 with mssql-python |
 
 mssql-django 2.0 requires mssql-python and therefore supports only platforms
 with a compatible mssql-python distribution. SUSE Linux ARM64 is not supported.
