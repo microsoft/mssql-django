@@ -16,7 +16,7 @@ This project is the continuation and evolution of earlier community efforts, and
 | SQL Server | 2016, 2017, 2019, 2022, 2025 |
 | Azure SQL | Database, Managed Instance, SQL Database in Microsoft Fabric |
 | Database driver | pyodbc (default), mssql-python |
-| Native connectivity | Microsoft ODBC Driver 17/18 or FreeTDS with pyodbc; bundled ODBC Driver 18 with mssql-python |
+| Native connectivity | Microsoft ODBC Driver 17/18 with pyodbc; bundled ODBC Driver 18 with mssql-python |
 
 mssql-django 2.0 requires mssql-python and therefore supports only platforms
 with a compatible mssql-python distribution. SUSE Linux ARM64 is not supported.
@@ -82,7 +82,7 @@ DATABASE_CONNECTION_POOLING = False
 | `driver` | String | `"ODBC Driver 18 for SQL Server"` | ODBC driver to use (pyodbc path). Auto-falls back to Driver 17 if 18 is not installed. |
 | `isolation_level` | String | `None` | [Transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql): `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SNAPSHOT`, or `SERIALIZABLE` |
 | `dsn` | String | Unset | Named DSN, can be used instead of `HOST` (pyodbc only) |
-| `host_is_server` | Boolean | `False` | Set to `True` to use `HOST`/`PORT` directly with FreeTDS instead of a `freetds.conf` dataserver name (pyodbc only). [Details](https://www.freetds.org/userguide/dsnless.html) |
+| `host_is_server` | Boolean | `False` | Legacy pyodbc option. Set to `True` to pass `HOST` as `SERVER` and `PORT` separately. |
 | `unicode_results` | Boolean | `False` | Activate pyodbc's unicode\_results feature |
 | `extra_params` | String | Unset | Additional connection parameters (`"param=value;param=value"`), passed unchanged to the selected driver. See [authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) and [driver-specific rules](#selecting-the-database-driver). |
 | `collation` | String | `None` | Collation for text field lookups (e.g. `"Chinese_PRC_CI_AS"`) |
