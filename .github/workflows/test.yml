@@ -123,9 +123,9 @@ jobs:
           python -m pip install --upgrade pip wheel setuptools
           pip install -e ".[test]" "${{ matrix.stack.django-spec }}"
 
-      - name: Install the optional released driver
+      - name: Pin the released driver
         if: matrix.driver == 'mssql_python'
-        run: python -m pip install -e ".[mssql-python]" "mssql-python==1.15.0"
+        run: python -m pip install "mssql-python==1.15.0"
 
       - name: Wait for SQL Server
         run: |

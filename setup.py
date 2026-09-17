@@ -42,13 +42,12 @@ setup(
     python_requires='>=3.10',
     install_requires=[
         'django>=5.2,<6.2',
+        'mssql-python>=1.15.0',
         'pyodbc>=3.0',
         'pytz',
     ],
     extras_require={
         'test': ['unittest-xml-reporting>=3.2.0'],
-        # Explicit opt-in; its Python >=3.10 requirement must not be silently skipped.
-        'mssql-python': ['mssql-python>=1.15.0'],
     },
     package_data={'mssql': ['regex_clr.dll']},
     classifiers=CLASSIFIERS,
