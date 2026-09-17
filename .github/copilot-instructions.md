@@ -32,6 +32,7 @@ testapp/               # Unit tests for the backend
 ├── settings.py        # Test configuration with EXCLUDED_TESTS
 └── models.py          # Test models
 
+CHANGELOG.md            # User-facing product changes from 1.7.0 onward
 django/                # NOT in repo — cloned at runtime by test.sh for full test suite
 ```
 
@@ -166,6 +167,11 @@ For contribution conventions (branch, commit prefixes, history rules) and cross-
 ### Fix Quality
 - Follow the root-cause-over-workaround and node-level-fix principles in `AGENTS.md` (Review judgment).
 - Use the existing extension points: the `as_microsoft` monkey-patching pattern in `functions.py`, the `_as_microsoft()` dispatch in `compiler.py`, and compiler method overrides.
+
+### Changelog Maintenance
+- Update `CHANGELOG.md` under `Unreleased` in the same PR for user-facing product changes: runtime behavior, supported versions or platforms, installation dependencies, public settings/options/APIs, compatibility, deprecations, removals, and user-visible bug fixes.
+- Do not add entries for CI, AI tooling or instructions, DevOps and release pipelines, test-only changes, contributor tooling, internal refactors with no user-visible effect, or documentation-only corrections that do not change the product contract.
+- Keep each entry concise, describe the user-visible outcome, and link the PR or issue.
 
 ### Test Discipline
 - **All tests must be green before submitting.** If a test fails due to a SQL Server limitation (not a bug you introduced), add it to `EXCLUDED_TESTS` in `testapp/settings.py` with a comment explaining why.
