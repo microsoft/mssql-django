@@ -14,6 +14,8 @@ from django.db.models.indexes import Index
 from django.db.models import DO_NOTHING
 from django.conf import settings
 
+from mssql.parser import parse_multipart_identifier, build_multipart_name
+
 SQL_AUTOFIELD = -777555
 SQL_BIGAUTOFIELD = -777444
 SQL_SMALLAUTOFIELD = -777333
@@ -23,7 +25,21 @@ FieldInfo = namedtuple("FieldInfo", BaseFieldInfo._fields + ("comment",))
 TableInfo = namedtuple("TableInfo", BaseTableInfo._fields + ("comment",))
 
 def get_schema_name():
-    return getattr(settings, 'SCHEMA_TO_INSPECT', 'SCHEMA_NAME()')
+    if hasattr(settings, 'SCHEMA_TO_INSPECT'):
+        return getattr(settings, 'SCHEMA_TO_INSPECT')
+    return None
+
+def get_table_name_with_schema(table_name):
+    # This takes into account that doing
+    # db_table = '[schema].[table_name]'
+    # is supported
+    
+    _, _, schema_name, table_name = parse_multipart_identifier(table_name)
+
+    if schema_name is not None:
+        return f"'{schema_name}'", table_name
+
+    return getattr(settings, 'SCHEMA_TO_INSPECT', 'SCHEMA_NAME()'), table_name
 
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
@@ -80,6 +96,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         if VERSION >= (4, 2) and self.connection.features.supports_comments:
             sql = """SELECT
+                        TABLE_SCHEMA,
                         TABLE_NAME,
                         TABLE_TYPE,
                         CAST(ep.value AS VARCHAR) AS COMMENT
@@ -87,20 +104,52 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     LEFT JOIN sys.tables t ON t.name = i.TABLE_NAME
                     LEFT JOIN sys.extended_properties ep ON t.object_id = ep.major_id
                     AND ((ep.name = 'MS_DESCRIPTION' AND ep.minor_id = 0) OR ep.value IS NULL)
-                    WHERE i.TABLE_SCHEMA = %s""" % (
-                get_schema_name())
+                    """
         else:
-            sql = 'SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s' % (get_schema_name())
+            sql = 'SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES'
+
+        schema = get_schema_name()
+        if schema:
+            sql += f" WHERE TABLE_SCHEMA = {schema}"
+
         cursor.execute(sql)
         types = {'BASE TABLE': 't', 'VIEW': 'v'}
+        rows = cursor.fetchall()
+
+        def create_table_name(schema, table_name):
+            # Why do we do this?
+            # We only use the table name (ie `[table_1]` or `table_1`)
+            # if the schema is `dbo` because this package defaults to 
+            # dbo for its schema. Therefore django models without a
+            # specified schema (eg `django_migrations`) will fall in 
+            # `dbo`. However django expects the found table name 
+            # to be `django_migrations` NOT `dbo.django_migrations`
+            # For the same reason, `build_multipart_name` only adds
+            # braces when brace escaping is used
+            if schema == 'dbo':
+                return build_multipart_name(table_name)
+            return build_multipart_name(schema, table_name)
+
         if VERSION >= (4, 2) and self.connection.features.supports_comments:
-            return [TableInfo(row[0], types.get(row[1]), row[2])
-                    for row in cursor.fetchall()
-                    if row[0] not in self.ignored_tables]
+            return [TableInfo(create_table_name(row[0], row[1]), types.get(row[2]), row[3])
+                    for row in rows
+                    if row[1] not in self.ignored_tables]
         else:
-            return [BaseTableInfo(row[0], types.get(row[1]))
-                    for row in cursor.fetchall()
-                    if row[0] not in self.ignored_tables]
+            return [BaseTableInfo(create_table_name(row[0], row[1]), types.get(row[2]))
+                    for row in rows
+                    if row[1] not in self.ignored_tables]
+
+    def identifier_converter(self, name):
+        """
+        Apply a conversion to the identifier for the purposes of comparison.
+
+        The default identifier converter is for case sensitive comparison.
+        """
+        prefix = '[dbo].['
+        suffix = ']'
+        if name is not None and name.startswith(prefix) and name.endswith(suffix):
+            name = name[len(prefix):-len(suffix)]
+        return name
 
     def _is_auto_field(self, cursor, table_name, column_name):
         """
@@ -130,7 +179,8 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
 
         # map pyodbc's cursor.columns to db-api cursor description
-        columns = [[c[3], c[4], c[6], c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name)]
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+        columns = [[c[3], c[4], c[6], c[6], c[6], c[8], c[10], c[12]] for c in cursor.columns(table=table_name, schema=schema_name[1:-1])]
 
         if not columns:
             raise DatabaseError(f"Table {table_name} does not exist.")
@@ -185,10 +235,12 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         return items
 
     def get_sequences(self, cursor, table_name, table_fields=()):
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+
         cursor.execute(f"""
             SELECT c.name FROM sys.columns c
             INNER JOIN sys.tables t ON c.object_id = t.object_id
-            WHERE t.schema_id = SCHEMA_ID({get_schema_name()}) AND t.name = %s AND c.is_identity = 1""",
+            WHERE t.schema_id = SCHEMA_ID({schema_name}) AND t.name = %s AND c.is_identity = 1""",
                        [table_name])
         # SQL Server allows only one identity column per table
         # https://docs.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
@@ -201,6 +253,8 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         representing all relationships to the given table. On Django 6.1+ the value
         is a 3-tuple that also carries the introspected on-delete rule.
         """
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+
         # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
         # CONSTRAINT_TABLE_USAGE:  http://msdn2.microsoft.com/en-us/library/ms179883.aspx
         # REFERENTIAL_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms179987.aspx
@@ -219,7 +273,7 @@ INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
   ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME AND c.CONSTRAINT_SCHEMA = d.CONSTRAINT_SCHEMA
 INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
   ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME AND a.TABLE_SCHEMA = e.TABLE_SCHEMA
-WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
+WHERE a.TABLE_SCHEMA = {schema_name} AND a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         cursor.execute(sql, (table_name,))
         rows = cursor.fetchall()
         if VERSION >= (6, 1):
@@ -238,6 +292,8 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
         key columns in given table.
         """
         key_columns = []
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+
         cursor.execute(f"""
             SELECT c.name AS column_name, rt.name AS referenced_table_name, rc.name AS referenced_column_name
             FROM sys.foreign_key_columns fk
@@ -245,7 +301,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
             INNER JOIN sys.columns c ON c.object_id = t.object_id AND c.column_id = fk.parent_column_id
             INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
             INNER JOIN sys.columns rc ON rc.object_id = rt.object_id AND rc.column_id = fk.referenced_column_id
-            WHERE t.schema_id = SCHEMA_ID({get_schema_name()}) AND t.name = %s""", [table_name])
+            WHERE t.schema_id = SCHEMA_ID({schema_name}) AND t.name = %s""", [table_name])
         key_columns.extend([tuple(row) for row in cursor.fetchall()])
         return key_columns
 
@@ -266,6 +322,9 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
          * type: The type of the index (btree, hash, etc.)
         """
         constraints = {}
+
+        schema_name, table_name = get_table_name_with_schema(table_name=table_name)
+
         # Loop over the key table, collecting things as constraints
         # This will get PKs, FKs, and uniques, but not CHECK
         cursor.execute(f"""
@@ -308,12 +367,13 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 kc.table_name = fk.table_name AND
                 kc.column_name = fk.column_name
             WHERE
-                kc.table_schema = {get_schema_name()} AND
+                kc.table_schema = {schema_name} AND
                 kc.table_name = %s
             ORDER BY
                 kc.constraint_name ASC,
                 kc.ordinal_position ASC
         """, [table_name])
+
         for constraint, column, kind, ref_table, ref_column in cursor.fetchall():
             # If we're the first column, make the record
             if constraint not in constraints:
@@ -343,7 +403,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 kc.constraint_name = c.constraint_name
             WHERE
                 c.constraint_type = 'CHECK' AND
-                kc.table_schema = {get_schema_name()} AND
+                kc.table_schema = {schema_name} AND
                 kc.table_name = %s
         """, [table_name])
         for constraint, column in cursor.fetchall():
@@ -410,7 +470,7 @@ WHERE a.TABLE_SCHEMA = {get_schema_name()} AND a.TABLE_NAME = %s AND a.CONSTRAIN
                 ic.object_id = c.object_id AND
                 ic.column_id = c.column_id
             WHERE
-                t.schema_id = SCHEMA_ID({get_schema_name()}) AND
+                t.schema_id = SCHEMA_ID({schema_name}) AND
                 t.name = %s
             ORDER BY
                 i.index_id ASC,
