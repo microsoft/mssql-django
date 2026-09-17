@@ -151,3 +151,4 @@ All notable user-facing changes to mssql-django are documented in this file.
 [#599]: https://github.com/microsoft/mssql-django/pull/599
 [#600]: https://github.com/microsoft/mssql-django/pull/600
 [#605]: https://github.com/microsoft/mssql-django/pull/605
+[#609]: https://github.com/microsoft/mssql-django/pull/609
