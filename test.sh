@@ -18,7 +18,7 @@ if python -c "import django; exit(0 if django.VERSION >= (5, 2) else 1)"; then
     COMPOSITE_PK_TESTS="composite_pk"
 fi
 
-PYTHONPATH=.. coverage run --parallel-mode tests/runtests.py --settings=testapp.settings --noinput \
+PYTHONPATH=.. coverage run --parallel-mode tests/runtests.py --settings=testapp.settings --noinput --verbosity=2 \
     aggregation \
     aggregation_regress \
     annotations \
@@ -128,4 +128,3 @@ python -m coverage combine .. .
 # without accidentally pulling in testapp/ test files.
 python -m coverage xml --include '*/mssql/*' --omit '*virtualenvs*' -o coverage.xml
 python -m coverage report --include '*/mssql/*' || true
-
