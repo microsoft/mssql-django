@@ -19,6 +19,8 @@ All notable user-facing changes to mssql-django are documented in this file.
   timezone offsets across the year ([#535]).
 - Honored explicit `MARS_Connection` values for Microsoft Fabric Warehouse
   connections and buffered ORM iteration when MARS is disabled ([#600]).
+- Allowed future SQL Server releases to use the latest capabilities known to
+  the backend instead of failing version validation ([#609]).
 
 ### Fixed
 
@@ -149,3 +151,4 @@ All notable user-facing changes to mssql-django are documented in this file.
 [#599]: https://github.com/microsoft/mssql-django/pull/599
 [#600]: https://github.com/microsoft/mssql-django/pull/600
 [#605]: https://github.com/microsoft/mssql-django/pull/605
+[#609]: https://github.com/microsoft/mssql-django/pull/609
