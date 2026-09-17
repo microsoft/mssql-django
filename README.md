@@ -19,7 +19,7 @@ This project is the continuation and evolution of earlier community efforts, and
 
 ## Quick Start
 
-1. Install mssql-django (pulls in Django, pyodbc, and pytz automatically):
+1. Install mssql-django (pulls in Django, pyodbc, and tzdata automatically):
 
        pip install mssql-django
 
