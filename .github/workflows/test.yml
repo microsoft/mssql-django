@@ -26,8 +26,28 @@ permissions:
   contents: read
 
 jobs:
+  regression-police:
+    name: Regression Police harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Validate Regression Police harness
+        working-directory: .github/skills/code-review
+        run: python test_run_differential.py
+
   testapp:
-    name: Py ${{ matrix.python }} / Django ${{ matrix.django }}
+    name: Py ${{ matrix.stack.python }} / Django ${{ matrix.stack.django }} / ${{ matrix.driver }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -37,9 +57,10 @@ jobs:
       # (that lives on ADO during the dual-run). Every currently-supported Django minor
       # is covered, each on its lowest supported Python and on the newest Python it runs
       # on, so the Python floor/ceiling of each Django is exercised. EOL Django versions
-      # (<= 5.1) are intentionally excluded here; they stay on the ADO nightly legacy legs.
+      # (<= 5.1) are excluded from both this workflow and the ADO matrix.
       matrix:
-        include:
+        driver: [pyodbc, mssql_python]
+        stack:
           - { python: "3.10", django: "5.2", django-spec: "django>=5.2,<5.3" }
           - { python: "3.13", django: "5.2", django-spec: "django>=5.2,<5.3" }
           - { python: "3.12", django: "6.0", django-spec: "django>=6.0,<6.1" }
@@ -60,6 +81,9 @@ jobs:
           - 1433:1433
 
     env:
+      MSSQL_PYTHON_DRIVER: ${{ matrix.driver }}
+      MSSQL_EXPECTED_NATIVE_DRIVER: msodbcsql18
+      PYTHONUNBUFFERED: "1"
       MSSQL_PASSWORD: "MyPassword42"
       MSSQL_HOST: "127.0.0.1"
       # Driver 18 encrypts by default. Trust the ephemeral test container's self-signed
@@ -70,11 +94,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Set up Python ${{ matrix.python }}
+      - name: Set up Python ${{ matrix.stack.python }}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ matrix.python }}
+          python-version: ${{ matrix.stack.python }}
           cache: pip
           cache-dependency-path: setup.py
 
@@ -95,7 +121,11 @@ jobs:
       - name: Install mssql-django
         run: |
           python -m pip install --upgrade pip wheel setuptools
-          pip install -e ".[test]" "${{ matrix.django-spec }}"
+          pip install -e ".[test]" "${{ matrix.stack.django-spec }}"
+
+      - name: Pin the released driver
+        if: matrix.driver == 'mssql_python'
+        run: python -m pip install "mssql-python==1.15.0"
 
       - name: Wait for SQL Server
         run: |
@@ -129,6 +159,9 @@ jobs:
           done
           echo "SQL Server did not become ready in time."
           exit 1
+
+      - name: Check selected database driver
+        run: python -m testapp.check_driver
 
       - name: Run testapp suite
         run: python manage.py test testapp --noinput -v 2

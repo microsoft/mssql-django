@@ -36,7 +36,7 @@ class ExcludedTestSuiteRunner(DiscoverRunner):
         return suite
 
     def run_suite(self, suite):
-        kwargs = dict(verbosity=1, descriptions=False)
+        kwargs = dict(verbosity=self.verbosity, descriptions=False)
 
         with open('./result.xml', 'wb') as xml:
             return xmlrunner.XMLTestRunner(
