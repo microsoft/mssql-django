@@ -11,8 +11,12 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 ### Changed
 
+- Made mssql-python 1.15.0 or newer a required dependency while retaining
+  pyodbc as the default database driver ([#599]).
 - Raised the supported versions to Python 3.10-3.14 and Django 5.2-6.1
   ([#605]).
+- Replaced pytz with standard-library zoneinfo and tzdata, stabilizing named
+  timezone offsets across the year ([#535]).
 - Honored explicit `MARS_Connection` values for Microsoft Fabric Warehouse
   connections and buffered ORM iteration when MARS is disabled ([#600]).
 
@@ -130,6 +134,7 @@ All notable user-facing changes to mssql-django are documented in this file.
 [#524]: https://github.com/microsoft/mssql-django/pull/524
 [#532]: https://github.com/microsoft/mssql-django/pull/532
 [#533]: https://github.com/microsoft/mssql-django/pull/533
+[#535]: https://github.com/microsoft/mssql-django/pull/535
 [#537]: https://github.com/microsoft/mssql-django/pull/537
 [#541]: https://github.com/microsoft/mssql-django/pull/541
 [#553]: https://github.com/microsoft/mssql-django/pull/553
@@ -141,5 +146,6 @@ All notable user-facing changes to mssql-django are documented in this file.
 [#575]: https://github.com/microsoft/mssql-django/pull/575
 [#583]: https://github.com/microsoft/mssql-django/pull/583
 [#596]: https://github.com/microsoft/mssql-django/pull/596
+[#599]: https://github.com/microsoft/mssql-django/pull/599
 [#600]: https://github.com/microsoft/mssql-django/pull/600
 [#605]: https://github.com/microsoft/mssql-django/pull/605
