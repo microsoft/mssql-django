@@ -13,7 +13,7 @@ This project is the continuation and evolution of earlier community efforts, and
 | Django | 5.2, 6.0, 6.1 |
 | Python | CPython 3.10 – 3.14 (Django 6.0 and 6.1 require 3.12+) |
 | Platforms | Windows x64; Windows ARM64 with Python 3.11+; macOS 15+ on Intel or Apple silicon; Linux x64/ARM64 with glibc 2.28+ or musl 1.2+ |
-| SQL Server | 2016, 2017, 2019, 2022, 2025 |
+| SQL Server | 2017, 2019, 2022, 2025 |
 | Azure SQL | Database, Managed Instance, SQL Database in Microsoft Fabric |
 | Database driver | pyodbc (default), mssql-python |
 | Native connectivity | Microsoft ODBC Driver 17/18 with pyodbc; bundled ODBC Driver 18 with mssql-python |
