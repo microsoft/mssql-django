@@ -192,3 +192,40 @@ class TestJSONField(TestCase):
         select_sql = captured[-1]["sql"]
         self.assertEqual(select_sql.upper().count("TRY_CONVERT(FLOAT"), 1)
 
+
+    @skipUnless(
+        connections['default'].vendor != 'microsoft'
+        or connections['default'].features.supports_json_path_exists
+        or connections['default'].features.supports_json_openjson,
+        "isnull=True cannot distinguish absent key from JSON null below compat 130. "
+    )
+    def test_key_isnull(self):
+        missing_key = JSONModel.objects.create(value={"other": 1})
+        null_value = JSONModel.objects.create(value={"k": None})
+        normal_value = JSONModel.objects.create(value={"k": "v"})
+
+        self.assertSequenceEqual(
+            JSONModel.objects.filter(value__k__isnull=True),
+            [missing_key],
+        )
+
+        self.assertSequenceEqual(
+            JSONModel.objects.filter(value__k__isnull=False),
+            [null_value, normal_value],
+        )
+
+        # sqlite:
+        for row in (missing_key, null_value, normal_value):
+            row.save(using='sqlite')
+
+        self.assertSequenceEqual(
+            JSONModel.objects.using('sqlite').filter(value__k__isnull=True),
+            [missing_key],
+            msg="SQLite: value__k__isnull=True must exclude JSON null.",
+        )
+        self.assertSequenceEqual(
+            JSONModel.objects.using('sqlite').filter(value__k__isnull=False),
+            [null_value, normal_value],
+            msg="SQLite: value__k__isnull=False must include JSON null.",
+        )
+
