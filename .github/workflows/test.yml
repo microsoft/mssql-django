@@ -57,7 +57,7 @@ jobs:
       # (that lives on ADO during the dual-run). Every currently-supported Django minor
       # is covered, each on its lowest supported Python and on the newest Python it runs
       # on, so the Python floor/ceiling of each Django is exercised. EOL Django versions
-      # (<= 5.1) are intentionally excluded here; they stay on the ADO nightly legacy legs.
+      # (<= 5.1) are excluded from both this workflow and the ADO matrix.
       matrix:
         driver: [pyodbc, mssql_python]
         stack:
