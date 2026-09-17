@@ -24,7 +24,6 @@ ENV PATH="$PATH:/opt/mssql-tools18/bin"
 # Pre-install core Python dependencies so post-create is faster
 RUN pip install --no-cache-dir \
         pyodbc \
-        pytz \
         coverage
 
 WORKDIR /workspaces/mssql-django

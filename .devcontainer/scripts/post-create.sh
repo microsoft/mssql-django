@@ -10,7 +10,6 @@ pip install -e .
 echo "📦 Installing dev/test dependencies..."
 pip install \
     pyodbc \
-    pytz \
     coverage \
     unittest-xml-reporting \
     tox
