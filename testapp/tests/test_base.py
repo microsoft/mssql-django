@@ -1083,12 +1083,20 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         self.assertEqual(wrapper.sql_server_version, 2022)
         self._clear_caches(wrapper)
 
+    def test_on_prem_newer_version_uses_latest_capabilities(self):
+        """Newer SQL Server releases should use the latest known capabilities."""
+        wrapper = self._make_wrapper("test_onprem_newer")
+        self._mock_server_properties(wrapper, 3, "18.0.1000.0")
+        latest = max(DatabaseWrapper._sql_server_versions.values())
+        self.assertEqual(wrapper.sql_server_version, latest)
+        self._clear_caches(wrapper)
+
     def test_on_prem_unsupported_version_raises(self):
         """Unsupported on-premises version should raise NotSupportedError."""
         from django.db import NotSupportedError
 
         wrapper = self._make_wrapper("test_onprem_bad")
-        self._mock_server_properties(wrapper, 3, "99.0.0.0")
+        self._mock_server_properties(wrapper, 3, "8.0.0.0")
 
         with self.assertRaises(NotSupportedError):
             _ = wrapper.sql_server_version
