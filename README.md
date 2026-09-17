@@ -20,7 +20,7 @@ This project is the continuation and evolution of earlier community efforts, and
 
 mssql-django 2.0 requires mssql-python and therefore supports only platforms
 with a compatible mssql-python distribution. SUSE Linux ARM64 is not supported.
-Users on other platforms must remain on the mssql-django 1.8 release line.
+Users on other platforms must remain on mssql-django 1.8.0.
 
 ## Quick Start
 
