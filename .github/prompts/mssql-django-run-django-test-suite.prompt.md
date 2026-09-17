@@ -121,7 +121,7 @@ git checkout $DJANGO_VERSION
 pip install -r tests/requirements/py3.txt
 
 # Run tests
-coverage run tests/runtests.py --settings=testapp.settings --noinput \
+coverage run tests/runtests.py --settings=testapp.settings --noinput --parallel 1 \
     aggregation \
     annotations \
     basic \
@@ -134,14 +134,14 @@ coverage run tests/runtests.py --settings=testapp.settings --noinput \
 
 ```bash
 cd /workspaces/mssql-django/django
-python tests/runtests.py --settings=testapp.settings --noinput composite_pk
+python tests/runtests.py --settings=testapp.settings --noinput --parallel 1 composite_pk
 ```
 
 ### Run Specific Test
 
 ```bash
 cd /workspaces/mssql-django/django
-python tests/runtests.py --settings=testapp.settings --noinput \
+python tests/runtests.py --settings=testapp.settings --noinput --parallel 1 \
     composite_pk.test_filter.CompositePKFilterTests.test_explicit_subquery
 ```
 

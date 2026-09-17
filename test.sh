@@ -18,7 +18,11 @@ if python -c "import django; exit(0 if django.VERSION >= (5, 2) else 1)"; then
     COMPOSITE_PK_TESTS="composite_pk"
 fi
 
-PYTHONPATH=.. coverage run --parallel-mode tests/runtests.py --settings=testapp.settings --noinput \
+# Force --parallel 1: enabling database cloning (for the --parallel feature)
+# makes runtests.py default to one process per core, but this suite's custom
+# runner (expected-failure masking + xmlrunner) does not support parallel
+# workers yet. Keep the suite serial until that runner is reworked.
+PYTHONPATH=.. coverage run --parallel-mode tests/runtests.py --settings=testapp.settings --noinput --parallel 1 \
     aggregation \
     aggregation_regress \
     annotations \

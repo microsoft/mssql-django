@@ -113,7 +113,7 @@ python manage.py test --noinput
 bash test.sh
 
 # Run specific Django test module
-cd django && python tests/runtests.py --settings=testapp.settings composite_pk
+cd django && python tests/runtests.py --settings=testapp.settings --parallel 1 composite_pk
 
 # Check Python syntax
 python -m py_compile mssql/compiler.py
