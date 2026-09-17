@@ -10,8 +10,8 @@ This project is the continuation and evolution of earlier community efforts, and
 
 | Component | Supported Versions |
 |---|---|
-| Django | 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0, 6.1 |
-| Python | 3.8 – 3.14 (Django 6.0 and 6.1 require 3.12+) |
+| Django | 5.2, 6.0, 6.1 |
+| Python | 3.10 – 3.14 (Django 6.0 and 6.1 require 3.12+) |
 | SQL Server | 2016, 2017, 2019, 2022, 2025 |
 | Azure SQL | Database, Managed Instance, SQL Database in Microsoft Fabric |
 | ODBC Driver | Microsoft ODBC Driver 17 or 18 for SQL Server |
@@ -19,7 +19,7 @@ This project is the continuation and evolution of earlier community efforts, and
 
 ## Quick Start
 
-1. Install mssql-django (pulls in Django, pyodbc, and pytz automatically):
+1. Install mssql-django (pulls in Django, mssql-python, pyodbc, and pytz automatically):
 
        pip install mssql-django
 
@@ -73,7 +73,7 @@ DATABASE_CONNECTION_POOLING = False
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `python_driver` | String | Unset | **Unreleased (planned 2.0).** Set to `"mssql_python"` per alias to opt in; unset or `"pyodbc"` keeps the default. See [Selecting the database driver](#selecting-the-database-driver). |
+| `python_driver` | String | Unset | Set to `"mssql_python"` per alias to opt in; unset or `"pyodbc"` keeps the default. See [Selecting the database driver](#selecting-the-database-driver). |
 | `driver` | String | `"ODBC Driver 18 for SQL Server"` | ODBC driver to use (pyodbc path). Auto-falls back to Driver 17 if 18 is not installed. |
 | `isolation_level` | String | `None` | [Transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql): `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SNAPSHOT`, or `SERIALIZABLE` |
 | `dsn` | String | Unset | Named DSN, can be used instead of `HOST` (pyodbc only) |
@@ -113,23 +113,9 @@ Warehouse support for Django migrations or other SQL Server features.
 
 ### Selecting the database driver
 
-> **Unreleased (planned 2.0).** This option and the installation extra require
-> the backend and packaging changes in [#596](https://github.com/microsoft/mssql-django/pull/596)
-> and [#599](https://github.com/microsoft/mssql-django/pull/599); published
-> mssql-django 1.x does not support them.
-
-mssql-django continues to install and use **pyodbc** by default. The
-[mssql-python](https://github.com/microsoft/mssql-python) opt-in requires
-Python 3.10+ and mssql-python >=1.15.0:
-
-```bash
-python -m pip install "mssql-django[mssql-python]>=2.0"
-```
-
-For an unreleased source checkout, use
-`python -m pip install ".[mssql-python]"`. Installing mssql-python alone does
-not add this option to mssql-django 1.x. Select it per alias without changing
-`ENGINE`:
+mssql-django installs both **pyodbc** and
+[mssql-python](https://github.com/microsoft/mssql-python) >=1.15.0. pyodbc
+remains the default. Select mssql-python per alias without changing `ENGINE`:
 
 ```python
 'OPTIONS': {
@@ -164,7 +150,7 @@ different drivers.
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
-| `DATABASE_CONNECTION_POOLING` | Boolean | `True` | Set to `False` before opening connections to disable driver pooling. Applies to pyodbc and the unreleased mssql-python opt-in path. |
+| `DATABASE_CONNECTION_POOLING` | Boolean | `True` | Set to `False` before opening connections to disable driver pooling. Applies to pyodbc and mssql-python. |
 
 ## Known Limitations
 

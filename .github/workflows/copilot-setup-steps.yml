@@ -1,0 +1,132 @@
+name: Copilot Setup Steps
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+      - .github/workflows/test.yml
+      - ".github/skills/code-review/**"
+
+permissions: {}
+
+jobs:
+  # GitHub requires this job name for Copilot code review setup.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2025-latest
+        env:
+          ACCEPT_EULA: "Y"
+          # Throwaway password for the ephemeral test container. Keep this in sync with
+          # the MSSQL_PASSWORD exported by Configure review environment below.
+          MSSQL_SA_PASSWORD: "MyPassword42"
+        ports:
+          - 1433:1433
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: setup.py
+
+      - name: Install ODBC Driver 18
+        run: |
+          set -euo pipefail
+          curl -sSL -O "https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb"
+          sudo dpkg -i packages-microsoft-prod.deb
+          rm packages-microsoft-prod.deb
+          # apt on the hosted runner occasionally holds the dpkg lock; retry a few times.
+          for i in 1 2 3 4 5; do
+            sudo apt-get update && break
+            echo "apt-get update failed (attempt $i), retrying in 10s..."
+            sleep 10
+          done
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
+
+      - name: Configure review environment
+        run: |
+          {
+            echo "MSSQL_PASSWORD=MyPassword42"
+            echo "MSSQL_HOST=127.0.0.1"
+            echo "MSSQL_DRIVER=ODBC Driver 18 for SQL Server"
+            echo "MSSQL_EXTRA_PARAMS=TrustServerCertificate=yes"
+          } >> "$GITHUB_ENV"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          wheelhouse="$RUNNER_TEMP/regression-police-wheelhouse"
+          mkdir -p "$wheelhouse"
+          python -m pip download --dest "$wheelhouse" \
+            setuptools wheel pyodbc pytz "unittest-xml-reporting>=3.2.0"
+          mapfile -t django_specs < <(
+            python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+
+          path = Path(".github/skills/code-review/run_differential.py")
+          spec = importlib.util.spec_from_file_location("run_differential", path)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          print(*module.supported_django(Path.cwd()), sep="\n")
+          PY
+          )
+          for django_spec in "${django_specs[@]}"
+          do
+            python -m pip download --dest "$wheelhouse" "$django_spec"
+          done
+          echo "REGRESSION_POLICE_WHEELHOUSE=$wheelhouse" >> "$GITHUB_ENV"
+          python -m pip install --no-index --find-links "$wheelhouse" \
+            pyodbc pytz "unittest-xml-reporting>=3.2.0" \
+            "${django_specs[-1]}"
+
+      - name: Validate Regression Police harness
+        run: |
+          cd .github/skills/code-review
+          python test_run_differential.py
+
+      - name: Wait for SQL Server
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if python - <<'PY'
+          import os
+          import pyodbc
+
+          try:
+              connection = pyodbc.connect(
+                  f"DRIVER={{{os.environ['MSSQL_DRIVER']}}};"
+                  f"SERVER={os.environ['MSSQL_HOST']},1433;"
+                  f"UID=sa;PWD={os.environ['MSSQL_PASSWORD']};"
+                  f"DATABASE=master;{os.environ['MSSQL_EXTRA_PARAMS']}",
+                  timeout=5,
+              )
+              connection.close()
+          except pyodbc.Error as error:
+              print(error)
+              raise SystemExit(1)
+          PY
+            then
+              echo "SQL Server is ready."
+              exit 0
+            fi
+            echo "SQL Server is not ready (attempt $i/30)."
+            sleep 5
+          done
+          echo "SQL Server did not become ready in time."
+          exit 1
