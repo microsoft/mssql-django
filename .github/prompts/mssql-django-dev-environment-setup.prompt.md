@@ -63,7 +63,7 @@ pip install -e ".[test]"
 # Core dependencies (installed automatically)
 # - Django >= 3.2, < 6.1
 # - pyodbc >= 3.0
-# - pytz
+# - tzdata
 ```
 
 ## Configuration
