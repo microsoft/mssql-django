@@ -42,6 +42,7 @@ setup(
     python_requires='>=3.10',
     install_requires=[
         'django>=5.2,<6.2',
+        'mssql-python>=1.15.0',
         'pyodbc>=3.0',
         'pytz',
     ],

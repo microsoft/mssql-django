@@ -1,7 +1,7 @@
 # PR-validation pipeline for mssql-django (runs on Azure DevOps, not GitHub Actions).
 #
-# Windows_Core and Linux_Core cover Django 5.2, 6.0, and 6.1 on their supported
-# Python versions. PR, CI, nightly, and manual runs use the same supported matrix.
+# Windows_Core and Linux_Core run the supported matrix with pyodbc on every PR
+# and CI build. Nightly/manual jobs run the same matrix with mssql-python.
 #
 # The per-leg build/test steps live in azure-pipelines-steps-windows.yml and
 # azure-pipelines-steps-linux.yml.
@@ -22,6 +22,44 @@ schedules:
     - dev
   always: true
 
+variables:
+  MSSQL_EXPECTED_NATIVE_DRIVER: msodbcsql18
+
+parameters:
+  - name: coreMatrix
+    type: object
+    default:
+      Python3.14 - Django 6.1:
+        python.version: '3.14'
+        tox.env: 'py314-django61'
+      Python3.13 - Django 6.1:
+        python.version: '3.13'
+        tox.env: 'py313-django61'
+      Python3.12 - Django 6.1:
+        python.version: '3.12'
+        tox.env: 'py312-django61'
+      Python3.14 - Django 6.0:
+        python.version: '3.14'
+        tox.env: 'py314-django60'
+      Python3.13 - Django 6.0:
+        python.version: '3.13'
+        tox.env: 'py313-django60'
+      Python3.12 - Django 6.0:
+        python.version: '3.12'
+        tox.env: 'py312-django60'
+      Python3.13 - Django 5.2:
+        python.version: '3.13'
+        tox.env: 'py313-django52'
+      Python3.12 - Django 5.2:
+        python.version: '3.12'
+        tox.env: 'py312-django52'
+      Python3.11 - Django 5.2:
+        python.version: '3.11'
+        tox.env: 'py311-django52'
+      Python3.10 - Django 5.2:
+        python.version: '3.10'
+        tox.env: 'py310-django52'
+
 jobs:
   - job: Windows_Core
     displayName: Windows (supported Django)
@@ -33,36 +71,27 @@ jobs:
 
     strategy:
       matrix:
-        Python3.14 - Django 6.1:
-          python.version: '3.14'
-          tox.env: 'py314-django61'
-        Python3.13 - Django 6.1:
-          python.version: '3.13'
-          tox.env: 'py313-django61'
-        Python3.12 - Django 6.1:
-          python.version: '3.12'
-          tox.env: 'py312-django61'
-        Python3.14 - Django 6.0:
-          python.version: '3.14'
-          tox.env: 'py314-django60'
-        Python3.13 - Django 6.0:
-          python.version: '3.13'
-          tox.env: 'py313-django60'
-        Python3.12 - Django 6.0:
-          python.version: '3.12'
-          tox.env: 'py312-django60'
-        Python3.13 - Django 5.2:
-          python.version: '3.13'
-          tox.env: 'py313-django52'
-        Python3.12 - Django 5.2:
-          python.version: '3.12'
-          tox.env: 'py312-django52'
-        Python3.11 - Django 5.2:
-          python.version: '3.11'
-          tox.env: 'py311-django52'
-        Python3.10 - Django 5.2:
-          python.version: '3.10'
-          tox.env: 'py310-django52'
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}: ${{ stack.value }}
+
+    steps:
+      - template: azure-pipelines-steps-windows.yml
+
+  - job: Windows_MssqlPython
+    displayName: Windows (mssql-python, nightly)
+    condition: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
+    pool:
+      name: Django-1ES-pool
+      demands:
+      - imageOverride -equals JDBC-MMS2025-SQL2025
+    timeoutInMinutes: 120
+
+    strategy:
+      matrix:
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}:
+            python.version: ${{ stack.value['python.version'] }}
+            tox.env: ${{ format('{0}-mssqlpython', stack.value['tox.env']) }}
 
     steps:
       - template: azure-pipelines-steps-windows.yml
@@ -77,36 +106,27 @@ jobs:
 
     strategy:
       matrix:
-        Python3.14 - Django 6.1:
-          python.version: '3.14'
-          tox.env: 'py314-django61'
-        Python3.13 - Django 6.1:
-          python.version: '3.13'
-          tox.env: 'py313-django61'
-        Python3.12 - Django 6.1:
-          python.version: '3.12'
-          tox.env: 'py312-django61'
-        Python3.14 - Django 6.0:
-          python.version: '3.14'
-          tox.env: 'py314-django60'
-        Python3.13 - Django 6.0:
-          python.version: '3.13'
-          tox.env: 'py313-django60'
-        Python3.12 - Django 6.0:
-          python.version: '3.12'
-          tox.env: 'py312-django60'
-        Python3.13 - Django 5.2:
-          python.version: '3.13'
-          tox.env: 'py313-django52'
-        Python3.12 - Django 5.2:
-          python.version: '3.12'
-          tox.env: 'py312-django52'
-        Python3.11 - Django 5.2:
-          python.version: '3.11'
-          tox.env: 'py311-django52'
-        Python3.10 - Django 5.2:
-          python.version: '3.10'
-          tox.env: 'py310-django52'
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}: ${{ stack.value }}
+
+    steps:
+      - template: azure-pipelines-steps-linux.yml
+
+  - job: Linux_MssqlPython
+    displayName: Linux (mssql-python, nightly)
+    condition: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
+    pool:
+      name: Django-1ES-pool
+      demands:
+      - imageOverride -equals Ubuntu22.04-AzurePipelines
+    timeoutInMinutes: 120
+
+    strategy:
+      matrix:
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}:
+            python.version: ${{ stack.value['python.version'] }}
+            tox.env: ${{ format('{0}-mssqlpython', stack.value['tox.env']) }}
 
     steps:
       - template: azure-pipelines-steps-linux.yml
