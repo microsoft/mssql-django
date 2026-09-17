@@ -798,7 +798,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # as a fallback (e.g. "version >= 2016 or to_azure_sql_db").
             ver = int(product_version.split('.')[0])
             if ver not in self._sql_server_versions:
-                if ver <= max(self._sql_server_versions):
+                if is_azure or ver <= max(self._sql_server_versions):
                     raise NotSupportedError('SQL Server v%d is not supported.' % ver)
                 # Newer releases inherit the latest capabilities known to the backend.
                 self._known_versions[self.alias] = max(self._sql_server_versions.values())

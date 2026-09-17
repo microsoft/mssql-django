@@ -1076,6 +1076,18 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         self.assertEqual(wrapper.sql_server_version, 2014)
         self._clear_caches(wrapper)
 
+    def test_azure_unknown_future_product_version_raises(self):
+        """Azure SQL DB and MI should not use the on-premises version fallback."""
+        from django.db import NotSupportedError
+
+        for edition in (EDITION_AZURE_SQL_DB, EDITION_AZURE_SQL_MANAGED_INSTANCE):
+            with self.subTest(edition=edition):
+                wrapper = self._make_wrapper(f"test_azure_future_{edition}")
+                self._mock_server_properties(wrapper, edition, "18.0.1000.0")
+                with self.assertRaises(NotSupportedError):
+                    _ = wrapper.sql_server_version
+                self._clear_caches(wrapper)
+
     def test_on_prem_sql2022_version(self):
         """On-premises SQL Server 2022 (ProductVersion 16.x) should return 2022."""
         wrapper = self._make_wrapper("test_onprem_2022")
