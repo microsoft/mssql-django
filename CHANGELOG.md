@@ -24,6 +24,8 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 ### Fixed
 
+- Defaulted an omitted `HOST` to `localhost` for mssql-python connections,
+  matching pyodbc's local-server behavior.
 - Escaped SQL Server `[` wildcards in pattern lookups that use `F()`
   expressions ([#575]).
 - Escaped single quotes in `inspectdb --schema` metadata queries ([#583]).

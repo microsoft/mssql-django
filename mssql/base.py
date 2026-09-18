@@ -508,6 +508,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # http://www.freetds.org/userguide/odbcconnattr.htm
         cstr_parts = {}
         if use_python_driver:
+            host = host or 'localhost'
             # mssql-python bundles its own SQL Server driver and rejects the
             # ODBC-only DRIVER / DSN / SERVERNAME keywords, so none are emitted.
             if port:
