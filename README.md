@@ -80,7 +80,7 @@ DATABASE_CONNECTION_POOLING = False
 | `isolation_level` | String | `None` | [Transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql): `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SNAPSHOT`, or `SERIALIZABLE` |
 | `dsn` | String | Unset | Named DSN, can be used instead of `HOST` (pyodbc only) |
 | `unicode_results` | Boolean | `False` | Activate pyodbc's unicode\_results feature |
-| `extra_params` | String | Unset | Additional connection parameters (`"param=value;param=value"`), passed unchanged to the selected driver. See [authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) and [driver-specific rules](#selecting-the-database-driver). |
+| `extra_params` | String | Unset | Additional connection parameters (`"param=value;param=value"`), passed unchanged and validated by the selected driver. See [authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) and [driver-specific rules](#selecting-the-database-driver). |
 | `collation` | String | `None` | Collation for text field lookups (e.g. `"Chinese_PRC_CI_AS"`) |
 | `connection_timeout` | Integer | `0` | Connection timeout in seconds (`0` = disabled) |
 | `connection_retries` | Integer | `5` | Number of connection retry attempts |
@@ -134,9 +134,20 @@ different drivers.
   including OpenSSL on macOS and the required Linux libraries.
 - **Connections.** `HOST` and optional `PORT` become `SERVER=host,port`.
   `driver`, `dsn`, `host_is_server`, and `unicode_results` are ignored; Driver
-  17 fallback is pyodbc-only. `extra_params` is passed unchanged, and explicit
-  values override generated ones. Do not include `DRIVER`, `DSN`,
-  `SERVERNAME`, or `MARS_Connection`, which mssql-python rejects.
+  17 fallback is pyodbc-only. An empty `HOST` uses `localhost`, matching the
+  pyodbc local-server default.
+- **Additional parameters.** mssql-python 1.15 validates `extra_params` against
+  a strict allowlist. Supported options include `Authentication`, `Encrypt`,
+  `TrustServerCertificate`, `HostnameInCertificate`, `ServerCertificate`,
+  `ServerSPN`, `MultiSubnetFailover`, `ApplicationIntent`,
+  `ConnectRetryCount`, `ConnectRetryInterval`, `KeepAlive`,
+  `KeepAliveInterval`, `IpAddressPreference`, and `PacketSize`. Common
+  pyodbc-only keywords such as `APP`, `LongAsMax`, `ColumnEncryption`, `WSID`,
+  `AnsiNPW`, `QuotedId`, `Regional`, `UseFMTONLY`, `Current Language`,
+  `Network Library`, `Description`, and `Connect Timeout` are rejected, as are
+  `DRIVER`, `DSN`, `SERVERNAME`, and `MARS_Connection`. Remove unsupported
+  keywords before switching; use the `connection_timeout` option instead of
+  `Connect Timeout`. Explicit supported values override generated ones.
 - **Security and authentication.** Use trusted certificates in production.
   `TrustServerCertificate=yes` is for trusted local development only. Use a
   [supported authentication mode](https://github.com/microsoft/mssql-python/wiki/Microsoft-Entra-ID-support)
