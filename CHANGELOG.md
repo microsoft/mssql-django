@@ -4,6 +4,8 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-18
+
 ### Added
 
 - Added per-connection opt-in support for mssql-python while retaining pyodbc
@@ -13,8 +15,9 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 - Made mssql-python 1.15.0 or newer a required dependency while retaining
   pyodbc as the default database driver ([#599]).
-- Raised the supported versions to Python 3.10-3.14 and Django 5.2-6.1
-  ([#605]).
+- Narrowed declared support to CPython 3.10-3.14, Django 5.2-6.1,
+  supported mssql-python platforms, and SQL Server 2017-2025 ([#598],
+  [#605]).
 - Replaced pytz with standard-library zoneinfo and tzdata, stabilizing named
   timezone offsets across the year ([#535]).
 - Honored explicit `MARS_Connection` values for Microsoft Fabric Warehouse
@@ -109,7 +112,8 @@ All notable user-facing changes to mssql-django are documented in this file.
 - Fixed ordered `StringAgg`, including `OuterRef` handling ([#511]).
 - Excluded `testapp` from distributed packages ([#503]).
 
-[Unreleased]: https://github.com/microsoft/mssql-django/compare/1.8.0...dev
+[Unreleased]: https://github.com/microsoft/mssql-django/compare/2.0.0...dev
+[2.0.0]: https://github.com/microsoft/mssql-django/compare/1.8.0...2.0.0
 [1.8.0]: https://github.com/microsoft/mssql-django/releases/tag/1.8.0
 [1.7.4]: https://github.com/microsoft/mssql-django/releases/tag/1.7.4
 [1.7.3]: https://github.com/microsoft/mssql-django/releases/tag/1.7.3
@@ -150,6 +154,7 @@ All notable user-facing changes to mssql-django are documented in this file.
 [#575]: https://github.com/microsoft/mssql-django/pull/575
 [#583]: https://github.com/microsoft/mssql-django/pull/583
 [#596]: https://github.com/microsoft/mssql-django/pull/596
+[#598]: https://github.com/microsoft/mssql-django/pull/598
 [#599]: https://github.com/microsoft/mssql-django/pull/599
 [#600]: https://github.com/microsoft/mssql-django/pull/600
 [#605]: https://github.com/microsoft/mssql-django/pull/605
