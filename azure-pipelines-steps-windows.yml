@@ -1,6 +1,5 @@
 # Shared build/test steps for the Windows leg of the mssql-django PR-validation pipeline.
-# Included by azure-pipelines.yml from both the Windows_Core (every PR/CI run) and
-# Windows_Legacy (nightly/manual only) jobs so the step definitions stay in one place.
+# Included by azure-pipelines.yml from the Windows_Core and Windows_MssqlPython jobs.
 # The python.version and tox.env variables are supplied per leg by each job's matrix.
 
 steps:
@@ -18,10 +17,10 @@ steps:
 
       (Get-Content $pwd/testapp/settings.py).replace('localhost', $IP) | Set-Content $pwd/testapp/settings.py
 
-      Invoke-WebRequest https://download.microsoft.com/download/6/f/f/6ffefc73-39ab-4cc0-bb7c-4093d64c2669/en-US/17.10.5.1/x64/msodbcsql.msi -OutFile msodbcsql.msi
+      Invoke-WebRequest https://go.microsoft.com/fwlink/?linkid=2378279 -OutFile msodbcsql.msi
       msiexec /quiet /passive /qn /i msodbcsql.msi IACCEPTMSODBCSQLLICENSETERMS=YES
       Get-OdbcDriver
-    displayName: Install ODBC
+    displayName: Install ODBC Driver 18
 
   - powershell: |
       Import-Module "sqlps"

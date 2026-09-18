@@ -2,9 +2,15 @@
 # Licensed under the BSD license.
 
 import datetime
+import zoneinfo
+from importlib.resources import files
+from unittest import mock
+
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import override_settings
+
+from mssql.operations import DatabaseOperations
 
 from ..models import TimeZone
 
@@ -105,3 +111,68 @@ class TestDateTimeToDateTimeOffsetMigration(TestCase):
             # Migrate back to DATETIME2 for other unit tests
             with connection.schema_editor() as cursor:
                 cursor.execute("ALTER TABLE [testapp_timezone] ALTER column [date] datetime2")
+
+
+class TestGetUtcOffset(TestCase):
+    """
+    Regression tests for DatabaseOperations._get_utcoffset.
+
+    The helper returns the standard (non-DST) UTC offset of a time zone
+    in seconds and feeds directly into compiled SQL via DATEADD.
+    Standard-time labels can differ between timezone databases.
+    """
+
+    def setUp(self):
+        self.ops = DatabaseOperations(connection=None)
+
+    def test_fixed_offset_zones(self):
+        # zones without DST: offset is unambiguous
+        self.assertEqual(self.ops._get_utcoffset('UTC'), 0)
+        self.assertEqual(self.ops._get_utcoffset('Asia/Kolkata'), 19800)
+        self.assertEqual(self.ops._get_utcoffset('Africa/Nairobi'), 10800)
+        self.assertEqual(self.ops._get_utcoffset('Asia/Tokyo'), 32400)
+
+    def test_northern_hemisphere_dst_zones(self):
+        # standard (winter) offset, not DST offset
+        self.assertEqual(self.ops._get_utcoffset('America/Los_Angeles'), -28800)
+        self.assertEqual(self.ops._get_utcoffset('America/New_York'), -18000)
+        self.assertEqual(self.ops._get_utcoffset('Europe/London'), 0)
+        self.assertEqual(self.ops._get_utcoffset('Europe/Berlin'), 3600)
+
+    def test_southern_hemisphere_dst_zones(self):
+        # for southern zones, "standard" is the winter (Jul) offset
+        self.assertEqual(self.ops._get_utcoffset('Australia/Sydney'), 36000)
+        self.assertEqual(self.ops._get_utcoffset('Pacific/Auckland'), 43200)
+
+    def test_zones_with_unusual_dst_rules(self):
+        # Casablanca has had Ramadan-based negative DST since 2018
+        # with +1 as the standard offset
+        self.assertEqual(self.ops._get_utcoffset('Africa/Casablanca'), 3600)
+        # Inuvik observes MST/MDT; standard is MST = -7h
+        self.assertEqual(self.ops._get_utcoffset('America/Inuvik'), -25200)
+
+    def test_negative_dst_zone(self):
+        # Load packaged data explicitly: some system databases label
+        # Dublin's winter as standard time and have no negative DST.
+        with files('tzdata.zoneinfo').joinpath('Europe', 'Dublin').open('rb') as data:
+            zone = zoneinfo.ZoneInfo.from_file(data, key='Europe/Dublin')
+        self.assertEqual(
+            datetime.datetime(2026, 1, 15, 12, tzinfo=zone).dst(),
+            datetime.timedelta(hours=-1),
+        )
+        for month in (1, 7):
+            with self.subTest(month=month):
+                with mock.patch('mssql.operations.zoneinfo.ZoneInfo', return_value=zone):
+                    with mock.patch('mssql.operations.datetime', wraps=datetime) as clock:
+                        clock.datetime.now.return_value = datetime.datetime(2026, month, 15, 12)
+                        self.assertEqual(self.ops._get_utcoffset('Europe/Dublin'), 3600)
+
+    def test_returns_int(self):
+        # the value flows into '%d' formatting in compiled SQL
+        result = self.ops._get_utcoffset('America/Los_Angeles')
+        self.assertIsInstance(result, int)
+
+    def test_repeated_calls_are_deterministic(self):
+        first = self.ops._get_utcoffset('America/Los_Angeles')
+        second = self.ops._get_utcoffset('America/Los_Angeles')
+        self.assertEqual(first, second)

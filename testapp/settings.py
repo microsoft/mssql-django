@@ -17,6 +17,7 @@ DATABASES = {
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
         "OPTIONS": {
             "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 18 for SQL Server"),
+            "python_driver": os.environ.get("MSSQL_PYTHON_DRIVER", "pyodbc"),
             "extra_params": os.environ.get(
                 "MSSQL_EXTRA_PARAMS", "TrustServerCertificate=yes"
             ),
@@ -32,6 +33,7 @@ DATABASES = {
         "PORT": os.environ.get("MSSQL_PORT", "1433"),
         "OPTIONS": {
             "driver": os.environ.get("MSSQL_DRIVER", "ODBC Driver 18 for SQL Server"),
+            "python_driver": os.environ.get("MSSQL_PYTHON_DRIVER", "pyodbc"),
             "extra_params": os.environ.get(
                 "MSSQL_EXTRA_PARAMS", "TrustServerCertificate=yes"
             ),
