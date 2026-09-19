@@ -92,7 +92,7 @@ DATABASE_CONNECTION_POOLING = False
 #### Disabling MARS
 
 On the pyodbc path, the backend enables Multiple Active Result Sets (MARS) by
-default with Microsoft ODBC drivers on Windows. To connect to an endpoint that does not support MARS,
+default with Microsoft ODBC drivers on supported platforms. To connect to an endpoint that does not support MARS,
 such as Microsoft Fabric Warehouse, set `MARS_Connection=no` in that database
 alias's `extra_params`:
 
