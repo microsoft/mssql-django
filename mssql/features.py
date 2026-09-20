@@ -106,13 +106,19 @@ class DatabaseFeatures(BaseDatabaseFeatures):
         # retains its source compatibility level). JSON-null key lookups fall back
         # to a non-OPENJSON path when this is False. DATABASEPROPERTYEX returns
         # sql_variant, which pyodbc cannot read, so query sys.databases (tinyint).
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT compatibility_level FROM sys.databases "
-                "WHERE database_id = DB_ID()"
-            )
-            row = cursor.fetchone()
-        return bool(row) and row[0] >= 130
+        # The probe is wrapped in a try/except so that any error opening the cursor
+        # or reading sys.databases (e.g. permission denied, catalog unavailable)
+        # is treated as "OPENJSON not available" rather than crashing the lookup.
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT compatibility_level FROM sys.databases "
+                    "WHERE database_id = DB_ID()"
+                )
+                row = cursor.fetchone()
+            return bool(row) and row[0] >= 130
+        except Exception:
+            return False
 
     @cached_property
     def introspected_field_types(self):
