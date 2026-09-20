@@ -53,7 +53,12 @@ class TestQuoteName(SimpleTestCase):
         self.assertEqual(_ops().quote_name("col]"), "[col]]]")
 
     def test_already_quoted_with_inner_bracket(self):
-        """Already-quoted name with escaped inner ] is returned as-is (quoted once)."""
+        """Already-quoted name with inner ] is returned as-is (quoted once).
+
+        ``[a]]b]`` is the valid T-SQL representation of the identifier ``a]b``
+        — the ``]]`` escapes the inner bracket. The early-return path must
+        recognise this as already-quoted without re-quoting.
+        """
         self.assertEqual(_ops().quote_name("[a]]b]"), "[a]]b]")
 
     def test_dot_in_name(self):
