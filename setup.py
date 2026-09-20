@@ -7,10 +7,12 @@ from setuptools import find_packages, setup
 CLASSIFIERS = [
     'License :: OSI Approved :: BSD License',
     'Framework :: Django',
+    "Operating System :: MacOS :: MacOS X",
     "Operating System :: POSIX :: Linux",
     "Operating System :: Microsoft :: Windows",
     'Programming Language :: Python',
     'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: Implementation :: CPython',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
@@ -27,7 +29,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='mssql-django',
-    version='1.8.0',
+    version='2.0.0',
     description='Django backend for Microsoft SQL Server',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -44,7 +46,12 @@ setup(
         'django>=5.2,<6.2',
         'mssql-python>=1.15.0',
         'pyodbc>=3.0',
-        'pytz',
+        # zoneinfo needs an IANA tz database at runtime, and the system one
+        # is not guaranteed: Windows ships without it, and minimal Linux
+        # images (alpine, distroless, slim Lambda layers) strip it. zoneinfo
+        # prefers system data when present, so this is a no-op on full
+        # Linux/macOS and ~340KB otherwise.
+        'tzdata',
     ],
     extras_require={
         'test': ['unittest-xml-reporting>=3.2.0'],

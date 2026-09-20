@@ -5,6 +5,7 @@ import datetime
 import uuid
 import warnings
 import sys
+import zoneinfo
 
 from django.conf import settings
 from django.db import NotSupportedError
@@ -14,7 +15,6 @@ from django.db.models.sql.where import WhereNode
 from django.utils import timezone
 from django.utils.encoding import force_str
 from django import VERSION as django_version
-import pytz
 
 DJANGO41 = django_version >= (4, 1)
 
@@ -43,15 +43,30 @@ class DatabaseOperations(BaseDatabaseOperations):
 
     def _get_utcoffset(self, tzname):
         """
-        Returns UTC offset for given time zone in seconds
+        Returns the standard (non-DST) UTC offset for given time zone
+        in seconds.
         """
         # SQL Server has no built-in support for tz database, see:
         # http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
-        zone = pytz.timezone(tzname)
-        # no way to take DST into account at this point
-        now = datetime.datetime.now()
-        delta = zone.localize(now, is_dst=False).utcoffset()
-        return delta.days * 86400 + delta.seconds - zone.dst(now).seconds
+        # the compiled SQL bakes in a single offset and reuses it
+        # across queries, so DST cannot be tracked. pick the
+        # standard (non-DST) offset by probing January and July
+        # and taking the month where dst() is zero.
+        #
+        # Standard time follows the selected timezone database, not
+        # necessarily winter time. Packaged tzdata represents Dublin
+        # as UTC+1 standard time with negative DST in winter; some
+        # system databases instead represent UTC standard time.
+        zone = zoneinfo.ZoneInfo(tzname)
+        year = datetime.datetime.now().year
+        for month in (1, 7):
+            probe = datetime.datetime(year, month, 15, 12, tzinfo=zone)
+            if (probe.dst() or datetime.timedelta(0)) == datetime.timedelta(0):
+                return int(probe.utcoffset().total_seconds())
+        # Neither probe has zero DST (possible with system timezone
+        # data, e.g. Casablanca). Fall back to January's offset.
+        january = datetime.datetime(year, 1, 15, 12, tzinfo=zone)
+        return int(january.utcoffset().total_seconds())
 
     def bulk_batch_size(self, fields, objs):
         """

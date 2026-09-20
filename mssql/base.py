@@ -508,6 +508,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # http://www.freetds.org/userguide/odbcconnattr.htm
         cstr_parts = {}
         if use_python_driver:
+            host = host or 'localhost'
             # mssql-python bundles its own SQL Server driver and rejects the
             # ODBC-only DRIVER / DSN / SERVERNAME keywords, so none are emitted.
             if port:
@@ -798,8 +799,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # as a fallback (e.g. "version >= 2016 or to_azure_sql_db").
             ver = int(product_version.split('.')[0])
             if ver not in self._sql_server_versions:
-                raise NotSupportedError('SQL Server v%d is not supported.' % ver)
-            self._known_versions[self.alias] = self._sql_server_versions[ver]
+                if is_azure or ver <= max(self._sql_server_versions):
+                    raise NotSupportedError('SQL Server v%d is not supported.' % ver)
+                # Newer releases inherit the latest capabilities known to the backend.
+                self._known_versions[self.alias] = max(self._sql_server_versions.values())
+            else:
+                self._known_versions[self.alias] = self._sql_server_versions[ver]
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
