@@ -398,12 +398,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             WHERE ep.major_id = OBJECT_ID('%(table)s')
             AND ep.name = 'MS_Description'
             AND ep.minor_id = 0)
-                        EXECUTE sp_addextendedproperty 
-                        @name = 'MS_Description', @value = %(comment)s, 
+                        EXECUTE sp_addextendedproperty
+                        @name = 'MS_Description', @value = %(comment)s,
                         @level0type = 'SCHEMA', @level0name = 'dbo',
                         @level1type = 'TABLE', @level1name = %(table)s
             ELSE
-                        EXECUTE sp_updateextendedproperty 
+                        EXECUTE sp_updateextendedproperty
                         @name = 'MS_Description', @value = %(comment)s,
                         @level0type = 'SCHEMA', @level0name = 'dbo',
                         @level1type = 'TABLE', @level1name = %(table)s
@@ -412,16 +412,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         IF NOT EXISTS (SELECT NULL FROM sys.extended_properties ep
             WHERE ep.major_id = OBJECT_ID('%(table)s')
             AND ep.name = 'MS_Description'
-            AND ep.minor_id = (SELECT column_id FROM sys.columns 
+            AND ep.minor_id = (SELECT column_id FROM sys.columns
                             WHERE name = '%(column)s'
                             AND object_id = OBJECT_ID('%(table)s')))
-                EXECUTE sp_addextendedproperty 
-                @name = 'MS_Description', @value = %(comment)s, 
+                EXECUTE sp_addextendedproperty
+                @name = 'MS_Description', @value = %(comment)s,
                 @level0type = 'SCHEMA', @level0name = 'dbo',
                 @level1type = 'TABLE', @level1name = %(table)s,
                 @level2type = 'COLUMN', @level2name = %(column)s
             ELSE
-                EXECUTE sp_updateextendedproperty 
+                EXECUTE sp_updateextendedproperty
                 @name = 'MS_Description', @value = %(comment)s,
                 @level0type = 'SCHEMA', @level0name = 'dbo',
                 @level1type = 'TABLE', @level1name = %(table)s,
@@ -470,7 +470,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 'default': default,
             },
             params,
-        )    
+        )
 
     def _alter_column_database_default_sql(
         self, model, old_field, new_field, drop=False
@@ -777,11 +777,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
         if (
-            old_field.remote_field 
-            and old_field.db_constraint 
-            and (django_version < (4,2) 
-                or 
-                (django_version >= (4, 2) 
+            old_field.remote_field
+            and old_field.db_constraint
+            and (django_version < (4,2)
+                or
+                (django_version >= (4, 2)
                 and self._field_should_be_altered(
                     old_field,
                     new_field,
@@ -794,7 +794,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 not hasattr(new_field, "db_constraint")
                 or not new_field.db_constraint
             ):
-                if(django_version < (4, 2) 
+                if(django_version < (4, 2)
                    or (
                        not isinstance(new_field, ForeignKey)
                        or type(new_field.db_comment) == type(None)
