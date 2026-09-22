@@ -1325,8 +1325,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # ------------------------------------------------------------------------------------
             if is_autofield_change:
                 # AutoField changes drop ALL indexes - restore ALL db_index=True fields
+                # that aren't unique (a unique field's index is provided by its unique
+                # constraint instead; see BaseDatabaseSchemaEditor._field_should_be_indexed)
                 for field in model._meta.fields:
-                    if field.db_index:
+                    if self._field_should_be_indexed(model, field):
                         index_columns.append([field])
             elif old_field.db_index and new_field.db_index:
                 index_columns.append([old_field])
@@ -1434,6 +1436,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for old_rel, new_rel in rels_to_update:
             rel_db_params = new_rel.field.db_parameters(connection=self.connection)
             rel_type = rel_db_params['type']
+            related_table = old_rel.related_model._meta.db_table
+            related_column = old_rel.field.column
             if django_version >= (4, 2):
                 fragment, other_actions = self._alter_column_type_sql(
                     new_rel.related_model, old_rel.field, new_rel.field, rel_type, old_collation=None, new_collation=None
@@ -1442,11 +1446,35 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 fragment, other_actions = self._alter_column_type_sql(
                     new_rel.related_model, old_rel.field, new_rel.field, rel_type
                 )
+            # Drop a PRIMARY KEY or UNIQUE CONSTRAINT tied to the related column first
+            # SQL Server refuses to alter a column that such a constraint still
+            # references, and neither constraint kind is picked up by the index=True
+            # lookup below (see mssql/introspection.get_constraints) - both are
+            # CONSTRAINT-backed, not INDEX-backed, so their `index` flag is False.
+            related_pk_constraint_names = self._db_table_constraint_names(
+                related_table, [related_column], primary_key=True
+            )
+            if len(related_pk_constraint_names) > 1:
+                raise ValueError(
+                    "Found multiple primary key constraints on column %r of table %r; "
+                    "expected at most one." % (related_column, related_table)
+                )
+
+            related_unique_constraint_names = self._db_table_constraint_names(
+                related_table, [related_column], unique_constraint=True
+            )
+            related_pk_constraint_name = related_pk_constraint_names[0] if related_pk_constraint_names else None
+            if related_pk_constraint_name:
+                self.execute(self._db_table_delete_constraint_sql(
+                    self.sql_delete_pk, related_table, related_pk_constraint_name))
+            for unique_name in related_unique_constraint_names:
+                self.execute(self._db_table_delete_constraint_sql(
+                    self.sql_delete_unique, related_table, unique_name))
             # Drop related_model indexes, so it can be altered
-            index_names = self._db_table_constraint_names(old_rel.related_model._meta.db_table, index=True)
+            index_names = self._db_table_constraint_names(related_table, index=True)
             for index_name in index_names:
                 self.execute(self._db_table_delete_constraint_sql(
-                    self.sql_delete_index, old_rel.related_model._meta.db_table, index_name))
+                    self.sql_delete_index, related_table, index_name))
             self.execute(
                 self.sql_alter_column % {
                     "table": self.quote_name(new_rel.related_model._meta.db_table),
@@ -1456,9 +1484,34 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             )
             for sql, params in other_actions:
                 self.execute(sql, params)
-            # Restore related_model indexes
+            # Restore each dependent constraint identified and dropped above.
+            # Recreate with the same constraint names that we dropped; the related field
+            # doesn't change during this operation.
+            if related_pk_constraint_name:
+                self.execute(
+                    self.sql_create_pk % {
+                        "table": self.quote_name(new_rel.related_model._meta.db_table),
+                        "name": self.quote_name(related_pk_constraint_name),
+                        "columns": self.quote_name(new_rel.field.column),
+                    }
+                )
+            for unique_name in related_unique_constraint_names:
+                if django_version >= (4, 0):
+                    self.execute(
+                        self._create_unique_sql(
+                            new_rel.related_model, [new_rel.field], name=unique_name
+                        )
+                    )
+                else:
+                    self.execute(
+                        self._create_unique_sql(
+                            new_rel.related_model, [new_rel.field.column], name=unique_name
+                        )
+                    )
+            # Restore related_model indexes (skip unique fields - their index is
+            # provided by the unique constraint restored above instead)
             for field in new_rel.related_model._meta.fields:
-                if field.db_index:
+                if self._field_should_be_indexed(new_rel.related_model, field):
                     self.execute(
                         self._create_index_sql(new_rel.related_model, [field])
                     )
