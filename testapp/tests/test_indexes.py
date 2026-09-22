@@ -68,15 +68,24 @@ class TestIndexesRetained(TestCase):
         )
 
     def test_field_made_nullable(self):
-        # case (a) of https://github.com/microsoft/mssql-django/issues/14
+        """
+        Case (a) of issue #14: making a field nullable (removing NOT NULL)
+        must not cause its index to be dropped and left missing.
+        """
         self._assert_index_exists({'a'})
 
     def test_field_renamed(self):
-        # case (b) of https://github.com/microsoft/mssql-django/issues/14
+        """
+        Case (b) of issue #14: renaming a field must retain its index,
+        recreated against the new column name.
+        """
         self._assert_index_exists({'b_renamed'})
 
     def test_table_renamed(self):
-        # case (c) of https://github.com/microsoft/mssql-django/issues/14
+        """
+        Case (c) of issue #14: renaming the model's table must retain the
+        index on its unaffected column.
+        """
         self._assert_index_exists({'c'})
 
 def _get_all_models():
@@ -4255,7 +4264,143 @@ class TestMetaIndexesRetained(TransactionTestCase):
         self.assertNotIn('[parent_id]', filter_definition)
 
 
+class TestPkWideningMigrations(TransactionTestCase):
+    def test_widening_recreates_onetoone_constraints(self):
+        """
+        Regression test for widening a primary key (e.g. AutoField -> BigAutoField)
+        on a model referenced by several OneToOne relations. Verifies that after the
+        widening migration: a OneToOneField child keeps its unique index and FK
+        (but not a redundant plain index), a child whose OneToOneField also declares an
+        explicit unique constraint keeps both unique constraints, a child whose
+        OneToOneField is also its primary key keeps its primary key and FK, and the
+        parent's own primary key is intact.
+        """
+        operations_a = [
+            migrations.CreateModel(
+                name='Parent',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('name', models.CharField(max_length=20)),
+                ],
+            ),
+            migrations.CreateModel(
+                name='ChildOneToOne',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('parent', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        to='testapp.parent',
+                    )),
+                    ('payload', models.CharField(default='x', max_length=20)),
+                ],
+            ),
+            migrations.CreateModel(
+                name='ChildOneToOneAndConstraint',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('parent', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        to='testapp.parent',
+                    )),
+                ],
+                options={
+                    'constraints': [
+                        models.UniqueConstraint(
+                            fields=('parent',), name='pk_widening_constrained_child_parent_uniq',
+                        ),
+                    ],
+                },
+            ),
+            migrations.CreateModel(
+                name='ChildOneToOnePk',
+                fields=[
+                    ('parent', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        primary_key=True,
+                        serialize=False,
+                        to='testapp.parent',
+                    )),
+                    ('payload', models.CharField(default='x', max_length=20)),
+                ],
+            ),
+        ]
 
+        operations_b = [
+            migrations.AlterField(
+                model_name='parent',
+                name='id',
+                field=models.BigAutoField(primary_key=True),
+            ),
+        ]
+
+        conn = django.db.connections[DEFAULT_DB_ALIAS]
+
+        initial_migration = Migration('pk_widening_initial', 'testapp')
+        initial_migration.operations = operations_a
+        widen_migration = Migration('pk_widening_widen', 'testapp')
+        widen_migration.operations = operations_b
+
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = initial_migration.apply(ProjectState(), editor)
+        with conn.schema_editor(atomic=True) as editor:
+            final_state = widen_migration.apply(project_state, editor)
+
+        parent = final_state.apps.get_model('testapp', 'Parent')
+        one_to_one_child = final_state.apps.get_model('testapp', 'ChildOneToOne')
+        one_to_one_pk_child = final_state.apps.get_model('testapp', 'ChildOneToOnePk')
+        constrained_child = final_state.apps.get_model('testapp', 'ChildOneToOneAndConstraint')
+        parent_constraints = get_constraints(table_name=parent._meta.db_table)
+        one_to_one_child_constraints = get_constraints(table_name=one_to_one_child._meta.db_table)
+        one_to_one_pk_child_constraints = get_constraints(table_name=one_to_one_pk_child._meta.db_table)
+        constrained_child_constraints = get_constraints(
+            table_name=constrained_child._meta.db_table
+        )
+
+        # ChildOneToOne.parent (plain OneToOneField): unique constraint on the
+        # widened FK column is retained after the parent PK is widened.
+        self.assertTrue(any(
+            info.get('unique') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_child_constraints.values()
+        ))
+        # ...and no redundant plain (non-unique) index was left behind
+        # alongside that unique constraint.
+        self.assertFalse(any(
+            info.get('index') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_child_constraints.values()
+        ))
+        # ChildOneToOneAndConstraint.parent declares both OneToOneField(unique=True)
+        # and an explicit UniqueConstraint on the same column: both unique
+        # constraints must survive the widening, not just one.
+        self.assertEqual(
+            sum(
+                info.get('unique') and set(info['columns']) == {'parent_id'}
+                for info in constrained_child_constraints.values()
+            ),
+            2,
+        )
+        # ChildOneToOne.parent still has its foreign key constraint on the
+        # widened column.
+        self.assertTrue(any(
+            info.get('foreign_key') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_child_constraints.values()
+        ))
+        # ChildOneToOnePk's OneToOneField is itself the primary key:
+        # that primary key is retained on that column.
+        self.assertTrue(any(
+            info.get('primary_key') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_pk_child_constraints.values()
+        ))
+        # ...and the foreign key on that one-to-one column is retained too.
+        self.assertTrue(any(
+            info.get('foreign_key') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_pk_child_constraints.values()
+        ))
+        # Parent's own primary key (the column actually being widened) is
+        # still in place after the migration.
+        self.assertTrue(any(
+            info.get('primary_key') and set(info['columns']) == {'id'}
+            for info in parent_constraints.values()
+        ))
 
 
 class TestAddAndAlterUniqueIndex(TestCase):
@@ -4300,6 +4445,12 @@ class TestKeepIndexWithDbcomment(TestCase):
 
     @skipIf(VERSION < (4, 2), "db_comment not available before 4.2")
     def test_drop_foreignkey(self):
+        """
+        Test that dropping a ForeignKey's db_constraint keeps or drops the
+        supporting index on the FK column based on the field's db_comment:
+        by default the index is dropped (old behavior); when db_comment
+        contains 'fk_on_delete_keep_index', the index is preserved instead.
+        """
         app_label = "test_drop_foreignkey"
         operations = [
                 migrations.CreateModel(
