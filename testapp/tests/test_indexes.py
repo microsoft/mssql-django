@@ -3610,6 +3610,72 @@ class TestMetaIndexesRetained(TransactionTestCase):
                     f"({self._get_context_description(use_single_migration)})."
                 )
 
+    def test_unique_together_restore_skips_still_deferred_creation(self):
+        """
+        Ensure that combining a CreateModel(options={'unique_together': ...})
+        with an AutoField db_column rename in a single migration leaves
+        exactly one physical unique index over the unique_together columns,
+        not two colliding CREATE UNIQUE INDEX statements - and that the
+        explicit AddIndex entry is retained alongside it.
+
+        Only a combined single migration exercises this: split migrations
+        each get their own schema-editor context, so the first migration's
+        deferred_sql already ran (and the unique index already physically
+        exists) before the second migration's AutoField rename starts.
+        """
+        model_name = 'TestUniqTogetherDeferredCollision'
+        index_name = 'idx_uniq_together_deferred_collision_a'
+
+        operations_a = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20)),
+                    ('b', models.CharField(max_length=20)),
+                ],
+                options={
+                    'unique_together': {('a', 'b')},
+                },
+            ),
+            migrations.AddIndex(
+                model_name=model_name.lower(),
+                index=models.Index(fields=['a'], name=index_name),
+            ),
+        ]
+        operations_b = [
+            migrations.AlterField(
+                model_name=model_name.lower(),
+                name='id',
+                field=models.AutoField(primary_key=True, db_column='new_id'),
+            ),
+        ]
+
+        result = self._run_migration_test(
+            operations_a=operations_a,
+            operations_b=operations_b,
+            migration_name_prefix='test_uniq_together_deferred_collision',
+            model_name=model_name,
+            use_single_migration=True,
+        )
+
+        self.assertIn(
+            index_name, result.constraints,
+            "Explicit AddIndex on 'a' was lost after the AutoField wholesale "
+            "index drop/restore.",
+        )
+        unique_constraints = [
+            info for info in result.constraints.values()
+            if info.get('unique') and set(info['columns']) == {'a', 'b'}
+        ]
+        self.assertEqual(
+            len(unique_constraints), 1,
+            "Expected exactly one unique index on ('a', 'b') after restoring "
+            "unique_together, but found %d: the still-deferred CreateModel "
+            "CREATE UNIQUE INDEX must be skipped once the AutoField "
+            "restoration path has already (re-)created it." % len(unique_constraints)
+        )
+
     def test_unique_constraint_retained_after_autofield_column_rename(self):
         """
         Same AutoField-own-db_column-rename scenario as
