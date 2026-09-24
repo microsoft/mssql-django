@@ -3723,6 +3723,137 @@ class TestMetaIndexesRetained(TransactionTestCase):
             "permanently lost after renaming an AutoField's own db_column."
         )
 
+    def test_conditional_unique_constraint_retained_after_rename_and_type_change(self):
+        """
+        Ensure that a Meta.constraints UniqueConstraint backed by a filtered
+        unique index (via `condition`) survives a later migration that
+        renames an unrelated field and narrows its own key column's
+        max_length: the named constraint must still exist afterwards as an
+        index over its key column, with its filter updated to reference the
+        renamed field.
+
+        Uses split migrations (CreateModel committed first) so the filtered
+        unique index physically exists before the rename+type-change
+        migration, exercising the real ALTER COLUMN DDL path.
+        """
+        model_name = 'TestCondConstraintRenameTypeChange'
+        constraint_name = 'uq_cond_constraint_rename_type_change'
+
+        operations_a = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20, null=True)),
+                    ('b', models.CharField(max_length=40)),
+                ],
+                options={
+                    'constraints': [
+                        UniqueConstraint(
+                            fields=['b'],
+                            condition=models.Q(a__isnull=False),
+                            name=constraint_name,
+                        ),
+                    ],
+                },
+            ),
+        ]
+        operations_b = [
+            migrations.RenameField(
+                model_name=model_name.lower(), old_name='a', new_name='aa'
+            ),
+            migrations.AlterField(
+                model_name=model_name.lower(),
+                name='b',
+                field=models.CharField(max_length=20),
+            ),
+        ]
+
+        result = self._run_migration_test(
+            operations_a=operations_a,
+            operations_b=operations_b,
+            migration_name_prefix='test_cond_constraint_rename_type_change',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        self._assert_named_index_columns(
+            result.constraints, constraint_name, ['b'],
+            "Conditional UniqueConstraint on 'b' was permanently lost after "
+            "renaming an unrelated field and changing b's type in a later "
+            "migration.",
+        )
+        catalog = self._get_index_catalog(result.model, constraint_name)
+        filter_definition = catalog[0][2] if catalog else None
+        self.assertIsNotNone(filter_definition)
+        self.assertIn('[aa]', filter_definition)
+        self.assertNotIn('[a]', filter_definition)
+
+    def test_conditional_unique_constraint_retained_after_rename_and_nullability_change(self):
+        """
+        Same intent as
+        test_conditional_unique_constraint_retained_after_rename_and_type_change,
+        exercised through the nullability-change path instead of the
+        type-change path: ensure a Meta.constraints UniqueConstraint backed
+        by a filtered unique index survives a later migration that renames
+        an unrelated field and tightens its own key column's nullability to
+        NOT NULL - the named constraint must still exist afterwards as an
+        index over its key column, not be silently dropped and left
+        unrestored.
+        """
+        model_name = 'TestCondConstraintRenameNullChange'
+        constraint_name = 'uq_cond_constraint_rename_null_change'
+
+        operations_a = [
+            migrations.CreateModel(
+                name=model_name,
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('a', models.CharField(max_length=20, null=True)),
+                    ('b', models.CharField(max_length=20, null=True)),
+                ],
+                options={
+                    'constraints': [
+                        UniqueConstraint(
+                            fields=['b'],
+                            condition=models.Q(a__isnull=False),
+                            name=constraint_name,
+                        ),
+                    ],
+                },
+            ),
+        ]
+        operations_b = [
+            migrations.RenameField(
+                model_name=model_name.lower(), old_name='a', new_name='aa'
+            ),
+            migrations.AlterField(
+                model_name=model_name.lower(),
+                name='b',
+                field=models.CharField(max_length=20, null=False, default=''),
+            ),
+        ]
+
+        result = self._run_migration_test(
+            operations_a=operations_a,
+            operations_b=operations_b,
+            migration_name_prefix='test_cond_constraint_rename_null_change',
+            model_name=model_name,
+            use_single_migration=False,
+        )
+
+        self._assert_named_index_columns(
+            result.constraints, constraint_name, ['b'],
+            "Conditional UniqueConstraint on 'b' was permanently lost after "
+            "renaming an unrelated field and changing b's nullability in a "
+            "later migration.",
+        )
+        catalog = self._get_index_catalog(result.model, constraint_name)
+        filter_definition = catalog[0][2] if catalog else None
+        self.assertIsNotNone(filter_definition)
+        self.assertIn('[aa]', filter_definition)
+        self.assertNotIn('[a]', filter_definition)
+
     def test_covering_unique_constraint_include_semantics_retained_after_rename(self):
         """
         A covering UniqueConstraint's INCLUDE column, when renamed, must stay
