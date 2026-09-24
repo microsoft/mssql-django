@@ -24,6 +24,7 @@ class TestMssqlPythonLoading(SimpleTestCase):
     def test_selected_driver_does_not_require_pyodbc_runtime(self):
         script = textwrap.dedent("""
             import builtins
+            from types import SimpleNamespace
 
             original_import = builtins.__import__
 
@@ -55,6 +56,24 @@ class TestMssqlPythonLoading(SimpleTestCase):
             assert backend.DatabaseWrapper._uses_mssql_python(
                 settings.DATABASES["default"]
             )
+            assert (
+                backend.DatabaseWrapper.introspection_class.data_types_reverse[
+                    backend.Database.SQL_INTEGER
+                ]
+                == "IntegerField"
+            )
+
+            connection = SimpleNamespace()
+            driver = SimpleNamespace(
+                connect=lambda *args, **kwargs: connection
+            )
+            backend._load_mssql_python = lambda: driver
+            selected = object.__new__(backend.DatabaseWrapper)
+            assert (
+                selected.get_new_connection(settings.DATABASES["default"])
+                is connection
+            )
+            assert selected.Database is driver
 
             wrapper = ConnectionHandler({
                 "default": {"ENGINE": "mssql", "NAME": "testdb"}
