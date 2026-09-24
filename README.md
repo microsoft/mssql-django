@@ -10,16 +10,21 @@ This project is the continuation and evolution of earlier community efforts, and
 
 | Component | Supported Versions |
 |---|---|
-| Django | 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, 5.2, 6.0, 6.1 |
-| Python | 3.8 – 3.14 (Django 6.0 and 6.1 require 3.12+) |
-| SQL Server | 2016, 2017, 2019, 2022, 2025 |
+| Django | 5.2, 6.0, 6.1 |
+| Python | CPython 3.10 – 3.14 (Django 6.0 and 6.1 require 3.12+) |
+| Platforms | Windows x64; Windows ARM64 with Python 3.11+; macOS 15+ on Intel or Apple silicon; Linux x64/ARM64 with glibc 2.28+ or musl 1.2+ |
+| SQL Server | 2017, 2019, 2022, 2025 |
 | Azure SQL | Database, Managed Instance, SQL Database in Microsoft Fabric |
-| ODBC Driver | Microsoft ODBC Driver 17 or 18 for SQL Server |
-| FreeTDS | Supported via FreeTDS ODBC driver |
+| Database driver | pyodbc (default), mssql-python |
+| Native connectivity | Microsoft ODBC Driver 17/18 with pyodbc; Microsoft ODBC Driver 18 supplied by `mssql-python-odbc` with mssql-python |
+
+mssql-django 2.0 requires mssql-python and therefore supports only platforms
+with a compatible mssql-python distribution. SUSE Linux ARM64 is not supported.
+Users on other platforms must remain on mssql-django 1.8.0.
 
 ## Quick Start
 
-1. Install mssql-django (pulls in Django, pyodbc, and pytz automatically):
+1. Install mssql-django (pulls in Django, mssql-python, pyodbc, and tzdata automatically):
 
        pip install mssql-django
 
@@ -34,13 +39,10 @@ DATABASES = {
         'PASSWORD': 'password',
         'HOST': 'myserver.database.windows.net',
         'PORT': '',
-        'OPTIONS': {
-            'driver': 'ODBC Driver 18 for SQL Server',
-        },
     },
 }
 
-# set this to False if you want to turn off pyodbc's connection pooling
+# Set this to False to turn off connection pooling for both database drivers.
 DATABASE_CONNECTION_POOLING = False
 ```
 
@@ -56,7 +58,7 @@ DATABASE_CONNECTION_POOLING = False
 | `PORT` | String | Server instance port. Empty string means default port. |
 | `USER` | String | Database user name. If not given, MS Integrated Security is used. |
 | `PASSWORD` | String | Database user password |
-| `TOKEN` | String | Access token for Azure AD auth (e.g. via `azure.identity`) |
+| `TOKEN` | String | Access token for Microsoft Entra ID authentication (e.g. via `azure.identity`) |
 | `AUTOCOMMIT` | Boolean | Set to `False` to disable Django's transaction management |
 | `Trusted_Connection` | String | Default `"yes"`. Set to `"no"` if required. |
 
@@ -73,24 +75,24 @@ DATABASE_CONNECTION_POOLING = False
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `driver` | String | `"ODBC Driver 18 for SQL Server"` | ODBC driver to use. Auto-falls back to Driver 17 if 18 is not installed. |
+| `python_driver` | String | Unset | Set to `"mssql_python"` per alias to opt in; unset or `"pyodbc"` keeps the default. See [Selecting the database driver](#selecting-the-database-driver). |
+| `driver` | String | `"ODBC Driver 18 for SQL Server"` | Native driver override for pyodbc. When omitted, Driver 18 is attempted first with automatic fallback to Driver 17. Explicit values do not fall back. |
 | `isolation_level` | String | `None` | [Transaction isolation level](https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql): `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SNAPSHOT`, or `SERIALIZABLE` |
-| `dsn` | String | — | Named DSN, can be used instead of `HOST` |
-| `host_is_server` | Boolean | `False` | Set to `True` to use `HOST`/`PORT` directly with FreeTDS instead of a `freetds.conf` dataserver name. [Details](https://www.freetds.org/userguide/dsnless.html) |
+| `dsn` | String | Unset | Named DSN, can be used instead of `HOST` (pyodbc only) |
 | `unicode_results` | Boolean | `False` | Activate pyodbc's unicode\_results feature |
-| `extra_params` | String | — | Additional ODBC params (`"param=value;param=value"`). Use for [Azure AD Authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication). |
+| `extra_params` | String | Unset | Additional connection parameters (`"param=value;param=value"`), passed unchanged and validated by the selected driver. See [authentication](https://github.com/microsoft/mssql-django/wiki/Azure-AD-Authentication) and [driver-specific rules](#selecting-the-database-driver). |
 | `collation` | String | `None` | Collation for text field lookups (e.g. `"Chinese_PRC_CI_AS"`) |
 | `connection_timeout` | Integer | `0` | Connection timeout in seconds (`0` = disabled) |
 | `connection_retries` | Integer | `5` | Number of connection retry attempts |
 | `connection_retry_backoff_time` | Integer | `5` | Back-off time in seconds between retries |
 | `query_timeout` | Integer | `0` | Query timeout in seconds (`0` = disabled) |
-| `setencoding` / `setdecoding` | List | — | pyodbc [encoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) / [decoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding) config |
+| `setencoding` / `setdecoding` | List | Unset | Forwarded to the selected connection. Each dictionary must match that driver's method signature and is not portable between drivers. mssql-python requires `sqltype` in each `setdecoding` entry. See the pyodbc [encoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setencoding) / [decoding](https://github.com/mkleehammer/pyodbc/wiki/Connection#setdecoding) reference. |
 | `return_rows_bulk_insert` | Boolean | `False` | Allow returning rows from bulk insert. Must be `False` if tables have triggers. |
 
 #### Disabling MARS
 
-The backend enables Multiple Active Result Sets (MARS) by default with Microsoft
-ODBC drivers on Windows. To connect to an endpoint that does not support MARS,
+On the pyodbc path, the backend enables Multiple Active Result Sets (MARS) by
+default with Microsoft ODBC drivers on Windows. To connect to an endpoint that does not support MARS,
 such as Microsoft Fabric Warehouse, set `MARS_Connection=no` in that database
 alias's `extra_params`:
 
@@ -110,11 +112,58 @@ yielding them so nested queries can use the same connection; this can use more
 memory for large querysets. This connection setting does not imply full
 Warehouse support for Django migrations or other SQL Server features.
 
+### Selecting the database driver
+
+mssql-django installs both **pyodbc** and
+[mssql-python](https://github.com/microsoft/mssql-python) >=1.15.0. pyodbc
+remains the default. Select mssql-python per alias without changing `ENGINE`:
+
+```python
+'OPTIONS': {
+    'python_driver': 'mssql_python',
+},
+```
+
+Omit `python_driver` or set it to `"pyodbc"` to roll back. Aliases can use
+different drivers.
+
+- **Runtime.** pip automatically installs the `mssql-python-odbc` companion
+  package, which supplies Microsoft ODBC Driver 18. Private indexes and
+  `--no-deps` installations must provide the companion package separately.
+  Install mssql-python's [platform prerequisites](https://github.com/microsoft/mssql-python#installation),
+  including OpenSSL on macOS and the required Linux libraries.
+- **Connections.** `HOST` and optional `PORT` become `SERVER=host,port`.
+  `driver`, `dsn`, `host_is_server`, and `unicode_results` are ignored; Driver
+  17 fallback is pyodbc-only. An empty `HOST` uses `localhost`, matching the
+  pyodbc local-server default.
+- **Additional parameters.** mssql-python 1.15 validates `extra_params` against
+  a strict allowlist. Supported options include `Authentication`, `Encrypt`,
+  `TrustServerCertificate`, `HostnameInCertificate`, `ServerCertificate`,
+  `ServerSPN`, `MultiSubnetFailover`, `ApplicationIntent`,
+  `ConnectRetryCount`, `ConnectRetryInterval`, `KeepAlive`,
+  `KeepAliveInterval`, `IpAddressPreference`, and `PacketSize`. Common
+  pyodbc-only keywords such as `APP`, `LongAsMax`, `ColumnEncryption`, `WSID`,
+  `AnsiNPW`, `QuotedId`, `Regional`, `UseFMTONLY`, `Current Language`,
+  `Network Library`, `Description`, and `Connect Timeout` are rejected, as are
+  `DRIVER`, `DSN`, `SERVERNAME`, and `MARS_Connection`. Remove unsupported
+  keywords before switching; use the `connection_timeout` option instead of
+  `Connect Timeout`. Explicit supported values override generated ones.
+- **Security and authentication.** Use trusted certificates in production.
+  `TrustServerCertificate=yes` is for trusted local development only. Use a
+  [supported authentication mode](https://github.com/microsoft/mssql-python/wiki/Microsoft-Entra-ID-support)
+  in `extra_params`, or supply `TOKEN` without `USER`, `PASSWORD`, or
+  `Authentication`; the application owns token acquisition and renewal.
+- **Iteration.** mssql-python does not enable MARS. To allow nested queries on
+  one connection, `QuerySet.iterator()` buffers the full result before
+  yielding, regardless of `chunk_size`; account for that memory on large
+  querysets. `MARS_Connection=no` remains a pyodbc-only setting for endpoints
+  covered by [Disabling MARS](#disabling-mars).
+
 ### Backend-Specific Settings
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
-| `DATABASE_CONNECTION_POOLING` | Boolean | `True` | Set to `False` to disable pyodbc's connection pooling |
+| `DATABASE_CONNECTION_POOLING` | Boolean | `True` | Set to `False` before opening connections to disable driver pooling. Applies to pyodbc and mssql-python. |
 
 ## Known Limitations
 
@@ -134,10 +183,9 @@ The following limitations apply when using SQL Server with Django:
 
 | Version | Notes |
 |---|---|
-| Django 5.1 | Minor limitations with composite primary key inspection via `inspectdb` |
 | Django 5.2 | Tuple lookups require Django 5.2.4+ for full support. Some JSONField bulk/CASE WHEN update edge cases. See [test exclusions](https://github.com/microsoft/mssql-django/blob/dev/testapp/settings.py) for details. |
-| Django 6.0 | Requires Python 3.12+. All 5.2 limitations apply. Backend handles all 6.0 API changes transparently. |
-| Django 6.1 | Requires Python 3.12+. All 6.0 limitations apply. Two 6.1 additions are unavailable: database-level referential actions (`DB_CASCADE`, `DB_SET_NULL`, `DB_SET_DEFAULT`) are not supported because SQL Server disallows multiple cascade paths to the same table, so using one raises a Django system check (`fields.E324`) that points you to the standard Django-level `on_delete`; and bitwise aggregates (`BitAnd`, `BitOr`, `BitXor`) are not implemented by this backend and raise `NotSupportedError`. See [test exclusions](https://github.com/microsoft/mssql-django/blob/dev/testapp/settings.py) for details. |
+| Django 6.0 | Requires Python 3.12+. Backend handles the 6.0 API changes transparently. |
+| Django 6.1 | Requires Python 3.12+. Database-level referential actions (`DB_CASCADE`, `DB_SET_NULL`, `DB_SET_DEFAULT`) are unavailable because SQL Server disallows multiple cascade paths to the same table; using one raises `fields.E324`. Bitwise aggregates (`BitAnd`, `BitOr`, `BitXor`) are not implemented and raise `NotSupportedError`. See [test exclusions](https://github.com/microsoft/mssql-django/blob/dev/testapp/settings.py) for details. |
 
 JSONField lookups have additional limitations — see the [JSONField wiki page](https://github.com/microsoft/mssql-django/wiki/JSONField).
 

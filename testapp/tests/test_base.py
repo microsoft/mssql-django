@@ -1076,6 +1076,18 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         self.assertEqual(wrapper.sql_server_version, 2014)
         self._clear_caches(wrapper)
 
+    def test_azure_unknown_future_product_version_raises(self):
+        """Azure SQL DB and MI should not use the on-premises version fallback."""
+        from django.db import NotSupportedError
+
+        for edition in (EDITION_AZURE_SQL_DB, EDITION_AZURE_SQL_MANAGED_INSTANCE):
+            with self.subTest(edition=edition):
+                wrapper = self._make_wrapper(f"test_azure_future_{edition}")
+                self._mock_server_properties(wrapper, edition, "18.0.1000.0")
+                with self.assertRaises(NotSupportedError):
+                    _ = wrapper.sql_server_version
+                self._clear_caches(wrapper)
+
     def test_on_prem_sql2022_version(self):
         """On-premises SQL Server 2022 (ProductVersion 16.x) should return 2022."""
         wrapper = self._make_wrapper("test_onprem_2022")
@@ -1083,12 +1095,20 @@ class TestSqlServerVersionDetection(SimpleTestCase):
         self.assertEqual(wrapper.sql_server_version, 2022)
         self._clear_caches(wrapper)
 
+    def test_on_prem_newer_version_uses_latest_capabilities(self):
+        """Newer SQL Server releases should use the latest known capabilities."""
+        wrapper = self._make_wrapper("test_onprem_newer")
+        self._mock_server_properties(wrapper, 3, "18.0.1000.0")
+        latest = max(DatabaseWrapper._sql_server_versions.values())
+        self.assertEqual(wrapper.sql_server_version, latest)
+        self._clear_caches(wrapper)
+
     def test_on_prem_unsupported_version_raises(self):
         """Unsupported on-premises version should raise NotSupportedError."""
         from django.db import NotSupportedError
 
         wrapper = self._make_wrapper("test_onprem_bad")
-        self._mock_server_properties(wrapper, 3, "99.0.0.0")
+        self._mock_server_properties(wrapper, 3, "8.0.0.0")
 
         with self.assertRaises(NotSupportedError):
             _ = wrapper.sql_server_version
@@ -1120,3 +1140,166 @@ class TestDatabaseWrapperSubclass(SimpleTestCase):
 
         DatabaseWrapper._known_versions.pop("test_subclass", None)
         DatabaseWrapper._known_azures.pop("test_subclass", None)
+
+
+class TestDatabaseWrapperMssqlPythonSelection(SimpleTestCase):
+    """Tests for the ``python_driver`` opt-in that selects mssql-python."""
+
+    def test_uses_mssql_python_true_variants(self):
+        """mssql_python / mssql-python / python (any case) opt in."""
+        for value in ("mssql_python", "mssql-python", "python",
+                      "MSSQL_PYTHON", " Python "):
+            conn_params = {"OPTIONS": {"python_driver": value}}
+            self.assertTrue(
+                DatabaseWrapper._uses_mssql_python(conn_params),
+                msg=f"expected opt-in for {value!r}",
+            )
+
+    def test_uses_mssql_python_false_variants(self):
+        """Absent, empty, or unrelated values keep the pyodbc default."""
+        for options in ({}, {"python_driver": ""}, {"python_driver": None},
+                        {"python_driver": "pyodbc"}):
+            conn_params = {"OPTIONS": options}
+            self.assertFalse(
+                DatabaseWrapper._uses_mssql_python(conn_params),
+                msg=f"did not expect opt-in for {options!r}",
+            )
+
+    def test_missing_options_keeps_pyodbc_default(self):
+        self.assertFalse(DatabaseWrapper._uses_mssql_python({}))
+
+
+class TestDatabaseWrapperMssqlPythonConnectionString(SimpleTestCase):
+    """Connection-string building for the mssql-python opt-in path.
+
+    mssql-python bundles its own SQL Server driver and rejects the ODBC-only
+    DRIVER / DSN / SERVERNAME / MARS_Connection keywords, so the connection
+    string never carries them; SERVER uses the ``host,port`` form.
+    """
+
+    def setUp(self):
+        self.wrapper = object.__new__(DatabaseWrapper)
+
+    def _params(self, **overrides):
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "example.test",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {"python_driver": "mssql_python"},
+        }
+        conn_params.update(overrides)
+        return conn_params
+
+    def test_no_odbc_only_keywords(self):
+        for platform in ("nt", "posix"):
+            for driver in ("ODBC Driver 18 for SQL Server", "FreeTDS"):
+                with self.subTest(platform=platform, driver=driver):
+                    params = self._params(OPTIONS={
+                        "python_driver": "mssql_python",
+                        "driver": driver,
+                        "dsn": "IgnoredDSN",
+                        "host_is_server": False,
+                    })
+                    with mock.patch("mssql.base.os.name", platform):
+                        result = self.wrapper._build_connection_string(params, driver)
+                    for keyword in ("DRIVER=", "DSN=", "SERVERNAME=", "MARS_Connection="):
+                        self.assertNotIn(keyword, result)
+                    self.assertIn("SERVER=example.test", result)
+                    self.assertIn("DATABASE=testdb", result)
+                    self.assertIn("UID=testuser", result)
+
+    def test_port_uses_host_comma_port(self):
+        """host and port are joined with a comma (Microsoft driver form)."""
+        result = self.wrapper._build_connection_string(
+            self._params(PORT=1433), "ignored")
+
+        self.assertIn("SERVER=example.test,1433", result)
+
+    def test_trusted_connection_when_no_user(self):
+        """Trusted_Connection is injected (not Integrated Security=SSPI)."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "example.test",
+            "OPTIONS": {"python_driver": "mssql_python"},
+        }
+        result = self.wrapper._build_connection_string(conn_params, "ignored")
+
+        self.assertIn("Trusted_Connection=yes", result)
+        self.assertNotIn("Integrated Security=", result)
+        self.assertNotIn("UID=", result)
+
+    def test_extra_params_appended(self):
+        """extra_params are appended unchanged for the mssql-python path."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "example.test",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {
+                "python_driver": "mssql_python",
+                "extra_params": "Encrypt=yes;TrustServerCertificate=yes",
+            },
+        }
+        result = self.wrapper._build_connection_string(conn_params, "ignored")
+
+        self.assertIn("Encrypt=yes", result)
+        self.assertIn("TrustServerCertificate=yes", result)
+
+    def test_authentication_keyword_skips_trusted_connection(self):
+        for mode in ("ActiveDirectoryIntegrated", "ActiveDirectoryMsi",
+                     "ActiveDirectoryDefault", "ActiveDirectoryInteractive"):
+            with self.subTest(mode=mode):
+                params = self._params(USER="", PASSWORD="", OPTIONS={
+                    "python_driver": "mssql_python",
+                    "extra_params": "Authentication=" + mode,
+                })
+                result = self.wrapper._build_connection_string(params, "ignored")
+                self.assertNotIn("Trusted_Connection=", result)
+                self.assertNotIn("Integrated Security=", result)
+                self.assertNotIn("UID=", result)
+                self.assertNotIn("PWD=", result)
+                self.assertIn("Authentication=" + mode, result)
+
+    def test_authentication_modes_control_password_injection(self):
+        for mode, includes_password in (
+            ("ActiveDirectoryInteractive", False),
+            ("ActiveDirectoryIntegrated", False),
+            ("ActiveDirectoryMsi", False),
+            ("ActiveDirectoryDefault", False),
+            ("SqlPassword", True),
+            ("ActiveDirectoryPassword", True),
+            ("ActiveDirectoryServicePrincipal", True),
+        ):
+            with self.subTest(mode=mode):
+                params = self._params(OPTIONS={
+                    "python_driver": "mssql_python",
+                    "extra_params": "Authentication=" + mode,
+                })
+                result = self.wrapper._build_connection_string(params, "ignored")
+                self.assertIn("UID=testuser", result)
+                self.assertEqual("PWD=testpass" in result, includes_password)
+                self.assertNotIn("Trusted_Connection=", result)
+
+    def test_user_supplied_extra_params_are_not_silently_removed(self):
+        extra = "MARS_Connection=no;APP={example;Authentication=SqlPassword}"
+        params = self._params(OPTIONS={
+            "python_driver": "mssql_python",
+            "extra_params": extra,
+        })
+        result = self.wrapper._build_connection_string(params, "ignored")
+        self.assertTrue(result.endswith(";" + extra))
+
+    def test_pyodbc_default_still_emits_driver(self):
+        """Without the opt-in, the pyodbc path is unchanged (DRIVER emitted)."""
+        conn_params = {
+            "NAME": "testdb",
+            "HOST": "example.test",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "OPTIONS": {},
+        }
+        result = self.wrapper._build_connection_string(
+            conn_params, "ODBC Driver 18 for SQL Server")
+
+        self.assertIn("DRIVER=ODBC Driver 18 for SQL Server", result)

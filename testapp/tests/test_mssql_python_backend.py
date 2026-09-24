@@ -85,6 +85,23 @@ class TestMssqlPythonConnection(SimpleTestCase):
         connection.add_output_converter.assert_not_called()
         self.pyodbc_connect.assert_not_called()
 
+    def test_empty_host_uses_localhost(self):
+        self.params["HOST"] = ""
+
+        self.wrapper.get_new_connection(self.params)
+
+        self.assertIn("SERVER=localhost", self.driver.connect.call_args.args[0])
+        self.pyodbc_connect.assert_not_called()
+
+    def test_empty_host_preserves_pyodbc_connection_string(self):
+        self.params["HOST"] = ""
+        self.params["OPTIONS"]["python_driver"] = "pyodbc"
+
+        self.wrapper.get_new_connection(self.params)
+
+        self.assertIn("SERVER=;", self.pyodbc_connect.call_args.args[0])
+        self.loader.assert_not_called()
+
     def test_explicit_extra_params_replace_generated_keywords(self):
         generated = {
             "SERVER": "example.test",

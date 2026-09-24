@@ -1,14 +1,10 @@
 # PR-validation pipeline for mssql-django (runs on Azure DevOps, not GitHub Actions).
 #
-# The matrix is split into two tiers so pull requests stay fast without losing coverage:
-#   * Core jobs (Windows_Core / Linux_Core) run on every PR and CI build. They cover the
-#     Django versions still supported upstream today: 5.2 (LTS), 6.0.
-#   * Legacy jobs (Windows_Legacy / Linux_Legacy) cover end-of-life Django versions
-#     (3.2, 4.0, 4.1, 4.2, 5.0, 5.1). These only run on the nightly schedule (or a manual
-#     queue), so we keep full historical coverage without crowding every PR run.
+# Windows_Core and Linux_Core run the supported matrix with pyodbc on every PR
+# and CI build. Nightly/manual jobs run the same matrix with mssql-python.
 #
 # The per-leg build/test steps live in azure-pipelines-steps-windows.yml and
-# azure-pipelines-steps-linux.yml so the Core and Legacy jobs share one definition.
+# azure-pipelines-steps-linux.yml.
 
 trigger:
   - dev
@@ -26,6 +22,44 @@ schedules:
     - dev
   always: true
 
+variables:
+  MSSQL_EXPECTED_NATIVE_DRIVER: msodbcsql18
+
+parameters:
+  - name: coreMatrix
+    type: object
+    default:
+      Python3.14 - Django 6.1:
+        python.version: '3.14'
+        tox.env: 'py314-django61'
+      Python3.13 - Django 6.1:
+        python.version: '3.13'
+        tox.env: 'py313-django61'
+      Python3.12 - Django 6.1:
+        python.version: '3.12'
+        tox.env: 'py312-django61'
+      Python3.14 - Django 6.0:
+        python.version: '3.14'
+        tox.env: 'py314-django60'
+      Python3.13 - Django 6.0:
+        python.version: '3.13'
+        tox.env: 'py313-django60'
+      Python3.12 - Django 6.0:
+        python.version: '3.12'
+        tox.env: 'py312-django60'
+      Python3.13 - Django 5.2:
+        python.version: '3.13'
+        tox.env: 'py313-django52'
+      Python3.12 - Django 5.2:
+        python.version: '3.12'
+        tox.env: 'py312-django52'
+      Python3.11 - Django 5.2:
+        python.version: '3.11'
+        tox.env: 'py311-django52'
+      Python3.10 - Django 5.2:
+        python.version: '3.10'
+        tox.env: 'py310-django52'
+
 jobs:
   - job: Windows_Core
     displayName: Windows (supported Django)
@@ -37,42 +71,14 @@ jobs:
 
     strategy:
       matrix:
-        Python3.14 - Django 6.1:
-          python.version: '3.14'
-          tox.env: 'py314-django61'
-        Python3.13 - Django 6.1:
-          python.version: '3.13'
-          tox.env: 'py313-django61'
-        Python3.12 - Django 6.1:
-          python.version: '3.12'
-          tox.env: 'py312-django61'
-        Python3.14 - Django 6.0:
-          python.version: '3.14'
-          tox.env: 'py314-django60'
-        Python3.13 - Django 6.0:
-          python.version: '3.13'
-          tox.env: 'py313-django60'
-        Python3.12 - Django 6.0:
-          python.version: '3.12'
-          tox.env: 'py312-django60'
-        Python3.13 - Django 5.2:
-          python.version: '3.13'
-          tox.env: 'py313-django52'
-        Python3.12 - Django 5.2:
-          python.version: '3.12'
-          tox.env: 'py312-django52'
-        Python3.11 - Django 5.2:
-          python.version: '3.11'
-          tox.env: 'py311-django52'
-        Python3.10 - Django 5.2:
-          python.version: '3.10'
-          tox.env: 'py310-django52'
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}: ${{ stack.value }}
 
     steps:
       - template: azure-pipelines-steps-windows.yml
 
-  - job: Windows_Legacy
-    displayName: Windows (EOL Django, nightly)
+  - job: Windows_MssqlPython
+    displayName: Windows (mssql-python, nightly)
     condition: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
     pool:
       name: Django-1ES-pool
@@ -82,72 +88,10 @@ jobs:
 
     strategy:
       matrix:
-        Python3.13 - Django 5.1:
-          python.version: '3.13'
-          tox.env: 'py313-django51'
-        Python3.12 - Django 5.1:
-          python.version: '3.12'
-          tox.env: 'py312-django51'
-        Python3.11 - Django 5.1:
-          python.version: '3.11'
-          tox.env: 'py311-django51'
-        Python3.10 - Django 5.1:
-          python.version: '3.10'
-          tox.env: 'py310-django51'
-        Python3.12 - Django 5.0:
-          python.version: '3.12'
-          tox.env: 'py312-django50'
-        Python3.11 - Django 5.0:
-          python.version: '3.11'
-          tox.env: 'py311-django50'
-        Python3.10 - Django 5.0:
-          python.version: '3.10'
-          tox.env: 'py310-django50'
-        Python3.11 - Django 4.2:
-          python.version: '3.11'
-          tox.env: 'py311-django42'
-        Python3.10 - Django 4.2:
-          python.version: '3.10'
-          tox.env: 'py310-django42'
-        Python 3.9 - Django 4.2:
-          python.version: '3.9'
-          tox.env: 'py39-django42'
-        Python 3.8 - Django 4.2:
-          python.version: '3.8'
-          tox.env: 'py38-django42'
-        Python3.11 - Django 4.1:
-          python.version: '3.11'
-          tox.env: 'py311-django41'
-        Python3.10 - Django 4.1:
-          python.version: '3.10'
-          tox.env: 'py310-django41'
-        Python 3.9 - Django 4.1:
-          python.version: '3.9'
-          tox.env: 'py39-django41'
-        Python 3.8 - Django 4.1:
-          python.version: '3.8'
-          tox.env: 'py38-django41'
-        Python3.11 - Django 4.0:
-          python.version: '3.11'
-          tox.env: 'py311-django40'
-        Python3.10 - Django 4.0:
-          python.version: '3.10'
-          tox.env: 'py310-django40'
-        Python 3.9 - Django 4.0:
-          python.version: '3.9'
-          tox.env: 'py39-django40'
-        Python 3.8 - Django 4.0:
-          python.version: '3.8'
-          tox.env: 'py38-django40'
-        Python3.11 - Django 3.2:
-          python.version: '3.11'
-          tox.env: 'py311-django32'
-        Python 3.9 - Django 3.2:
-          python.version: '3.9'
-          tox.env: 'py39-django32'
-        Python 3.8 - Django 3.2:
-          python.version: '3.8'
-          tox.env: 'py38-django32'
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}:
+            python.version: ${{ stack.value['python.version'] }}
+            tox.env: ${{ format('{0}-mssqlpython', stack.value['tox.env']) }}
 
     steps:
       - template: azure-pipelines-steps-windows.yml
@@ -162,42 +106,14 @@ jobs:
 
     strategy:
       matrix:
-        Python3.14 - Django 6.1:
-          python.version: '3.14'
-          tox.env: 'py314-django61'
-        Python3.13 - Django 6.1:
-          python.version: '3.13'
-          tox.env: 'py313-django61'
-        Python3.12 - Django 6.1:
-          python.version: '3.12'
-          tox.env: 'py312-django61'
-        Python3.14 - Django 6.0:
-          python.version: '3.14'
-          tox.env: 'py314-django60'
-        Python3.13 - Django 6.0:
-          python.version: '3.13'
-          tox.env: 'py313-django60'
-        Python3.12 - Django 6.0:
-          python.version: '3.12'
-          tox.env: 'py312-django60'
-        Python3.13 - Django 5.2:
-          python.version: '3.13'
-          tox.env: 'py313-django52'
-        Python3.12 - Django 5.2:
-          python.version: '3.12'
-          tox.env: 'py312-django52'
-        Python3.11 - Django 5.2:
-          python.version: '3.11'
-          tox.env: 'py311-django52'
-        Python3.10 - Django 5.2:
-          python.version: '3.10'
-          tox.env: 'py310-django52'
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}: ${{ stack.value }}
 
     steps:
       - template: azure-pipelines-steps-linux.yml
 
-  - job: Linux_Legacy
-    displayName: Linux (EOL Django, nightly)
+  - job: Linux_MssqlPython
+    displayName: Linux (mssql-python, nightly)
     condition: or(eq(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Reason'], 'Manual'))
     pool:
       name: Django-1ES-pool
@@ -207,72 +123,10 @@ jobs:
 
     strategy:
       matrix:
-        Python3.13 - Django 5.1:
-          python.version: '3.13'
-          tox.env: 'py313-django51'
-        Python3.12 - Django 5.1:
-          python.version: '3.12'
-          tox.env: 'py312-django51'
-        Python3.11 - Django 5.1:
-          python.version: '3.11'
-          tox.env: 'py311-django51'
-        Python3.10 - Django 5.1:
-          python.version: '3.10'
-          tox.env: 'py310-django51'
-        Python3.12 - Django 5.0:
-          python.version: '3.12'
-          tox.env: 'py312-django50'
-        Python3.11 - Django 5.0:
-          python.version: '3.11'
-          tox.env: 'py311-django50'
-        Python3.10 - Django 5.0:
-          python.version: '3.10'
-          tox.env: 'py310-django50'
-        Python3.11 - Django 4.2:
-          python.version: '3.11'
-          tox.env: 'py311-django42'
-        Python3.10 - Django 4.2:
-          python.version: '3.10'
-          tox.env: 'py310-django42'
-        Python 3.9 - Django 4.2:
-          python.version: '3.9'
-          tox.env: 'py39-django42'
-        Python 3.8 - Django 4.2:
-          python.version: '3.8'
-          tox.env: 'py38-django42'
-        Python3.11 - Django 4.1:
-          python.version: '3.11'
-          tox.env: 'py311-django41'
-        Python3.10 - Django 4.1:
-          python.version: '3.10'
-          tox.env: 'py310-django41'
-        Python 3.9 - Django 4.1:
-          python.version: '3.9'
-          tox.env: 'py39-django41'
-        Python 3.8 - Django 4.1:
-          python.version: '3.8'
-          tox.env: 'py38-django41'
-        Python3.11 - Django 4.0:
-          python.version: '3.11'
-          tox.env: 'py311-django40'
-        Python3.10 - Django 4.0:
-          python.version: '3.10'
-          tox.env: 'py310-django40'
-        Python 3.9 - Django 4.0:
-          python.version: '3.9'
-          tox.env: 'py39-django40'
-        Python 3.8 - Django 4.0:
-          python.version: '3.8'
-          tox.env: 'py38-django40'
-        Python3.11 - Django 3.2:
-          python.version: '3.11'
-          tox.env: 'py311-django32'
-        Python 3.9 - Django 3.2:
-          python.version: '3.9'
-          tox.env: 'py39-django32'
-        Python 3.8 - Django 3.2:
-          python.version: '3.8'
-          tox.env: 'py38-django32'
+        ${{ each stack in parameters.coreMatrix }}:
+          ${{ stack.key }}:
+            python.version: ${{ stack.value['python.version'] }}
+            tox.env: ${{ format('{0}-mssqlpython', stack.value['tox.env']) }}
 
     steps:
       - template: azure-pipelines-steps-linux.yml
