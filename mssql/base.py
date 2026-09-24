@@ -19,9 +19,12 @@ from django.core.exceptions import ImproperlyConfigured
 from django.utils.functional import cached_property
 
 try:
-    import pyodbc as Database
+    import pyodbc as _pyodbc
 except ImportError:
-    Database = None
+    _pyodbc = None
+    import mssql_python as Database
+else:
+    Database = _pyodbc
 
 from django.utils.version import get_version_tuple  # noqa
 
@@ -41,25 +44,26 @@ from .schema import DatabaseSchemaEditor  # noqa
 
 def _load_pyodbc():
     """Import and configure pyodbc when a connection selects it."""
-    global Database
-    if Database is None:
+    global Database, _pyodbc
+    if _pyodbc is None:
         try:
             import pyodbc
         except ImportError as e:
             raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
+        _pyodbc = pyodbc
         Database = pyodbc
 
-    pyodbc_ver = get_version_tuple(Database.version)
+    pyodbc_ver = get_version_tuple(_pyodbc.version)
     if pyodbc_ver < (3, 0):
         raise ImproperlyConfigured(
-            "pyodbc 3.0 or newer is required; you have %s" % Database.version
+            "pyodbc 3.0 or newer is required; you have %s" % _pyodbc.version
         )
 
     if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
         if not settings.DATABASE_CONNECTION_POOLING:
-            Database.pooling = False
+            _pyodbc.pooling = False
 
-    return Database
+    return _pyodbc
 
 
 def _load_mssql_python():

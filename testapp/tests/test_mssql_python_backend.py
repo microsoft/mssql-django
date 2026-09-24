@@ -47,13 +47,24 @@ class TestMssqlPythonLoading(SimpleTestCase):
                     }
                 },
             )
-            from django.db.utils import load_backend
+            from django.core.exceptions import ImproperlyConfigured
+            from django.db.utils import ConnectionHandler, load_backend
 
             backend = load_backend("mssql")
-            assert backend.Database is None
+            assert backend.Database.__name__ == "mssql_python"
             assert backend.DatabaseWrapper._uses_mssql_python(
                 settings.DATABASES["default"]
             )
+
+            wrapper = ConnectionHandler({
+                "default": {"ENGINE": "mssql", "NAME": "testdb"}
+            })["default"]
+            try:
+                wrapper.ensure_connection()
+            except ImproperlyConfigured as error:
+                assert "Error loading pyodbc module" in str(error)
+            else:
+                raise AssertionError("pyodbc connection did not fail")
         """)
 
         result = subprocess.run(
@@ -63,15 +74,6 @@ class TestMssqlPythonLoading(SimpleTestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_missing_pyodbc_is_reported_when_selected(self):
-        with mock.patch.object(base, "Database", None), mock.patch.dict(
-            "sys.modules", {"pyodbc": None}
-        ):
-            with self.assertRaisesMessage(
-                ImproperlyConfigured, "Error loading pyodbc module"
-            ):
-                base._load_pyodbc()
 
     def test_missing_driver_has_direct_install_guidance(self):
         with mock.patch.dict("sys.modules", {"mssql_python": None}):
