@@ -72,7 +72,8 @@ class TestMssqlPythonConnection(SimpleTestCase):
 
     def test_opt_in_connect_arguments_and_converter(self):
         self.params["OPTIONS"].update(connection_timeout=7, query_timeout=9, unicode_results=True)
-        connection = self.wrapper.get_new_connection(self.params)
+        with mock.patch("mssql.base.os.name", "nt"):
+            connection = self.wrapper.get_new_connection(self.params)
         self.assertIs(connection, self.driver.connect.return_value)
         self.assertIs(self.wrapper.Database, self.driver)
         args, kwargs = self.driver.connect.call_args

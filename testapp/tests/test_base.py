@@ -329,42 +329,49 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
         self.assertIn("TrustServerCertificate=yes", result)
 
     def test_mars_connection_defaults(self):
-        for driver in ("ODBC Driver 17 for SQL Server",
-                       "ODBC Driver 18 for SQL Server",
-                       "SQL Server Native Client 11.0", "FreeTDS"):
-            with self.subTest(driver=driver):
-                params = {"NAME": "testdb", "OPTIONS": {}}
-                result = self.wrapper._build_connection_string(params, driver)
-                self.assertEqual("MARS_Connection=yes" in result, driver != "FreeTDS")
+        for platform in ("nt", "posix"):
+            for driver in ("ODBC Driver 17 for SQL Server",
+                           "ODBC Driver 18 for SQL Server",
+                           "SQL Server Native Client 11.0", "FreeTDS"):
+                with self.subTest(platform=platform, driver=driver):
+                    params = {"NAME": "testdb", "OPTIONS": {}}
+                    with mock.patch("mssql.base.os.name", platform):
+                        result = self.wrapper._build_connection_string(params, driver)
+                    expected = platform == "nt" and driver != "FreeTDS"
+                    self.assertEqual("MARS_Connection=yes" in result, expected)
 
     def test_explicit_mars_connection_is_not_overridden(self):
-        for driver in ("ODBC Driver 17 for SQL Server",
-                       "ODBC Driver 18 for SQL Server"):
-            for mars in ("MARS_Connection=no", "mars_connection=No",
-                         " MARS_Connection = {no}", "MARS_Connection=yes"):
-                for dsn in (None, "FabricDSN"):
-                    with self.subTest(driver=driver, mars=mars, dsn=dsn):
-                        extra = "Authentication=ActiveDirectoryServicePrincipal;" + mars
-                        params = {
-                            "NAME": "warehouse",
-                            "HOST": "example.datawarehouse.fabric.microsoft.com",
-                            "USER": "client-id",
-                            "PASSWORD": "client-secret",
-                            "OPTIONS": {"extra_params": extra, "dsn": dsn},
-                        }
-                        result = self.wrapper._build_connection_string(params, driver)
-                        self.assertEqual(result.lower().count("mars_connection"), 1)
-                        self.assertTrue(result.endswith(extra))
-                        self.assertNotIn("Trusted_Connection=", result)
+        for platform in ("nt", "posix"):
+            for driver in ("ODBC Driver 17 for SQL Server",
+                           "ODBC Driver 18 for SQL Server"):
+                for mars in ("MARS_Connection=no", "mars_connection=No",
+                             " MARS_Connection = {no}", "MARS_Connection=yes"):
+                    for dsn in (None, "FabricDSN"):
+                        with self.subTest(platform=platform, driver=driver,
+                                          mars=mars, dsn=dsn):
+                            extra = "Authentication=ActiveDirectoryServicePrincipal;" + mars
+                            params = {
+                                "NAME": "warehouse",
+                                "HOST": "example.datawarehouse.fabric.microsoft.com",
+                                "USER": "client-id",
+                                "PASSWORD": "client-secret",
+                                "OPTIONS": {"extra_params": extra, "dsn": dsn},
+                            }
+                            with mock.patch("mssql.base.os.name", platform):
+                                result = self.wrapper._build_connection_string(params, driver)
+                            self.assertEqual(result.lower().count("mars_connection"), 1)
+                            self.assertTrue(result.endswith(extra))
+                            self.assertNotIn("Trusted_Connection=", result)
 
     def test_mars_keyword_inside_braced_value_does_not_override_default(self):
         params = {
             "NAME": "testdb",
             "OPTIONS": {"extra_params": "APP={example;MARS_Connection=no}"},
         }
-        result = self.wrapper._build_connection_string(
-            params, "ODBC Driver 18 for SQL Server"
-        )
+        with mock.patch("mssql.base.os.name", "nt"):
+            result = self.wrapper._build_connection_string(
+                params, "ODBC Driver 18 for SQL Server"
+            )
         self.assertIn(";MARS_Connection=yes;", result)
 
     def test_mars_opt_out_survives_driver_fallback(self):
@@ -372,7 +379,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
             "NAME": "testdb",
             "OPTIONS": {"extra_params": "MARS_Connection=no"},
         }
-        with mock.patch(
+        with mock.patch("mssql.base.os.name", "nt"), mock.patch(
             "mssql.base.Database.connect",
             side_effect=[Exception("Driver not found"), mock.MagicMock()],
         ) as connect:
@@ -702,26 +709,29 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
 
 class TestMarsConnectionState(SimpleTestCase):
     def test_effective_mars_setting_and_reinitialization(self):
-        for driver in ("MSODBCSQL18.DLL", "libmsodbcsql.18.dylib",
-                       "SQLNCLI11.DLL", "libtdsodbc.so"):
-            with self.subTest(driver=driver):
-                wrapper = DatabaseWrapper({"OPTIONS": {}}, alias="mars_state")
-                wrapper.connection = mock.MagicMock()
-                wrapper.connection.getinfo.return_value = driver
-                wrapper.get_system_datetime = datetime.datetime(2026, 1, 1)
-                for extra, enabled in (
-                    ("", True), ("MARS_Connection=no", False),
-                    ("mars_connection={No}", False),
-                    ("MARS_Connection=no;MARS_Connection=yes", False),
-                    ("MARS_Connection=yes", True),
-                    ("APP={example;MARS_Connection=no}", True),
-                ):
-                    with self.subTest(extra=extra):
-                        wrapper.settings_dict["OPTIONS"]["extra_params"] = extra
-                        wrapper.init_connection_state()
-                        expected = enabled and driver != "libtdsodbc.so"
-                        self.assertEqual(wrapper.supports_mars, expected)
-                        self.assertEqual(wrapper.features.can_use_chunked_reads, expected)
+        for platform in ("nt", "posix"):
+            for driver in ("MSODBCSQL18.DLL", "libmsodbcsql.18.dylib",
+                           "SQLNCLI11.DLL", "libtdsodbc.so"):
+                with self.subTest(platform=platform, driver=driver):
+                    wrapper = DatabaseWrapper({"OPTIONS": {}}, alias="mars_state")
+                    wrapper.connection = mock.MagicMock()
+                    wrapper.connection.getinfo.return_value = driver
+                    wrapper.get_system_datetime = datetime.datetime(2026, 1, 1)
+                    for extra, enabled in (
+                        ("", platform == "nt"),
+                        ("MARS_Connection=no", False),
+                        ("mars_connection={No}", False),
+                        ("MARS_Connection=no;MARS_Connection=yes", False),
+                        ("MARS_Connection=yes", True),
+                        ("APP={example;MARS_Connection=no}", platform == "nt"),
+                    ):
+                        with self.subTest(extra=extra):
+                            wrapper.settings_dict["OPTIONS"]["extra_params"] = extra
+                            with mock.patch("mssql.base.os.name", platform):
+                                wrapper.init_connection_state()
+                            expected = enabled and driver != "libtdsodbc.so"
+                            self.assertEqual(wrapper.supports_mars, expected)
+                            self.assertEqual(wrapper.features.can_use_chunked_reads, expected)
 
     def test_fetchone_does_not_discard_microsoft_driver_rows_without_mars(self):
         wrapper = DatabaseWrapper(
@@ -1185,20 +1195,22 @@ class TestDatabaseWrapperMssqlPythonConnectionString(SimpleTestCase):
         return conn_params
 
     def test_no_odbc_only_keywords(self):
-        for driver in ("ODBC Driver 18 for SQL Server", "FreeTDS"):
-            with self.subTest(driver=driver):
-                params = self._params(OPTIONS={
-                    "python_driver": "mssql_python",
-                    "driver": driver,
-                    "dsn": "IgnoredDSN",
-                    "host_is_server": False,
-                })
-                result = self.wrapper._build_connection_string(params, driver)
-                for keyword in ("DRIVER=", "DSN=", "SERVERNAME=", "MARS_Connection="):
-                    self.assertNotIn(keyword, result)
-                self.assertIn("SERVER=example.test", result)
-                self.assertIn("DATABASE=testdb", result)
-                self.assertIn("UID=testuser", result)
+        for platform in ("nt", "posix"):
+            for driver in ("ODBC Driver 18 for SQL Server", "FreeTDS"):
+                with self.subTest(platform=platform, driver=driver):
+                    params = self._params(OPTIONS={
+                        "python_driver": "mssql_python",
+                        "driver": driver,
+                        "dsn": "IgnoredDSN",
+                        "host_is_server": False,
+                    })
+                    with mock.patch("mssql.base.os.name", platform):
+                        result = self.wrapper._build_connection_string(params, driver)
+                    for keyword in ("DRIVER=", "DSN=", "SERVERNAME=", "MARS_Connection="):
+                        self.assertNotIn(keyword, result)
+                    self.assertIn("SERVER=example.test", result)
+                    self.assertIn("DATABASE=testdb", result)
+                    self.assertIn("UID=testuser", result)
 
     def test_port_uses_host_comma_port(self):
         """host and port are joined with a comma (Microsoft driver form)."""
