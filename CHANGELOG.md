@@ -4,6 +4,11 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Stopped reporting MARS and chunked reads as available by default on Linux and
+  macOS pyodbc connections when MARS is not enabled ([#618]).
+
 ## [2.0.0] - 2026-09-18
 
 ### Added

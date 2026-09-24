@@ -709,26 +709,29 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
 
 class TestMarsConnectionState(SimpleTestCase):
     def test_effective_mars_setting_and_reinitialization(self):
-        for driver in ("MSODBCSQL18.DLL", "libmsodbcsql.18.dylib",
-                       "SQLNCLI11.DLL", "libtdsodbc.so"):
-            with self.subTest(driver=driver):
-                wrapper = DatabaseWrapper({"OPTIONS": {}}, alias="mars_state")
-                wrapper.connection = mock.MagicMock()
-                wrapper.connection.getinfo.return_value = driver
-                wrapper.get_system_datetime = datetime.datetime(2026, 1, 1)
-                for extra, enabled in (
-                    ("", True), ("MARS_Connection=no", False),
-                    ("mars_connection={No}", False),
-                    ("MARS_Connection=no;MARS_Connection=yes", False),
-                    ("MARS_Connection=yes", True),
-                    ("APP={example;MARS_Connection=no}", True),
-                ):
-                    with self.subTest(extra=extra):
-                        wrapper.settings_dict["OPTIONS"]["extra_params"] = extra
-                        wrapper.init_connection_state()
-                        expected = enabled and driver != "libtdsodbc.so"
-                        self.assertEqual(wrapper.supports_mars, expected)
-                        self.assertEqual(wrapper.features.can_use_chunked_reads, expected)
+        for platform in ("nt", "posix"):
+            for driver in ("MSODBCSQL18.DLL", "libmsodbcsql.18.dylib",
+                           "SQLNCLI11.DLL", "libtdsodbc.so"):
+                with self.subTest(platform=platform, driver=driver):
+                    wrapper = DatabaseWrapper({"OPTIONS": {}}, alias="mars_state")
+                    wrapper.connection = mock.MagicMock()
+                    wrapper.connection.getinfo.return_value = driver
+                    wrapper.get_system_datetime = datetime.datetime(2026, 1, 1)
+                    for extra, enabled in (
+                        ("", platform == "nt"),
+                        ("MARS_Connection=no", False),
+                        ("mars_connection={No}", False),
+                        ("MARS_Connection=no;MARS_Connection=yes", False),
+                        ("MARS_Connection=yes", True),
+                        ("APP={example;MARS_Connection=no}", platform == "nt"),
+                    ):
+                        with self.subTest(extra=extra):
+                            wrapper.settings_dict["OPTIONS"]["extra_params"] = extra
+                            with mock.patch("mssql.base.os.name", platform):
+                                wrapper.init_connection_state()
+                            expected = enabled and driver != "libtdsodbc.so"
+                            self.assertEqual(wrapper.supports_mars, expected)
+                            self.assertEqual(wrapper.features.can_use_chunked_reads, expected)
 
     def test_fetchone_does_not_discard_microsoft_driver_rows_without_mars(self):
         wrapper = DatabaseWrapper(

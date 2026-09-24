@@ -696,9 +696,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # http://msdn.microsoft.com/en-us/library/ms131686.aspx
             extra_params = self._parse_extra_params(options.get('extra_params'))
             # The bundled mssql-python driver does not enable MARS.
+            mars_default = 'yes' if os.name == 'nt' else 'no'
             self.supports_mars = (
                 not self._use_python_driver and
-                extra_params.get('mars_connection', 'yes').strip().lower() == 'yes'
+                extra_params.get('mars_connection', mars_default).strip().lower() == 'yes'
             )
         self.features.can_use_chunked_reads = self.supports_mars
 
