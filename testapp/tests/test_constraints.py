@@ -1,10 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the BSD license.
 import logging
-from unittest import skipUnless
 
 import django.db.utils
-from django import VERSION
 from django.db import connections, migrations, models
 from django.db.migrations.state import ProjectState
 from django.db.utils import IntegrityError
@@ -167,7 +165,6 @@ class TestHandleOldStyleUniqueTogether(TransactionTestCase):
 
 
 
-@skipUnless(VERSION < (4, 0), "Django 3.2-specific _create_unique_sql branch")
 class TestCreateModelUniqueTogether(TransactionTestCase):
     def test_create_model_with_unique_together_preserves_deferred_condition(self):
         class TestMigration(migrations.Migration):
