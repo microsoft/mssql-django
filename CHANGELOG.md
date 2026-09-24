@@ -4,6 +4,11 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Allowed mssql-python connections to start without the unixODBC driver
+  manager when pyodbc is not selected ([#620]).
+
 ## [2.0.0] - 2026-09-18
 
 ### Added

@@ -20,24 +20,16 @@ from django.utils.functional import cached_property
 
 try:
     import pyodbc as Database
-except ImportError as e:
-    raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
+except ImportError:
+    Database = None
 
 from django.utils.version import get_version_tuple  # noqa
-
-pyodbc_ver = get_version_tuple(Database.version)
-if pyodbc_ver < (3, 0):
-    raise ImproperlyConfigured("pyodbc 3.0 or newer is required; you have %s" % Database.version)
 
 from django.conf import settings  # noqa
 from django.db import NotSupportedError  # noqa
 from django.db.backends.base.base import BaseDatabaseWrapper  # noqa
 from django.utils.encoding import smart_str  # noqa
 from django.utils.functional import cached_property  # noqa
-
-if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
-    if not settings.DATABASE_CONNECTION_POOLING:
-        Database.pooling = False
 
 from .client import DatabaseClient  # noqa
 from .creation import DatabaseCreation  # noqa
@@ -47,14 +39,31 @@ from .operations import DatabaseOperations  # noqa
 from .schema import DatabaseSchemaEditor  # noqa
 
 
-def _load_mssql_python():
-    """Import and return the mssql-python module for the opt-in driver path.
+def _load_pyodbc():
+    """Import and configure pyodbc when a connection selects it."""
+    global Database
+    if Database is None:
+        try:
+            import pyodbc
+        except ImportError as e:
+            raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
+        Database = pyodbc
 
-    pyodbc remains the default driver and is imported at module load. The
-    mssql-python module is imported lazily here, only when a connection selects
-    it via the ``python_driver`` OPTION, so installations that do not use it are
-    unaffected and are not required to have it installed.
-    """
+    pyodbc_ver = get_version_tuple(Database.version)
+    if pyodbc_ver < (3, 0):
+        raise ImproperlyConfigured(
+            "pyodbc 3.0 or newer is required; you have %s" % Database.version
+        )
+
+    if hasattr(settings, 'DATABASE_CONNECTION_POOLING'):
+        if not settings.DATABASE_CONNECTION_POOLING:
+            Database.pooling = False
+
+    return Database
+
+
+def _load_mssql_python():
+    """Import and configure mssql-python when a connection selects it."""
     try:
         import mssql_python
     except ImportError as e:
@@ -588,7 +597,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def get_new_connection(self, conn_params):
         options = conn_params.get('OPTIONS', {})
         use_python_driver = self._uses_mssql_python(conn_params)
-        self.Database = _load_mssql_python() if use_python_driver else Database
+        self.Database = (
+            _load_mssql_python() if use_python_driver else _load_pyodbc()
+        )
         self._use_python_driver = use_python_driver
         driver = options.get('driver', 'ODBC Driver 18 for SQL Server')
         driver_explicitly_set = 'driver' in options

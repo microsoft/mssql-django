@@ -2,6 +2,9 @@
 # Licensed under the BSD license.
 
 import datetime
+import subprocess
+import sys
+import textwrap
 import uuid
 from contextlib import ExitStack, closing
 from types import SimpleNamespace
@@ -18,6 +21,58 @@ from testapp.models import UUIDModel
 
 @override_settings(DATABASE_CONNECTION_POOLING=True)
 class TestMssqlPythonLoading(SimpleTestCase):
+    def test_selected_driver_does_not_require_pyodbc_runtime(self):
+        script = textwrap.dedent("""
+            import builtins
+
+            original_import = builtins.__import__
+
+            def import_without_pyodbc(name, *args, **kwargs):
+                if name == "pyodbc":
+                    raise ImportError(
+                        "libodbc.so.2: cannot open shared object file"
+                    )
+                return original_import(name, *args, **kwargs)
+
+            builtins.__import__ = import_without_pyodbc
+
+            from django.conf import settings
+            settings.configure(
+                SECRET_KEY="test",
+                DATABASES={
+                    "default": {
+                        "ENGINE": "mssql",
+                        "NAME": "testdb",
+                        "OPTIONS": {"python_driver": "mssql_python"},
+                    }
+                },
+            )
+            from django.db.utils import load_backend
+
+            backend = load_backend("mssql")
+            assert backend.Database is None
+            assert backend.DatabaseWrapper._uses_mssql_python(
+                settings.DATABASES["default"]
+            )
+        """)
+
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_pyodbc_is_reported_when_selected(self):
+        with mock.patch.object(base, "Database", None), mock.patch.dict(
+            "sys.modules", {"pyodbc": None}
+        ):
+            with self.assertRaisesMessage(
+                ImproperlyConfigured, "Error loading pyodbc module"
+            ):
+                base._load_pyodbc()
+
     def test_missing_driver_has_direct_install_guidance(self):
         with mock.patch.dict("sys.modules", {"mssql_python": None}):
             with self.assertRaisesMessage(ImproperlyConfigured, "mssql-python>=1.15.0"):

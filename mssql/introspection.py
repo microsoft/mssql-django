@@ -2,7 +2,10 @@
 # Licensed under the BSD license.
 
 from django.db import DatabaseError
-import pyodbc as Database
+try:
+    import pyodbc as Database
+except ImportError:
+    import mssql_python as Database
 
 from collections import namedtuple
 
