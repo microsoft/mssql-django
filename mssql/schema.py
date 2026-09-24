@@ -744,10 +744,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Names actually dropped by _delete_indexes() below, as opposed to an
         # index merely not yet created (e.g. still queued in deferred_sql
         # from a CreateModel(options={'indexes': [...]}) in the same
-        # migration) - _restore_missing_meta_indexes() must only recreate the
-        # former, or it races the still-pending deferred CREATE INDEX and
-        # collides with it once the schema editor context exits.
-        dropped_meta_index_names = set()
+        # migration) - _restore_missing_meta_indexes() and
+        # _restore_dropped_meta_constraints() must only recreate the
+        # former, or they race the still-pending deferred CREATE INDEX and
+        # collide with it once the schema editor context exits.
+        dropped_index_names = set()
 
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
@@ -817,7 +818,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for t in (AutoField, BigAutoField):
             if isinstance(old_field, t) or isinstance(new_field, t):
                 index_names = self._constraint_names(model, index=True)
-                dropped_meta_index_names.update(index_names)
+                dropped_index_names.update(index_names)
                 for index_name in index_names:
                     self.execute(
                         self._delete_constraint_sql(self.sql_delete_index, model, index_name)
@@ -1022,7 +1023,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # Drop unique constraint, SQL Server requires explicit deletion
             self._delete_unique_constraints(model, old_field, new_field, strict)
             # Drop indexes, SQL Server requires explicit deletion
-            dropped_meta_index_names.update(self._delete_indexes(
+            dropped_index_names.update(self._delete_indexes(
                 meta_model, old_field, new_field,
                 meta_index_replacements=meta_index_replacements,
             ))
@@ -1078,7 +1079,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 # Drop unique constraint, SQL Server requires explicit deletion
                 self._delete_unique_constraints(model, old_field, new_field, strict)
                 # Drop indexes, SQL Server requires explicit deletion
-                dropped_meta_index_names.update(self._delete_indexes(
+                dropped_index_names.update(self._delete_indexes(
                     meta_model, old_field, new_field,
                     meta_index_replacements=meta_index_replacements,
                 ))
@@ -1494,8 +1495,18 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # whenever the column was renamed (see comment there).
         if old_field.column != new_field.column:
             self._restore_missing_meta_indexes(
-                meta_model, old_field, new_field, dropped_meta_index_names
+                meta_model, old_field, new_field, dropped_index_names
             )
+
+        # A Meta.constraints UniqueConstraint that is physically backed by an
+        # index (e.g. filtered by `condition`) can be dropped by
+        # _delete_indexes() on any alter path - type change, nullability
+        # change, or the AutoField/BigAutoField wholesale drop - not only
+        # when the altered column is itself renamed. Restore it on every
+        # path that can drop it.
+        self._restore_dropped_meta_constraints(
+            meta_model, old_field, new_field, dropped_index_names
+        )
 
         # Reset connection if required
         if self.connection.features.connection_persists_old_columns:
@@ -1615,16 +1626,24 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         When the drop came from the AutoField/BigAutoField path, every index
         and unique constraint on the table was unconditionally dropped, not
         just Meta.indexes - also restore db_index=True columns,
-        index_together (Django < 5.1), unique_together, and Meta.constraints
-        UniqueConstraint objects, the same way the non-renamed "column
-        alteration cleanup" path restores them for a plain (non-renamed)
-        AutoField/BigAutoField change. The unique_together restoration is
-        deduplicated against self.deferred_sql for the same reason as
-        Meta.indexes above: a CreateModel(options={'unique_together': ...})
-        CREATE UNIQUE INDEX in the same combined migration may still be
-        queued (not yet executed) when this AutoField-triggered restoration
-        runs, and executing it again here would collide with the still-
-        pending statement once the schema-editor context exits and runs it.
+        index_together (Django < 5.1), and unique_together, the same way the
+        non-renamed "column alteration cleanup" path restores them for a
+        plain (non-renamed) AutoField/BigAutoField change.
+
+        Restoring a dropped Meta.constraints UniqueConstraint is not this
+        method's responsibility: _restore_dropped_meta_constraints() is
+        called separately, unconditionally, after this method returns, so
+        there is a single recreation owner shared by every alter path
+        (type change, nullability change, and this AutoField/BigAutoField
+        one) instead of only this one.
+
+        The unique_together restoration is deduplicated against
+        self.deferred_sql for the same reason as Meta.indexes above: a
+        CreateModel(options={'unique_together': ...}) CREATE UNIQUE INDEX in
+        the same combined migration may still be queued (not yet executed)
+        when this AutoField-triggered restoration runs, and executing it
+        again here would collide with the still-pending statement once the
+        schema-editor context exits and runs it.
         """
         if not dropped_index_names:
             return
@@ -1671,6 +1690,31 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if statement and str(statement) not in [str(sql) for sql in self.deferred_sql]:
                 self.execute(statement)
 
+    def _restore_dropped_meta_constraints(self, model, old_field, new_field, dropped_index_names):
+        """Recreate a Meta.constraints UniqueConstraint whose physically
+        index-backed representation (e.g. filtered by `condition`, or
+        covering via `include`) was dropped earlier in this _alter_field()
+        call - see the Meta.constraints scan _delete_indexes() performs,
+        and the AutoField/BigAutoField wholesale-drop path above.
+
+        Unlike _restore_missing_meta_indexes(), which is only invoked when
+        the altered column was itself renamed, this method is called
+        unconditionally at the end of _alter_field() for every alter path -
+        type change, nullability change, rename, and AutoField/BigAutoField
+        - so a constraint dropped by any of them is recreated regardless of
+        which one triggered the drop. It is the single owner of
+        Meta.constraints restoration; only a constraint still absent from
+        the catalog is recreated, and only when its rendered CREATE
+        statement is not already queued in self.deferred_sql (mirroring the
+        deferred-creation guard used by _restore_missing_meta_indexes()
+        above, in case its CreateModel(options={'constraints': [...]})
+        CREATE is still pending in the same combined migration).
+        """
+        if not dropped_index_names:
+            return
+        existing_index_names = set(
+            self._db_table_constraint_names(model._meta.db_table, index=True)
+        )
         for constraint in model._meta.constraints:
             if (
                 not isinstance(constraint, UniqueConstraint)
@@ -1682,7 +1726,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 constraint, _field_rename_replacements(old_field, old_field.name, new_field.name)
             )
             statement = restored_constraint.create_sql(model, self)
-            if statement:
+            if statement and str(statement) not in [str(sql) for sql in self.deferred_sql]:
                 self.execute(statement)
 
     def _delete_indexes(self, model, old_field, new_field, meta_index_replacements=None):
@@ -1735,6 +1779,42 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     ) from exc
             if old_field.column in [field.column for field in fields] or new_field.column in [field.column for field in fields]:
                 index_names.append(index.name)
+
+        # A Meta.constraints UniqueConstraint that is physically backed by an
+        # index (unlike a plain table CONSTRAINT, e.g. one filtered by
+        # `condition` or covering via `include`) depends on its own key,
+        # include, condition, and expression columns exactly like a plain
+        # Meta.indexes entry does - so it must be dropped here too when the
+        # altered column is among them, or SQL Server rejects the ALTER
+        # COLUMN because the index still depends on the column. Only a
+        # constraint whose name is already a physical index (checked via
+        # `existing_index_names`) is considered; an unconditional
+        # multi-field UniqueConstraint without a condition/include is
+        # implemented as a table CONSTRAINT instead, and is left to
+        # _delete_unique_constraints().
+        for constraint in model._meta.constraints:
+            if not isinstance(constraint, UniqueConstraint) or constraint.name not in existing_index_names:
+                continue
+            reference_names = (
+                list(constraint.fields)
+                + list(constraint.include)
+                + self._get_condition_field_names(constraint.condition)
+                + self._get_expression_field_names(constraint.expressions)
+            )
+            fields = []
+            for field_name in reference_names:
+                try:
+                    fields.append(
+                        model._meta.get_field(_resolve_pk_alias(model, field_name))
+                    )
+                except FieldDoesNotExist as exc:
+                    raise FieldDoesNotExist(
+                        "Meta constraint '%s' references unresolved field '%s'." % (
+                            constraint.name, field_name
+                        )
+                    ) from exc
+            if old_field.column in [field.column for field in fields] or new_field.column in [field.column for field in fields]:
+                index_names.append(constraint.name)
 
         for fields in model._meta.unique_together:
             columns = [model._meta.get_field(field).column for field in fields]
