@@ -2,6 +2,9 @@
 # Licensed under the BSD license.
 
 import datetime
+import subprocess
+import sys
+import textwrap
 import uuid
 from contextlib import ExitStack, closing
 from types import SimpleNamespace
@@ -18,6 +21,79 @@ from testapp.models import UUIDModel
 
 @override_settings(DATABASE_CONNECTION_POOLING=True)
 class TestMssqlPythonLoading(SimpleTestCase):
+    def test_selected_driver_does_not_require_pyodbc_runtime(self):
+        script = textwrap.dedent("""
+            import builtins
+            from types import SimpleNamespace
+
+            original_import = builtins.__import__
+
+            def import_without_pyodbc(name, *args, **kwargs):
+                if name == "pyodbc":
+                    raise ImportError(
+                        "libodbc.so.2: cannot open shared object file"
+                    )
+                return original_import(name, *args, **kwargs)
+
+            builtins.__import__ = import_without_pyodbc
+
+            from django.conf import settings
+            settings.configure(
+                SECRET_KEY="test",
+                DATABASES={
+                    "default": {
+                        "ENGINE": "mssql",
+                        "NAME": "testdb",
+                        "OPTIONS": {"python_driver": "mssql_python"},
+                    }
+                },
+            )
+            from django.core.exceptions import ImproperlyConfigured
+            from django.db.utils import ConnectionHandler, load_backend
+
+            backend = load_backend("mssql")
+            assert backend.Database.__name__ == "mssql_python"
+            assert backend.DatabaseWrapper._uses_mssql_python(
+                settings.DATABASES["default"]
+            )
+            assert (
+                backend.DatabaseWrapper.introspection_class.data_types_reverse[
+                    backend.Database.SQL_INTEGER
+                ]
+                == "IntegerField"
+            )
+
+            connection = SimpleNamespace()
+            driver = SimpleNamespace(
+                connect=lambda *args, **kwargs: connection
+            )
+            backend._load_mssql_python = lambda: driver
+            selected = object.__new__(backend.DatabaseWrapper)
+            assert (
+                selected.get_new_connection(settings.DATABASES["default"])
+                is connection
+            )
+            assert selected.Database is driver
+
+            wrapper = ConnectionHandler({
+                "default": {"ENGINE": "mssql", "NAME": "testdb"}
+            })["default"]
+            try:
+                wrapper.ensure_connection()
+            except ImproperlyConfigured as error:
+                assert "Error loading pyodbc module" in str(error)
+            else:
+                raise AssertionError("pyodbc connection did not fail")
+        """)
+
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_missing_driver_has_direct_install_guidance(self):
         with mock.patch.dict("sys.modules", {"mssql_python": None}):
             with self.assertRaisesMessage(ImproperlyConfigured, "mssql-python>=1.15.0"):
