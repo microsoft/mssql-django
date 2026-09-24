@@ -4,6 +4,11 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserved structured indexes and conditional unique constraints across
+  field rename-plus-alter migrations ([#584]).
+
 ## [2.0.0] - 2026-09-18
 
 ### Added
@@ -153,6 +158,7 @@ All notable user-facing changes to mssql-django are documented in this file.
 [#564]: https://github.com/microsoft/mssql-django/pull/564
 [#575]: https://github.com/microsoft/mssql-django/pull/575
 [#583]: https://github.com/microsoft/mssql-django/pull/583
+[#584]: https://github.com/microsoft/mssql-django/pull/584
 [#596]: https://github.com/microsoft/mssql-django/pull/596
 [#598]: https://github.com/microsoft/mssql-django/pull/598
 [#599]: https://github.com/microsoft/mssql-django/pull/599
