@@ -4,6 +4,11 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Enabled MARS by default for pyodbc connections using Microsoft ODBC drivers
+  on Linux and macOS, keeping runtime capability flags consistent ([#618]).
+
 ## [2.0.0] - 2026-09-18
 
 ### Added

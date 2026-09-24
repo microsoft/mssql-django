@@ -5,7 +5,6 @@
 MS SQL Server database backend for Django.
 """
 import logging
-import os
 import re
 import time
 import struct
@@ -550,7 +549,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         cstr_parts['DATABASE'] = database
 
-        if (not use_python_driver and ms_drivers.match(driver) and os.name == 'nt' and
+        if (not use_python_driver and ms_drivers.match(driver) and
                 'mars_connection' not in self._parse_extra_params(options_extra_params)):
             cstr_parts['MARS_Connection'] = 'yes'
 

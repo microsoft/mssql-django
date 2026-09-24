@@ -15,7 +15,7 @@ them carefully.
   if the user set the keyword explicitly in `extra_params`, skip our injection. Apply the
   same pattern to any newly injected keyword; parse `extra_params` (case-insensitive) to
   detect it.
-- **MARS defaults on for Microsoft drivers on Windows.** Honor an explicit
+- **MARS defaults on for Microsoft drivers on the pyodbc path.** Honor an explicit
   `MARS_Connection` in `extra_params` without injecting a duplicate, and keep
   `supports_mars` and `can_use_chunked_reads` consistent with that setting. Disabling
   MARS must not apply the FreeTDS `fetchone()` result-discard workaround to Microsoft
