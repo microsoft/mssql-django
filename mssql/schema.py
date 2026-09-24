@@ -1618,7 +1618,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         index_together (Django < 5.1), unique_together, and Meta.constraints
         UniqueConstraint objects, the same way the non-renamed "column
         alteration cleanup" path restores them for a plain (non-renamed)
-        AutoField/BigAutoField change.
+        AutoField/BigAutoField change. The unique_together restoration is
+        deduplicated against self.deferred_sql for the same reason as
+        Meta.indexes above: a CreateModel(options={'unique_together': ...})
+        CREATE UNIQUE INDEX in the same combined migration may still be
+        queued (not yet executed) when this AutoField-triggered restoration
+        runs, and executing it again here would collide with the still-
+        pending statement once the schema-editor context exits and runs it.
         """
         if not dropped_index_names:
             return
@@ -1659,9 +1665,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             fields = [model._meta.get_field(f) for f in field_names]
             condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
             if django_version >= (4, 0):
-                self.execute(self._create_unique_sql(model, fields, condition=condition))
+                statement = self._create_unique_sql(model, fields, condition=condition)
             else:
-                self.execute(self._create_unique_sql(model, columns, condition=condition))
+                statement = self._create_unique_sql(model, columns, condition=condition)
+            if statement and str(statement) not in [str(sql) for sql in self.deferred_sql]:
+                self.execute(statement)
 
         for constraint in model._meta.constraints:
             if (
