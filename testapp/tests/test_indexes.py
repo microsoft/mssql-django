@@ -3203,6 +3203,90 @@ class TestMetaIndexesRetained(TransactionTestCase):
         self.assertIn('[aa]', filter_definition)
         self.assertNotIn('[a]', filter_definition)
 
+    def test_positional_index_expression_rewritten_after_rename(self):
+        """
+        Index(*expressions, ...) stores its positional arguments in
+        .expressions, and Index.deconstruct() returns that same list as
+        positional args - not through .fields/.include/.condition, which
+        _clone_index_with_replacements() already rewrites. A renamed field
+        referenced only positionally (e.g. `Index(F('a'), name=...)`) must
+        still be rewritten in the durable migration state produced by
+        RenameField, without mutating the preserved source Index.
+
+        State-only: mssql/features.py declares
+        supports_expression_indexes = False, so this inspects rebuilt
+        ProjectState rather than executing DDL.
+        """
+        model_name = 'TestPositionalIndexRename'
+        index_name = 'idx_positional_expression_rename'
+        source_index = models.Index(models.F('a'), name=index_name)
+
+        class PositionalIndexMigration(migrations.Migration):
+            initial = True
+            operations = [
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20)),
+                    ],
+                    options={'indexes': [source_index]},
+                ),
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='a', new_name='aa'
+                ),
+            ]
+
+        migration = PositionalIndexMigration(
+            name='test_positional_index_rename', app_label='testapp'
+        )
+        state = migration.mutate_state(ProjectState())
+        model_state = state.models[('testapp', model_name.lower())]
+        rewritten_index = model_state.options['indexes'][0]
+
+        self.assertEqual(rewritten_index.expressions[0].name, 'aa')
+        # The preserved source definition must be untouched.
+        self.assertEqual(source_index.expressions[0].name, 'a')
+
+    def test_positional_unique_constraint_expression_rewritten_after_rename(self):
+        """
+        Mirrors test_positional_index_expression_rewritten_after_rename() for
+        UniqueConstraint(*expressions, ...): its positional arguments are
+        likewise returned as-is by deconstruct() via .expressions, bypassing
+        the .fields/.include/.condition rewrites
+        _clone_constraint_with_replacements() already performs.
+        """
+        model_name = 'TestPositionalConstraintRename'
+        constraint_name = 'uq_positional_expression_rename'
+        source_constraint = UniqueConstraint(models.F('a'), name=constraint_name)
+
+        class PositionalConstraintMigration(migrations.Migration):
+            initial = True
+            operations = [
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.CharField(max_length=20)),
+                    ],
+                    options={'constraints': [source_constraint]},
+                ),
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='a', new_name='aa'
+                ),
+            ]
+
+        migration = PositionalConstraintMigration(
+            name='test_positional_constraint_rename', app_label='testapp'
+        )
+        state = migration.mutate_state(ProjectState())
+        model_state = state.models[('testapp', model_name.lower())]
+        rewritten_constraint = model_state.options['constraints'][0]
+
+        self.assertEqual(rewritten_constraint.expressions[0].name, 'aa')
+        # The preserved source definition must be untouched.
+        self.assertEqual(source_constraint.expressions[0].name, 'a')
+
     def test_condition_field_names_rewritten_for_collection_and_transformed_rhs(self):
         """
         Field references nested in a tuple/list RHS value, or reached through
