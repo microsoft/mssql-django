@@ -38,69 +38,80 @@ from django.db.migrations.state import ProjectState
 def _clone_index_with_replacements(index, replacements):
     """Clone a structured Meta.indexes definition with renamed field references.
 
-    Django stores indexes as structured Index and Q objects in migration state.
-    Cloning from deconstruct() preserves index options - including positional
-    expressions (e.g. `Index(F('a'), name=...)`, returned by deconstruct() as
-    the same objects held by index.expressions) - without changing the
-    historical definition retained by a preserved project state.
+    Deep-copies the index and rewrites its known field-referencing
+    attributes directly on the clone, rather than reconstructing through
+    index.deconstruct()'s constructor arguments: a custom Index subclass's
+    deconstruct() may omit fields/include/condition/positional expressions
+    from the constructor arguments it considers unaffected, so
+    unconditionally reinjecting them as kwargs raises TypeError - even for
+    an index that doesn't reference the renamed field at all, since every
+    index is cloned whenever a rename occurs. Attribute assignment has no
+    such contract and leaves any other subclass-specific state - and the
+    historical definition retained by a preserved project state - alone.
     """
     if not replacements:
         return index
-    _, args, kwargs = index.deconstruct()
-    args = tuple(
-        _replace_expression_field_names(copy.deepcopy(expression), replacements)
-        for expression in args
-    )
-    kwargs['fields'] = [
+    clone = copy.deepcopy(index)
+    clone.fields = [
         ('-' if field_name.startswith('-') else '') + replacements.get(
             field_name.lstrip('-'), field_name.lstrip('-')
         )
         for field_name in index.fields
     ]
+    # create_sql() reads fields_orders, not fields, for key columns/ordering.
+    clone.fields_orders = [
+        (field_name.lstrip('-'), 'DESC' if field_name.startswith('-') else '')
+        for field_name in clone.fields
+    ]
     if index.include:
-        kwargs['include'] = [
+        clone.include = tuple(
             replacements.get(field_name, field_name) for field_name in index.include
-        ]
+        )
     if index.condition:
-        condition = copy.deepcopy(index.condition)
-        _replace_condition_field_names(condition, replacements)
-        kwargs['condition'] = condition
-    return index.__class__(*args, **kwargs)
+        _replace_condition_field_names(clone.condition, replacements)
+    if index.expressions:
+        clone.expressions = tuple(
+            _replace_expression_field_names(expression, replacements)
+            for expression in clone.expressions
+        )
+    return clone
 
 
 def _clone_constraint_with_replacements(constraint, replacements):
     """Clone a structured Meta.constraints UniqueConstraint with renamed
     field references.
 
-    Mirrors _clone_index_with_replacements(): Django does not update
-    Meta.constraints references on ProjectState.rename_field() /
-    RenameField.state_forwards(), so a renamed field left in a preserved
-    UniqueConstraint.condition/fields/include/positional expressions (e.g.
-    `UniqueConstraint(F('a'), name=...)`, returned by deconstruct() as the
-    same objects held by constraint.expressions) raises FieldError when a
-    later migration operation renders it.
+    Mirrors _clone_index_with_replacements(): rewrites known
+    field-referencing attributes on a deep-copied clone rather than
+    reconstructing through constraint.deconstruct()'s constructor
+    arguments, so a custom UniqueConstraint subclass whose deconstruct()
+    omits fields/include/condition/positional expressions from its
+    constructor arguments doesn't raise TypeError on every clone. Django
+    does not update Meta.constraints references on
+    ProjectState.rename_field() / RenameField.state_forwards(), so a
+    renamed field left in a preserved UniqueConstraint raises FieldError
+    when a later migration operation renders it.
     """
     if not replacements or not isinstance(constraint, UniqueConstraint):
         return constraint
-    _, args, kwargs = constraint.deconstruct()
-    args = tuple(
-        _replace_expression_field_names(copy.deepcopy(expression), replacements)
-        for expression in args
-    )
-    kwargs['fields'] = tuple(
+    clone = copy.deepcopy(constraint)
+    clone.fields = tuple(
         replacements.get(field_name, field_name)
         for field_name in constraint.fields
     )
     if constraint.include:
-        kwargs['include'] = tuple(
+        clone.include = tuple(
             replacements.get(field_name, field_name)
             for field_name in constraint.include
         )
     if constraint.condition:
-        condition = copy.deepcopy(constraint.condition)
-        _replace_condition_field_names(condition, replacements)
-        kwargs['condition'] = condition
-    return constraint.__class__(*args, **kwargs)
+        _replace_condition_field_names(clone.condition, replacements)
+    if constraint.expressions:
+        clone.expressions = tuple(
+            _replace_expression_field_names(expression, replacements)
+            for expression in clone.expressions
+        )
+    return clone
 
 
 def _split_field_lookup(name):
