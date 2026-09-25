@@ -8,21 +8,26 @@ import sys
 from tempfile import TemporaryDirectory
 from textwrap import dedent
 
+from django.conf import settings
 from django.db import migrations
 from django.test import SimpleTestCase
 
 
 class SquashMigrationsCommandTests(SimpleTestCase):
+    databases = {"default"}
+
     def test_cli_preserves_renamed_index_and_constraint(self):
+        database = {
+            key: value
+            for key, value in settings.DATABASES["default"].items()
+            if key != "TEST"
+        }
         fixtures = {
-            "squash_cli_settings.py": """
+            "squash_cli_settings.py": f"""
                 SECRET_KEY = "squash-cli-test"
                 INSTALLED_APPS = ["squash_cli_app"]
                 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
-                DATABASES = {"default": {
-                    "ENGINE": "mssql", "NAME": "unused",
-                    "HOST": "127.0.0.1", "PORT": "1",
-                }}
+                DATABASES = {{"default": {database!r}}}
             """,
             "squash_cli_app/__init__.py": "",
             "squash_cli_app/models.py": """
