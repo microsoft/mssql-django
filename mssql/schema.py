@@ -2272,7 +2272,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
 
         constraints = []
         for constraint in model._meta.constraints:
-            if isinstance(constraint, UniqueConstraint) and constraint.condition is not None:
+            uses_default_constraint_sql = (
+                constraint.__class__.constraint_sql is UniqueConstraint.constraint_sql
+            )
+            if (
+                isinstance(constraint, UniqueConstraint)
+                and constraint.condition is not None
+                and uses_default_constraint_sql
+            ):
                 statement = self._create_deferred_unique_constraint_sql(model, constraint)
                 if statement is not None:
                     self.deferred_sql.append(statement)

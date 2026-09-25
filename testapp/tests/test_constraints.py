@@ -166,6 +166,46 @@ class TestHandleOldStyleUniqueTogether(TransactionTestCase):
 
 
 class TestCreateModelUniqueTogether(TransactionTestCase):
+    def test_custom_conditional_constraint_preserves_constraint_sql_hook(self):
+        calls = []
+
+        class CustomConditionalConstraint(models.UniqueConstraint):
+            def constraint_sql(self, model, schema_editor):
+                calls.append((model, schema_editor))
+                return None
+
+        class TestMigration(migrations.Migration):
+            initial = True
+            operations = [
+                migrations.CreateModel(
+                    name='TestCustomConditionalConstraintHook',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.IntegerField()),
+                        ('b', models.IntegerField()),
+                    ],
+                    options={
+                        'constraints': [
+                            CustomConditionalConstraint(
+                                fields=['b'],
+                                condition=models.Q(a__isnull=False),
+                                name='uq_custom_constraint_hook',
+                            ),
+                        ],
+                    },
+                ),
+            ]
+
+        migration = TestMigration(
+            name='test_custom_conditional_constraint_hook', app_label='testapp'
+        )
+        connection = connections['default']
+
+        with connection.schema_editor(atomic=True) as editor:
+            migration.apply(ProjectState(), editor)
+
+        self.assertEqual(len(calls), 1)
+
     def test_create_model_with_unique_together_preserves_deferred_condition(self):
         class TestMigration(migrations.Migration):
             initial = True
