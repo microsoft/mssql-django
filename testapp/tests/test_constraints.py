@@ -9,7 +9,7 @@ from django.db.utils import IntegrityError
 from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
 
 from mssql.base import DatabaseWrapper
-from . import get_constraint_names_where
+from . import get_constraint_names_where, get_constraints
 from ..models import (
     Author,
     Editor,
@@ -195,6 +195,68 @@ class TestCreateModelUniqueTogether(TransactionTestCase):
             model._meta.db_table, index=True, unique=True
         )
         self.assertEqual(len(unique_index_names), 1)
+
+    def test_renamed_field_updates_deferred_unique_together_condition(self):
+        """
+        create_model() builds the deferred unique_together CREATE UNIQUE
+        INDEX's NOT NULL filter as a structured NullableColumns reference
+        (not a baked SQL string) precisely so a RenameField in the same
+        migration - executed in the same schema_editor context, before the
+        deferred statement is flushed at editor exit - rewrites it through
+        Django's inherited Reference.rename_column_references(). Exercise
+        that trigger directly: a raw string condition would still name the
+        pre-rename column and either miss it entirely or reference a column
+        that no longer exists once the deferred CREATE INDEX finally runs.
+        """
+        model_name = 'TestRenamedUniqueTogether'
+
+        class TestMigration(migrations.Migration):
+            initial = True
+
+            operations = [
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                        ('a', models.CharField(max_length=50, null=True)),
+                        ('b', models.CharField(max_length=50)),
+                    ],
+                    options={'unique_together': {('a', 'b')}},
+                ),
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='a', new_name='aa'
+                ),
+            ]
+
+        migration = TestMigration(
+            name='test_renamed_unique_together', app_label='testapp'
+        )
+        connection = connections['default']
+
+        with connection.schema_editor(atomic=True) as editor:
+            project_state = migration.apply(ProjectState(), editor)
+
+        model = project_state.apps.get_model('testapp', model_name)
+        table_name = model._meta.db_table
+        constraints = get_constraints(table_name=table_name)
+        unique_index_names = get_constraint_names_where(
+            table_name, index=True, unique=True
+        )
+        # No duplicate creation: the rename must not leave both a stale
+        # pre-rename index and a correctly named post-rename one.
+        self.assertEqual(len(unique_index_names), 1)
+        columns = constraints[unique_index_names[0]]['columns']
+        self.assertIn('aa', columns)
+        self.assertNotIn('a', columns)
+
+        # Uniqueness is still enforced on the renamed column: multiple NULLs
+        # are allowed (the NOT NULL filter), but a non-NULL duplicate is not.
+        model.objects.create(aa=None, b='x')
+        model.objects.create(aa=None, b='x')
+        model.objects.create(aa='y', b='z')
+        with self.assertRaises(IntegrityError):
+            model.objects.create(aa='y', b='z')
+
 
 class TestRenameManyToManyField(TestCase):
     def test_uniqueness_still_enforced_afterwards(self):
