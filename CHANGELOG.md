@@ -6,8 +6,11 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 ### Fixed
 
-- Preserved structured indexes and conditional unique constraints across
-  field rename-plus-alter migrations ([#584]).
+- Preserved structured `Meta.indexes` and conditional/covering
+  `UniqueConstraint` definitions - including their positional expressions -
+  across `RenameField`-plus-`AlterField` migrations (split or combined),
+  reused/multiple renames, optimizer-folded `CreateModel`, and
+  `AutoField`/`BigAutoField` column-rename restoration ([#584]).
 
 ## [2.0.0] - 2026-09-18
 
