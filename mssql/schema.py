@@ -39,12 +39,18 @@ def _clone_index_with_replacements(index, replacements):
     """Clone a structured Meta.indexes definition with renamed field references.
 
     Django stores indexes as structured Index and Q objects in migration state.
-    Cloning from deconstruct() preserves index options without changing the
+    Cloning from deconstruct() preserves index options - including positional
+    expressions (e.g. `Index(F('a'), name=...)`, returned by deconstruct() as
+    the same objects held by index.expressions) - without changing the
     historical definition retained by a preserved project state.
     """
     if not replacements:
         return index
     _, args, kwargs = index.deconstruct()
+    args = tuple(
+        _replace_expression_field_names(copy.deepcopy(expression), replacements)
+        for expression in args
+    )
     kwargs['fields'] = [
         ('-' if field_name.startswith('-') else '') + replacements.get(
             field_name.lstrip('-'), field_name.lstrip('-')
@@ -69,12 +75,18 @@ def _clone_constraint_with_replacements(constraint, replacements):
     Mirrors _clone_index_with_replacements(): Django does not update
     Meta.constraints references on ProjectState.rename_field() /
     RenameField.state_forwards(), so a renamed field left in a preserved
-    UniqueConstraint.condition/fields/include raises FieldError when a
+    UniqueConstraint.condition/fields/include/positional expressions (e.g.
+    `UniqueConstraint(F('a'), name=...)`, returned by deconstruct() as the
+    same objects held by constraint.expressions) raises FieldError when a
     later migration operation renders it.
     """
     if not replacements or not isinstance(constraint, UniqueConstraint):
         return constraint
     _, args, kwargs = constraint.deconstruct()
+    args = tuple(
+        _replace_expression_field_names(copy.deepcopy(expression), replacements)
+        for expression in args
+    )
     kwargs['fields'] = tuple(
         replacements.get(field_name, field_name)
         for field_name in constraint.fields
