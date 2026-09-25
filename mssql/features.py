@@ -5,7 +5,7 @@ from django.db.backends.base.features import BaseDatabaseFeatures
 from django.utils.functional import cached_property
 from django import VERSION as django_version
 # Import CompositePrimaryKey only if Django version is 5.2 or higher
-if django_version >= (5, 2):    
+if django_version >= (5, 2):
     from django.db.models.fields.composite import CompositePrimaryKey
 class DatabaseFeatures(BaseDatabaseFeatures):
     # Django 6.1 added database-level ON DELETE pushdown (DB_CASCADE / DB_SET_NULL /
@@ -103,3 +103,39 @@ class DatabaseFeatures(BaseDatabaseFeatures):
             **super().introspected_field_types,
             "DurationField": "BigIntegerField",
         }
+
+    @cached_property
+    def supports_json_path_exists(self):
+        """
+        JSON_PATH_EXISTS was introduced in SQL Server 2022 and requires the
+        database compatibility level to be 160 or higher.
+        """
+        try:
+            if self.connection.sql_server_version < 2022:
+               return False
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT compatibility_level FROM sys.databases "
+                    "WHERE database_id = DB_ID()"
+                )
+                row = cursor.fetchone()
+                return bool(row) and row[0] >= 160
+        except Exception:
+            return False
+
+    @cached_property
+    def supports_json_openjson(self):
+        """
+        OPENJSON requires database compatibility level >= 130, independent of
+        the SQL Server product version.
+        """
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT compatibility_level FROM sys.databases "
+                    "WHERE database_id = DB_ID()"
+                )
+                row = cursor.fetchone()
+                return bool(row) and row[0] >= 130
+        except Exception:
+            return False
