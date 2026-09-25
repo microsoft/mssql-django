@@ -14,7 +14,11 @@ from django.test import TestCase, TransactionTestCase
 from unittest import expectedFailure, skipIf, skipUnless
 from unittest.mock import patch
 
-from mssql.schema import _clone_index_with_replacements, _replace_condition_field_names
+from mssql.schema import (
+    _clone_constraint_with_replacements,
+    _clone_index_with_replacements,
+    _replace_condition_field_names,
+)
 
 from . import get_constraints
 from ..models import (
@@ -3286,6 +3290,69 @@ class TestMetaIndexesRetained(TransactionTestCase):
         self.assertEqual(rewritten_constraint.expressions[0].name, 'aa')
         # The preserved source definition must be untouched.
         self.assertEqual(source_constraint.expressions[0].name, 'a')
+
+    def test_clone_index_with_replacements_preserves_custom_deconstruct_contract(self):
+        """
+        _clone_index_with_replacements() must not reconstruct through
+        index.deconstruct()'s constructor arguments: a custom Index
+        subclass may derive fields internally and not accept 'fields' as a
+        constructor keyword at all, while its deconstruct() mirrors that by
+        omitting 'fields' from what it returns. Every index is cloned
+        whenever any rename occurs - including ones the rename doesn't
+        affect - so unconditionally reinjecting a 'fields' kwarg before
+        calling `index.__class__(*args, **kwargs)` raises TypeError for
+        such a subclass even when nothing about it needs to change.
+        """
+        class CustomIndexWithoutFieldsKwarg(models.Index):
+            def __init__(self, name=None):
+                super().__init__(fields=['-a', 'b'], name=name)
+
+            def deconstruct(self):
+                path, args, kwargs = super().deconstruct()
+                kwargs.pop('fields', None)
+                return path, args, kwargs
+
+        source = CustomIndexWithoutFieldsKwarg(name='idx_custom_deconstruct')
+
+        # Unaffected: the replacement doesn't name any field this index
+        # references, but every index is still cloned unconditionally.
+        unaffected = _clone_index_with_replacements(source, {'c': 'cc'})
+        self.assertIsNot(unaffected, source)
+        self.assertEqual(unaffected.fields, ['-a', 'b'])
+
+        # Affected: the rename must still reach fields and fields_orders
+        # (create_sql() reads fields_orders, not fields, for key columns),
+        # including the descending-order marker.
+        renamed = _clone_index_with_replacements(source, {'a': 'aa'})
+        self.assertEqual(renamed.fields, ['-aa', 'b'])
+        self.assertEqual(renamed.fields_orders, [('aa', 'DESC'), ('b', '')])
+        # The preserved source definition must be untouched.
+        self.assertEqual(source.fields, ['-a', 'b'])
+
+    def test_clone_constraint_with_replacements_preserves_custom_deconstruct_contract(self):
+        """
+        Mirrors test_clone_index_with_replacements_preserves_custom_deconstruct_contract()
+        for _clone_constraint_with_replacements().
+        """
+        class CustomUniqueConstraintWithoutFieldsKwarg(UniqueConstraint):
+            def __init__(self, name=None):
+                super().__init__(fields=['a', 'b'], name=name)
+
+            def deconstruct(self):
+                path, args, kwargs = super().deconstruct()
+                kwargs.pop('fields', None)
+                return path, args, kwargs
+
+        source = CustomUniqueConstraintWithoutFieldsKwarg(name='uq_custom_deconstruct')
+
+        unaffected = _clone_constraint_with_replacements(source, {'c': 'cc'})
+        self.assertIsNot(unaffected, source)
+        self.assertEqual(unaffected.fields, ('a', 'b'))
+
+        renamed = _clone_constraint_with_replacements(source, {'a': 'aa'})
+        self.assertEqual(renamed.fields, ('aa', 'b'))
+        # The preserved source definition must be untouched.
+        self.assertEqual(source.fields, ('a', 'b'))
 
     def test_condition_field_names_rewritten_for_collection_and_transformed_rhs(self):
         """
