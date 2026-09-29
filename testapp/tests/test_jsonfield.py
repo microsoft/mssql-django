@@ -192,3 +192,20 @@ class TestJSONField(TestCase):
         select_sql = captured[-1]["sql"]
         self.assertEqual(select_sql.upper().count("TRY_CONVERT(FLOAT"), 1)
 
+
+    @skipUnless(VERSION >= (3, 1), "JSONField not supported in Django versions < 3.1")
+    def test_isnull_key_null_value(self):
+        for db in self.databases:
+            if db == 'sqlite' and not _check_jsonfield_supported_sqlite():
+                continue
+            with self.subTest(db=db):
+                JSONModel.objects.using(db).all().delete()
+                row_null = JSONModel.objects.using(db).create(value={"k": None})
+                row_val = JSONModel.objects.using(db).create(value={"k": "v"})
+                row_absent = JSONModel.objects.using(db).create(value={"other": 1})
+
+                qs_true = list(JSONModel.objects.using(db).filter(value__k__isnull=True).order_by('id'))
+                qs_false = list(JSONModel.objects.using(db).filter(value__k__isnull=False).order_by('id'))
+
+                self.assertSequenceEqual(qs_true, [row_absent])
+                self.assertCountEqual(qs_false, [row_null, row_val])
