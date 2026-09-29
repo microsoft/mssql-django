@@ -588,7 +588,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 self.execute(sql)
 
     def _create_deferred_meta_index_sql(self, model, index):
-        if index.condition is None:
+        uses_default_create_sql = index.__class__.create_sql is Index.create_sql
+        if index.condition is None or not uses_default_create_sql:
             return index.create_sql(model, self)
         condition = index.condition
         index = index.clone()

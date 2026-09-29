@@ -3354,6 +3354,48 @@ class TestMetaIndexesRetained(TransactionTestCase):
         # The preserved source definition must be untouched.
         self.assertEqual(source.fields, ('a', 'b'))
 
+    def test_custom_conditional_index_preserves_create_sql_hook(self):
+        calls = []
+
+        class CustomConditionalIndex(models.Index):
+            def create_sql(self, model, schema_editor, using='', **kwargs):
+                calls.append(self.condition)
+                return super().create_sql(
+                    model, schema_editor, using=using, **kwargs
+                )
+
+        class TestMigration(migrations.Migration):
+            initial = True
+            operations = [
+                migrations.CreateModel(
+                    name='TestCustomConditionalIndexHook',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.IntegerField()),
+                    ],
+                    options={
+                        'indexes': [
+                            CustomConditionalIndex(
+                                fields=['a'],
+                                condition=models.Q(a__isnull=False),
+                                name='idx_custom_create_sql_hook',
+                            ),
+                        ],
+                    },
+                ),
+            ]
+
+        migration = TestMigration(
+            name='test_custom_conditional_index_hook', app_label='testapp'
+        )
+        conn = django.db.connections[django.db.DEFAULT_DB_ALIAS]
+
+        with conn.schema_editor(atomic=True) as editor:
+            migration.apply(ProjectState(), editor)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].children, [('a__isnull', False)])
+
     def test_condition_field_names_rewritten_for_collection_and_transformed_rhs(self):
         """
         Field references nested in a tuple/list RHS value, or reached through
