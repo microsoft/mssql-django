@@ -75,7 +75,8 @@ jobs:
       id: analyze
       uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
       with:
-        upload-database: true
+        upload: never
+        upload-database: false
 
     - name: Break build on CodeQL findings
       env:
