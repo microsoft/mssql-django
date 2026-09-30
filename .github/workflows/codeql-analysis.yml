@@ -72,4 +72,43 @@ jobs:
     #   make release
 
     - name: Perform CodeQL Analysis
+      id: analyze
       uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      with:
+        upload-database: true
+
+    - name: Break build on CodeQL findings
+      env:
+        SARIF_OUTPUT: ${{ steps.analyze.outputs.sarif-output }}
+      shell: bash
+      run: |
+        python - "$SARIF_OUTPUT" <<'PY'
+        import json
+        import sys
+        from collections import Counter
+        from pathlib import Path
+
+        sarif_files = list(Path(sys.argv[1]).rglob("*.sarif"))
+        if not sarif_files:
+            print("::error::CodeQL did not produce SARIF output.")
+            raise SystemExit(1)
+
+        levels = Counter()
+        for sarif_file in sarif_files:
+            with sarif_file.open(encoding="utf-8") as stream:
+                for run in json.load(stream).get("runs", []):
+                    levels.update(
+                        result.get("level", "warning")
+                        for result in run.get("results", [])
+                    )
+
+        blocking_findings = levels["error"] + levels["warning"]
+        if blocking_findings:
+            print(
+                f"::error::CodeQL reported {blocking_findings} blocking "
+                "finding(s). Review the uploaded GitHub code-scanning alerts."
+            )
+            raise SystemExit(1)
+
+        print(f"CodeQL found no blocking findings ({levels['note']} note(s)).")
+        PY
