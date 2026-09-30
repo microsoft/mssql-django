@@ -39,6 +39,10 @@ resources:
 extends:
   template: 'v2/OneBranch.Official.CrossPlat.yml@templates'
   parameters:
+    featureFlags:
+      networkisolation:
+        policy: Preferred,CFSClean
+
     globalSdl:
       sbom:
         enabled: true
