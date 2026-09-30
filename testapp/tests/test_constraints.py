@@ -9,7 +9,7 @@ from django.db.utils import IntegrityError
 from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
 
 from mssql.base import DatabaseWrapper
-from . import get_constraint_names_where
+from . import get_constraint_names_where, get_constraints
 from ..models import (
     Author,
     Editor,
@@ -164,6 +164,140 @@ class TestHandleOldStyleUniqueTogether(TransactionTestCase):
                 self.fail('Check for regression of issue #137, AlterField failed with exception: %s' % e)
 
 
+
+class TestCreateModelUniqueTogether(TransactionTestCase):
+    def test_custom_conditional_constraint_preserves_constraint_sql_hook(self):
+        calls = []
+
+        class CustomConditionalConstraint(models.UniqueConstraint):
+            def constraint_sql(self, model, schema_editor):
+                calls.append((model, schema_editor))
+                return None
+
+        class TestMigration(migrations.Migration):
+            initial = True
+            operations = [
+                migrations.CreateModel(
+                    name='TestCustomConditionalConstraintHook',
+                    fields=[
+                        ('id', models.AutoField(primary_key=True)),
+                        ('a', models.IntegerField()),
+                        ('b', models.IntegerField()),
+                    ],
+                    options={
+                        'constraints': [
+                            CustomConditionalConstraint(
+                                fields=['b'],
+                                condition=models.Q(a__isnull=False),
+                                name='uq_custom_constraint_hook',
+                            ),
+                        ],
+                    },
+                ),
+            ]
+
+        migration = TestMigration(
+            name='test_custom_conditional_constraint_hook', app_label='testapp'
+        )
+        connection = connections['default']
+
+        with connection.schema_editor(atomic=True) as editor:
+            migration.apply(ProjectState(), editor)
+
+        self.assertEqual(len(calls), 1)
+
+    def test_create_model_with_unique_together_preserves_deferred_condition(self):
+        class TestMigration(migrations.Migration):
+            initial = True
+
+            operations = [
+                migrations.CreateModel(
+                    name='TestCreateModelUniqueTogether',
+                    fields=[
+                        ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                        ('a', models.CharField(max_length=50, null=True)),
+                        ('b', models.CharField(max_length=50)),
+                    ],
+                    options={'unique_together': {('a', 'b')}},
+                ),
+            ]
+
+        migration = TestMigration(
+            name='test_create_model_with_unique_together', app_label='testapp'
+        )
+        connection = connections['default']
+
+        with connection.schema_editor(atomic=True) as editor:
+            project_state = migration.apply(ProjectState(), editor)
+
+        model = project_state.apps.get_model('testapp', 'TestCreateModelUniqueTogether')
+        unique_index_names = get_constraint_names_where(
+            model._meta.db_table, index=True, unique=True
+        )
+        self.assertEqual(len(unique_index_names), 1)
+
+    def test_renamed_field_updates_deferred_unique_together_condition(self):
+        """
+        create_model() builds the deferred unique_together CREATE UNIQUE
+        INDEX's NOT NULL filter as a structured NullableColumns reference
+        (not a baked SQL string) precisely so a RenameField in the same
+        migration - executed in the same schema_editor context, before the
+        deferred statement is flushed at editor exit - rewrites it through
+        Django's inherited Reference.rename_column_references(). Exercise
+        that trigger directly: a raw string condition would still name the
+        pre-rename column and either miss it entirely or reference a column
+        that no longer exists once the deferred CREATE INDEX finally runs.
+        """
+        model_name = 'TestRenamedUniqueTogether'
+
+        class TestMigration(migrations.Migration):
+            initial = True
+
+            operations = [
+                migrations.CreateModel(
+                    name=model_name,
+                    fields=[
+                        ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                        ('a', models.CharField(max_length=50, null=True)),
+                        ('b', models.CharField(max_length=50)),
+                    ],
+                    options={'unique_together': {('a', 'b')}},
+                ),
+                migrations.RenameField(
+                    model_name=model_name.lower(), old_name='a', new_name='aa'
+                ),
+            ]
+
+        migration = TestMigration(
+            name='test_renamed_unique_together', app_label='testapp'
+        )
+        connection = connections['default']
+
+        with connection.schema_editor(atomic=True) as editor:
+            project_state = migration.apply(ProjectState(), editor)
+
+        model = project_state.apps.get_model('testapp', model_name)
+        table_name = model._meta.db_table
+        constraints = get_constraints(table_name=table_name)
+        unique_index_names = get_constraint_names_where(
+            table_name, index=True, unique=True
+        )
+        # No duplicate creation: the rename must not leave both a stale
+        # pre-rename index and a correctly named post-rename one.
+        self.assertEqual(len(unique_index_names), 1)
+        columns = constraints[unique_index_names[0]]['columns']
+        self.assertIn('aa', columns)
+        self.assertNotIn('a', columns)
+
+        # Uniqueness is still enforced on the renamed column: multiple NULLs
+        # are allowed (the NOT NULL filter), but a non-NULL duplicate is not.
+        model.objects.create(aa=None, b='x')
+        model.objects.create(aa=None, b='x')
+        model.objects.create(aa='y', b='z')
+        with self.assertRaises(IntegrityError):
+            model.objects.create(aa='y', b='z')
+
+
 class TestRenameManyToManyField(TestCase):
     def test_uniqueness_still_enforced_afterwards(self):
         # Issue https://github.com/microsoft/mssql-django/issues/86
@@ -227,3 +361,356 @@ class TestUniqueConstraints(TransactionTestCase):
                     NotImplementedError, "does not support OR conditions"
                 ):
                     return migration.apply(ProjectState(), editor)
+
+    def test_unsupportable_unique_constraint_via_create_model(self):
+        """
+        add_constraint() raises NotImplementedError for a conditional
+        UniqueConstraint with a top-level OR (see
+        test_unsupportable_unique_constraint above), but a constraint
+        declared inline via CreateModel(options={'constraints': [...]})
+        never reaches add_constraint() - create_model() calls
+        _create_deferred_unique_constraint_sql() directly. That path must
+        raise the same NotImplementedError instead of compiling an
+        unsupported OR predicate into a filtered index and letting SQL
+        Server fail with a raw syntax error.
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintCreateModel',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                        options={
+                            'constraints': [
+                                models.UniqueConstraint(
+                                    condition=models.Q(
+                                        ('status', 'in_progress'),
+                                        ('status', 'needs_changes'),
+                                        _connector='OR',
+                                    ),
+                                    fields=('_type',),
+                                    name='or_constraint_create_model',
+                                ),
+                            ],
+                        },
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_create_model', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support OR conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
+
+    def test_unsupportable_unique_constraint_nested_or(self):
+        """
+        The OR-connector guard in add_constraint() only inspected the root Q
+        node's connector. A root AND whose child is itself an OR (e.g.
+        Q(a=1) & (Q(b=2) | Q(c=3))) reports connector == 'AND' at the root
+        and slipped through, producing a filtered-index predicate SQL Server
+        rejects with a raw syntax error instead of this NotImplementedError.
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintNestedOr',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                    ),
+                    migrations.AddConstraint(
+                        model_name='testunsupportableuniqueconstraintnestedor',
+                        constraint=models.UniqueConstraint(
+                            condition=models.Q(_type='widget') & (
+                                models.Q(status='in_progress') | models.Q(status='needs_changes')
+                            ),
+                            fields=('_type',),
+                            name='nested_or_constraint',
+                        ),
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_nested_or', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support OR conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
+
+    def test_unsupportable_unique_constraint_nested_or_via_create_model(self):
+        """
+        Same nested-OR predicate as test_unsupportable_unique_constraint_nested_or
+        above, but declared inline via CreateModel(options={'constraints': [...]}),
+        which reaches _create_deferred_unique_constraint_sql() directly instead of
+        add_constraint().
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintNestedOrCreateModel',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                        options={
+                            'constraints': [
+                                models.UniqueConstraint(
+                                    condition=models.Q(_type='widget') & (
+                                        models.Q(status='in_progress') | models.Q(status='needs_changes')
+                                    ),
+                                    fields=('_type',),
+                                    name='nested_or_constraint_create_model',
+                                ),
+                            ],
+                        },
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_nested_or_create_model', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support OR conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
+
+    def test_unsupportable_unique_constraint_negated(self):
+        """
+        A negated Q (~Q(...)) still reports connector == 'AND' at the root, so
+        a guard that only checked the connector let it through, producing a
+        filtered-index predicate SQL Server rejects with a raw syntax error
+        instead of this NotImplementedError.
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintNegated',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                    ),
+                    migrations.AddConstraint(
+                        model_name='testunsupportableuniqueconstraintnegated',
+                        constraint=models.UniqueConstraint(
+                            condition=~models.Q(status='archived'),
+                            fields=('_type',),
+                            name='negated_constraint',
+                        ),
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_negated', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support negated conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
+
+    def test_unsupportable_unique_constraint_negated_via_create_model(self):
+        """
+        Same negated predicate as test_unsupportable_unique_constraint_negated
+        above, but declared inline via CreateModel(options={'constraints': [...]}),
+        which reaches _create_deferred_unique_constraint_sql() directly instead of
+        add_constraint().
+        """
+        # Only execute tests when running against SQL Server
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestUnsupportableUniqueConstraintNegatedCreateModel',
+                        fields=[
+                            (
+                                'id',
+                                models.AutoField(
+                                    auto_created=True,
+                                    primary_key=True,
+                                    serialize=False,
+                                    verbose_name='ID',
+                                ),
+                            ),
+                            ('_type', models.CharField(max_length=50)),
+                            ('status', models.CharField(max_length=50)),
+                        ],
+                        options={
+                            'constraints': [
+                                models.UniqueConstraint(
+                                    condition=~models.Q(status='archived'),
+                                    fields=('_type',),
+                                    name='negated_constraint_create_model',
+                                ),
+                            ],
+                        },
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_unsupportable_unique_constraint_negated_create_model', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                with self.assertRaisesRegex(
+                    NotImplementedError, "does not support negated conditions"
+                ):
+                    return migration.apply(ProjectState(), editor)
+
+    def test_covering_conditional_unique_constraint_include_uses_db_column(self):
+        """
+        _create_deferred_unique_constraint_sql() converts constraint.include
+        (field names) to physical columns before calling _create_unique_sql(),
+        matching Django's own UniqueConstraint.create_sql()/Index.create_sql()
+        convention - _index_include_sql() only quotes whatever string it is
+        given as a literal column identifier, it never resolves a field name
+        itself. An included field with a custom db_column must therefore
+        resolve to that db_column as the physical INCLUDE column, not the
+        field's Python name.
+        """
+        connection = connections['default']
+        if isinstance(connection, DatabaseWrapper):
+
+            class TestMigration(migrations.Migration):
+                initial = True
+
+                operations = [
+                    migrations.CreateModel(
+                        name='TestCoveringConstraintDbColumn',
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            (
+                                'a',
+                                models.CharField(
+                                    max_length=20, null=True, db_column='stable_a'
+                                ),
+                            ),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                        options={
+                            'constraints': [
+                                models.UniqueConstraint(
+                                    fields=['b'],
+                                    include=['a'],
+                                    condition=models.Q(a__isnull=False),
+                                    name='uq_covering_db_column',
+                                ),
+                            ],
+                        },
+                    ),
+                ]
+
+            migration = TestMigration(
+                name='test_covering_constraint_db_column', app_label='testapp'
+            )
+
+            with connection.schema_editor(atomic=True) as editor:
+                project_state = migration.apply(ProjectState(), editor)
+
+            model = project_state.apps.get_model(
+                'testapp', 'TestCoveringConstraintDbColumn'
+            )
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT ic.is_included_column, c.name
+                    FROM sys.indexes AS i
+                    INNER JOIN sys.index_columns AS ic
+                        ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                    INNER JOIN sys.columns AS c
+                        ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                    WHERE i.object_id = OBJECT_ID(%s) AND i.name = %s
+                    """,
+                    [model._meta.db_table, 'uq_covering_db_column'],
+                )
+                included_by_column = dict(
+                    (name, bool(is_included)) for is_included, name in cursor.fetchall()
+                )
+
+            self.assertEqual(
+                included_by_column.get('stable_a'), True,
+                "The include field's db_column 'stable_a' must be the "
+                "INCLUDE column - not the field's Python name 'a', and not "
+                "missing.",
+            )
+            self.assertEqual(
+                included_by_column.get('b'), False,
+                "The constraint's key column 'b' should remain key-only.",
+            )
