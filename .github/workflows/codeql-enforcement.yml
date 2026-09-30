@@ -1,0 +1,85 @@
+name: CodeQL Enforcement
+
+permissions:
+  contents: read
+  security-events: read
+
+on:
+  pull_request:
+    branches: [ dev ]
+
+jobs:
+  enforce:
+    name: Enforce default-setup CodeQL findings
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait for CodeQL and enforce findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          analysis_found=false
+          for attempt in {1..30}; do
+            analyses="$(
+              gh api --method GET \
+                "repos/$GH_REPO/code-scanning/analyses" \
+                -f ref="refs/pull/$PR_NUMBER/head" \
+                -f tool_name=CodeQL \
+                -F per_page=100
+            )"
+
+            if jq -e --arg sha "$HEAD_SHA" '
+              any(.[];
+                .commit_sha == $sha
+                and .analysis_key == "dynamic/github-code-scanning/codeql:analyze"
+                and .category == "/language:python"
+              )
+            ' <<< "$analyses" > /dev/null; then
+              analysis_found=true
+              break
+            fi
+
+            sleep 10
+          done
+
+          if [[ "$analysis_found" != true ]]; then
+            echo "::error::GitHub CodeQL default setup did not publish a Python analysis for $HEAD_SHA."
+            exit 1
+          fi
+
+          alerts="$(
+            gh api --method GET \
+              "repos/$GH_REPO/code-scanning/alerts" \
+              -f state=open \
+              -F pr="$PR_NUMBER" \
+              -f tool_name=CodeQL \
+              -F per_page=100
+          )"
+
+          blocking_findings="$(
+            jq '[
+              .[] | select(
+                .rule.severity == "error"
+                or .rule.severity == "warning"
+                or .rule.security_severity_level == "critical"
+                or .rule.security_severity_level == "high"
+                or .rule.security_severity_level == "medium"
+              )
+            ] | length' <<< "$alerts"
+          )"
+
+          if (( blocking_findings > 0 )); then
+            echo "::error::CodeQL reported $blocking_findings blocking finding(s). Review the GitHub code-scanning alerts."
+            exit 1
+          fi
+
+          informational_findings="$(
+            jq '[.[] | select(.rule.severity == "note")] | length' <<< "$alerts"
+          )"
+          echo "CodeQL found no blocking findings ($informational_findings note(s))."
