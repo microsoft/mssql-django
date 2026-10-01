@@ -715,6 +715,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             params = ()
         return f"GENERATED ALWAYS AS ({expression_sql}) {persistency_sql}", params
 
+    def _field_needs_unique_null_index(self, field):
+        """A nullable unique field is enforced by a filtered unique INDEX
+        (sql_create_unique_null), not a UNIQUE CONSTRAINT and not a db_index."""
+        return (
+            self.connection.features.supports_nullable_unique_constraints and
+            not field.many_to_many and field.null and field.unique
+        )
+
 
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
@@ -1313,6 +1321,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # --------------------------------------------------------------------------------
             index_columns = []
             indexes_to_restore = []
+            unique_null_index_fields = []
 
             # Detect if this is an AutoField/BigAutoField type change
             is_autofield_change = (
@@ -1324,12 +1333,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # Collect db_index=True indexes
             # ------------------------------------------------------------------------------------
             if is_autofield_change:
-                # AutoField changes drop ALL indexes - restore ALL db_index=True fields
-                # that aren't unique (a unique field's index is provided by its unique
-                # constraint instead; see BaseDatabaseSchemaEditor._field_should_be_indexed)
+                # AutoField changes drop ALL indexes - restore ALL db_index=True fields.
+                # Nullable unique fields are enforced by a filtered unique index (not a
+                # db_index, not a CONSTRAINT); collect them separately and restore below.
                 for field in model._meta.fields:
                     if self._field_should_be_indexed(model, field):
                         index_columns.append([field])
+                    elif self._field_needs_unique_null_index(field):
+                        unique_null_index_fields.append(field)
             elif old_field.db_index and new_field.db_index:
                 index_columns.append([old_field])
 
@@ -1359,6 +1370,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                             not in [str(sql) for sql in self.deferred_sql] + [str(statement[0]) for statement in post_actions]
                             ):
                         self.execute(create_index_sql_statement)
+
+            # Restore nullable unique fields' filtered unique indexes (sql_create_unique_null),
+            # collected above alongside index_columns since they are also dropped by the
+            # blanket index drop on AutoField/BigAutoField changes but are neither a
+            # db_index nor a CONSTRAINT.
+            for field in unique_null_index_fields:
+                statement = self._create_index_sql(
+                    model, [field], sql=self.sql_create_unique_null, suffix="_uniq"
+                )
+                if (str(statement)
+                        not in [str(sql) for sql in self.deferred_sql] + [str(s[0]) for s in post_actions]
+                        ):
+                    self.execute(statement)
 
             # --------------------------------------------------------------------------------
             # Collect indexes defined in Meta.indexes
@@ -1508,13 +1532,29 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                             new_rel.related_model, [new_rel.field.column], name=unique_name
                         )
                     )
-            # Restore related_model indexes (skip unique fields - their index is
-            # provided by the unique constraint restored above instead)
+            # Restore related_model indexes. NOT NULL unique fields are restored via
+            # the PK/unique CONSTRAINT blocks above; nullable unique fields are
+            # enforced by a filtered unique index (not a CONSTRAINT, not db_index),
+            # recreated here instead. Guarded against deferred_sql/other_actions:
+            # create_model() defers a nullable-unique field's index CREATE rather
+            # than executing it immediately, so a combined migration (CreateModel
+            # for this related model + the PK widening, in the same schema_editor)
+            # can reach this loop before that deferred statement has been flushed;
+            # recreating it here unconditionally would collide with it at editor exit.
             for field in new_rel.related_model._meta.fields:
                 if self._field_should_be_indexed(new_rel.related_model, field):
                     self.execute(
                         self._create_index_sql(new_rel.related_model, [field])
                     )
+                elif self._field_needs_unique_null_index(field):
+                    statement = self._create_index_sql(
+                        new_rel.related_model, [field],
+                        sql=self.sql_create_unique_null, suffix="_uniq",
+                    )
+                    if (str(statement)
+                            not in [str(sql) for sql in self.deferred_sql] + [str(a[0]) for a in other_actions]
+                            ):
+                        self.execute(statement)
             # Restore unique_together clauses
             for field_names in new_rel.related_model._meta.unique_together:
                 columns = [new_rel.related_model._meta.get_field(field).column for field in field_names]
