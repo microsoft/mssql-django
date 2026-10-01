@@ -31,7 +31,7 @@ if VERSION >= (5, 2):
 if VERSION >= (3, 1):
     from django.db.models.fields.json import (
         KeyTransform, KeyTransformIn, KeyTransformExact,
-        HasKeyLookup)
+        HasKeyLookup, KeyTransformIsNull)
     # compile_json_path was moved from django.db.models.fields.json to
     # connection.ops.compile_json_path() in Django 6.0
     # We use connection.ops.compile_json_path() which we provide in operations.py
@@ -412,6 +412,41 @@ def json_KeyTransformIn(self, compiler, connection):
 
     return (lhs + ' IN ' + rhs, unquote_json_rhs(rhs_params))
 
+def json_KeyTransformIsNull(self, compiler, connection):
+    lhs, lhs_params, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
+
+    def _compile_json_path(key_transforms, include_root=True):
+        if VERSION >= (6, 0):
+            return connection.ops.compile_json_path(key_transforms, include_root)
+        else:
+            return compile_json_path(key_transforms, include_root)
+
+    if connection.sql_server_version >= 2022:
+        json_path = _compile_json_path(lhs_key_transforms)
+        json_path_escaped = json_path.replace("'", "''")
+        sql = f"JSON_PATH_EXISTS({lhs}, '{json_path_escaped}')"
+        if self.rhs:
+            sql = f"{sql} = 0"
+        else:
+            sql = f"{sql} > 0"
+        return sql, lhs_params
+    else:
+        final_key = lhs_key_transforms[-1]
+        if len(lhs_key_transforms) > 1:
+            parent_path = _compile_json_path(lhs_key_transforms[:-1])
+            parent_path_escaped = parent_path.replace("'", "''")
+            openjson = f"OPENJSON({lhs}, '{parent_path_escaped}')"
+        else:
+            openjson = f"OPENJSON({lhs})"
+            
+        sql = f"SELECT 1 FROM {openjson} WHERE [key] = %s"
+        if self.rhs:
+            sql = f"NOT EXISTS ({sql})"
+        else:
+            sql = f"EXISTS ({sql})"
+            
+        return sql, tuple(lhs_params) + (final_key,)
+
 def json_HasKeyLookup(self, compiler, connection):
     """
     Implementation of HasKey lookup for SQL Server.
@@ -739,6 +774,7 @@ if VERSION >= (3, 1):
     # Need copy of old KeyTransformExact.process_rhs to call later
     key_transform_exact_process_rhs = KeyTransformExact.process_rhs
     KeyTransformExact.process_rhs = json_KeyTransformExact_process_rhs
+    KeyTransformIsNull.as_microsoft = json_KeyTransformIsNull
     HasKeyLookup.as_microsoft = json_HasKeyLookup
 Cast.as_microsoft = sqlserver_cast
 Degrees.as_microsoft = sqlserver_degrees
