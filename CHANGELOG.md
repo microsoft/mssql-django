@@ -11,6 +11,11 @@ All notable user-facing changes to mssql-django are documented in this file.
   across `RenameField`-plus-`AlterField` migrations (split or combined),
   reused/multiple renames, optimizer-folded `CreateModel`, and
   `AutoField`/`BigAutoField` column-rename restoration ([#584]).
+- Dropped and restored a related model's `PRIMARY KEY` or `UNIQUE`
+  constraint, and recreated nullable unique fields' filtered unique
+  indexes, when cascading an `AutoField`-to-`BigAutoField` primary key
+  widening onto a `OneToOneField`/unique foreign key column, fixing a SQL
+  Server error 5074 that aborted the migration ([#581]).
 
 ## [2.0.0] - 2026-09-18
 
@@ -160,6 +165,7 @@ All notable user-facing changes to mssql-django are documented in this file.
 [#563]: https://github.com/microsoft/mssql-django/pull/563
 [#564]: https://github.com/microsoft/mssql-django/pull/564
 [#575]: https://github.com/microsoft/mssql-django/pull/575
+[#581]: https://github.com/microsoft/mssql-django/issues/581
 [#583]: https://github.com/microsoft/mssql-django/pull/583
 [#584]: https://github.com/microsoft/mssql-django/pull/584
 [#596]: https://github.com/microsoft/mssql-django/pull/596

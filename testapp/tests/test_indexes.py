@@ -5,6 +5,7 @@ import django.db
 from django import VERSION
 from django.apps import apps
 from django.db import models, migrations
+from django.db import IntegrityError, transaction
 from django.db.migrations.migration import Migration
 from django.db.migrations.state import ProjectState
 from django.db.models import UniqueConstraint
@@ -68,15 +69,24 @@ class TestIndexesRetained(TestCase):
         )
 
     def test_field_made_nullable(self):
-        # case (a) of https://github.com/microsoft/mssql-django/issues/14
+        """
+        Case (a) of issue #14: making a field nullable (removing NOT NULL)
+        must not cause its index to be dropped and left missing.
+        """
         self._assert_index_exists({'a'})
 
     def test_field_renamed(self):
-        # case (b) of https://github.com/microsoft/mssql-django/issues/14
+        """
+        Case (b) of issue #14: renaming a field must retain its index,
+        recreated against the new column name.
+        """
         self._assert_index_exists({'b_renamed'})
 
     def test_table_renamed(self):
-        # case (c) of https://github.com/microsoft/mssql-django/issues/14
+        """
+        Case (c) of issue #14: renaming the model's table must retain the
+        index on its unaffected column.
+        """
         self._assert_index_exists({'c'})
 
 def _get_all_models():
@@ -4255,6 +4265,475 @@ class TestMetaIndexesRetained(TransactionTestCase):
         self.assertNotIn('[parent_id]', filter_definition)
 
 
+class TestPkWideningMigrations(TransactionTestCase):
+    @staticmethod
+    def _unique_null_indexes(constraints, column):
+        """Count filtered unique indexes (sql_create_unique_null) on `column`."""
+        return sum(
+            1 for info in constraints.values()
+            if info['index'] and info['unique'] and not info['unique_constraint']
+            and info['columns'] == [column]
+        )
+
+    @staticmethod
+    def _plain_indexes(constraints, column):
+        """Count plain (non-unique) indexes on `column`."""
+        return sum(
+            1 for info in constraints.values()
+            if info['index'] and not info['unique'] and info['columns'] == [column]
+        )
+
+    def test_widening_recreates_onetoone_constraints(self):
+        """
+        Regression test for widening a primary key (e.g. AutoField -> BigAutoField)
+        on a model referenced by several OneToOne relations. Verifies that after the
+        widening migration: a OneToOneField child keeps its unique index and FK
+        (but not a redundant plain index), a child whose OneToOneField also declares an
+        explicit unique constraint keeps both unique constraints, a child whose
+        OneToOneField is also its primary key keeps its primary key and FK, and the
+        parent's own primary key is intact.
+        """
+        operations_a = [
+            migrations.CreateModel(
+                name='Parent',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('name', models.CharField(max_length=20)),
+                ],
+            ),
+            migrations.CreateModel(
+                name='ChildOneToOne',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('parent', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        to='testapp.parent',
+                    )),
+                    ('payload', models.CharField(default='x', max_length=20)),
+                ],
+            ),
+            migrations.CreateModel(
+                name='ChildOneToOneAndConstraint',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('parent', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        to='testapp.parent',
+                    )),
+                ],
+                options={
+                    'constraints': [
+                        models.UniqueConstraint(
+                            fields=('parent',), name='pk_widening_constrained_child_parent_uniq',
+                        ),
+                    ],
+                },
+            ),
+            migrations.CreateModel(
+                name='ChildOneToOnePk',
+                fields=[
+                    ('parent', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        primary_key=True,
+                        serialize=False,
+                        to='testapp.parent',
+                    )),
+                    ('payload', models.CharField(default='x', max_length=20)),
+                ],
+            ),
+        ]
+
+        operations_b = [
+            migrations.AlterField(
+                model_name='parent',
+                name='id',
+                field=models.BigAutoField(primary_key=True),
+            ),
+        ]
+
+        conn = django.db.connections[DEFAULT_DB_ALIAS]
+
+        initial_migration = Migration('pk_widening_initial', 'testapp')
+        initial_migration.operations = operations_a
+        widen_migration = Migration('pk_widening_widen', 'testapp')
+        widen_migration.operations = operations_b
+
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = initial_migration.apply(ProjectState(), editor)
+        with conn.schema_editor(atomic=True) as editor:
+            final_state = widen_migration.apply(project_state, editor)
+
+        parent = final_state.apps.get_model('testapp', 'Parent')
+        one_to_one_child = final_state.apps.get_model('testapp', 'ChildOneToOne')
+        one_to_one_pk_child = final_state.apps.get_model('testapp', 'ChildOneToOnePk')
+        constrained_child = final_state.apps.get_model('testapp', 'ChildOneToOneAndConstraint')
+        parent_constraints = get_constraints(table_name=parent._meta.db_table)
+        one_to_one_child_constraints = get_constraints(table_name=one_to_one_child._meta.db_table)
+        one_to_one_pk_child_constraints = get_constraints(table_name=one_to_one_pk_child._meta.db_table)
+        constrained_child_constraints = get_constraints(
+            table_name=constrained_child._meta.db_table
+        )
+
+        # ChildOneToOne.parent (plain OneToOneField): unique constraint on the
+        # widened FK column is retained after the parent PK is widened.
+        self.assertTrue(any(
+            info.get('unique') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_child_constraints.values()
+        ))
+        # ...and no redundant plain (non-unique) index was left behind
+        # alongside that unique constraint.
+        self.assertFalse(any(
+            info.get('index') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_child_constraints.values()
+        ))
+        # ChildOneToOneAndConstraint.parent declares both OneToOneField(unique=True)
+        # and an explicit UniqueConstraint on the same column: both unique
+        # constraints must survive the widening, not just one.
+        self.assertEqual(
+            sum(
+                info.get('unique') and set(info['columns']) == {'parent_id'}
+                for info in constrained_child_constraints.values()
+            ),
+            2,
+        )
+        # ChildOneToOne.parent still has its foreign key constraint on the
+        # widened column.
+        self.assertTrue(any(
+            info.get('foreign_key') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_child_constraints.values()
+        ))
+        # ChildOneToOnePk's OneToOneField is itself the primary key:
+        # that primary key is retained on that column.
+        self.assertTrue(any(
+            info.get('primary_key') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_pk_child_constraints.values()
+        ))
+        # ...and the foreign key on that one-to-one column is retained too.
+        self.assertTrue(any(
+            info.get('foreign_key') and set(info['columns']) == {'parent_id'}
+            for info in one_to_one_pk_child_constraints.values()
+        ))
+        # Parent's own primary key (the column actually being widened) is
+        # still in place after the migration.
+        self.assertTrue(any(
+            info.get('primary_key') and set(info['columns']) == {'id'}
+            for info in parent_constraints.values()
+        ))
+
+    def test_widening_restores_nullable_onetoone_unique_index_on_related_model(self):
+        """
+        Regression test: widening a parent's primary key (AutoField -> BigAutoField)
+        must not lose the filtered unique index SQL Server uses to enforce a nullable
+        unique field (OneToOneField(null=True), CharField(unique=True, null=True)) on
+        a *related* model. Before the fix, the blanket index drop performed while
+        altering the parent's IDENTITY column was never undone for these columns,
+        leaving the related column with neither an index nor uniqueness enforced.
+        """
+        operations_a = [
+            migrations.CreateModel(
+                name='NullPkParent',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('name', models.CharField(max_length=20, default='x')),
+                ],
+            ),
+            migrations.CreateModel(
+                name='NullPkChild',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('parent', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        to='testapp.nullpkparent',
+                        null=True,
+                    )),
+                    ('alias', models.CharField(max_length=20, unique=True, null=True)),
+                ],
+            ),
+        ]
+        operations_b = [
+            migrations.AlterField(
+                model_name='nullpkparent',
+                name='id',
+                field=models.BigAutoField(primary_key=True),
+            ),
+        ]
+
+        conn = django.db.connections[DEFAULT_DB_ALIAS]
+        initial_migration = Migration('nullpk_related_initial', 'testapp')
+        initial_migration.operations = operations_a
+        widen_migration = Migration('nullpk_related_widen', 'testapp')
+        widen_migration.operations = operations_b
+
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = initial_migration.apply(ProjectState(), editor)
+        with conn.schema_editor(atomic=True) as editor:
+            final_state = widen_migration.apply(project_state, editor)
+
+        child = final_state.apps.get_model('testapp', 'NullPkChild')
+        child_constraints = get_constraints(table_name=child._meta.db_table)
+
+        self.assertEqual(self._unique_null_indexes(child_constraints, 'parent_id'), 1)
+        self.assertEqual(self._unique_null_indexes(child_constraints, 'alias'), 1)
+        self.assertEqual(self._plain_indexes(child_constraints, 'parent_id'), 0)
+        self.assertTrue(any(
+            info['foreign_key'] and info['columns'] == ['parent_id']
+            for info in child_constraints.values()
+        ))
+
+        parent = final_state.apps.get_model('testapp', 'NullPkParent')
+        p = parent.objects.create(name='p1')
+        child.objects.create(parent=None, alias=None)
+        child.objects.create(parent=None, alias=None)
+        child.objects.create(parent=p, alias='a')
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            child.objects.create(parent=p, alias='b')
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            child.objects.create(parent=None, alias='a')
+
+    def test_widening_restores_nullable_unique_indexes_on_altered_model(self):
+        """
+        Regression test: widening a model's own primary key (AutoField -> BigAutoField)
+        drops every index on that same table (SQL Server requires it to change the
+        IDENTITY column); the restore logic must bring back the filtered unique index
+        for its own nullable unique fields, not just its db_index fields.
+        """
+        operations_a = [
+            migrations.CreateModel(
+                name='NullPkRef',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                ],
+            ),
+            migrations.CreateModel(
+                name='NullPkOwn',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('ref', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        to='testapp.nullpkref',
+                        null=True,
+                    )),
+                    ('code', models.CharField(max_length=20, unique=True, null=True)),
+                ],
+            ),
+        ]
+        operations_b = [
+            migrations.AlterField(
+                model_name='nullpkown',
+                name='id',
+                field=models.BigAutoField(primary_key=True),
+            ),
+        ]
+
+        conn = django.db.connections[DEFAULT_DB_ALIAS]
+        initial_migration = Migration('nullpk_own_initial', 'testapp')
+        initial_migration.operations = operations_a
+        widen_migration = Migration('nullpk_own_widen', 'testapp')
+        widen_migration.operations = operations_b
+
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = initial_migration.apply(ProjectState(), editor)
+        with conn.schema_editor(atomic=True) as editor:
+            final_state = widen_migration.apply(project_state, editor)
+
+        own = final_state.apps.get_model('testapp', 'NullPkOwn')
+        own_constraints = get_constraints(table_name=own._meta.db_table)
+
+        self.assertEqual(self._unique_null_indexes(own_constraints, 'ref_id'), 1)
+        self.assertEqual(self._unique_null_indexes(own_constraints, 'code'), 1)
+        self.assertEqual(self._plain_indexes(own_constraints, 'ref_id'), 0)
+        self.assertTrue(any(
+            info['foreign_key'] and info['columns'] == ['ref_id']
+            for info in own_constraints.values()
+        ))
+
+        own.objects.create(ref=None, code=None)
+        own.objects.create(ref=None, code=None)
+        own.objects.create(ref=None, code='c1')
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            own.objects.create(ref=None, code='c1')
+
+    def test_widening_restores_nullable_selfreferencing_onetoone(self):
+        """
+        Regression test exercising both restore sites (own-model and related-model)
+        on the same table at once: a self-referencing nullable OneToOneField whose
+        model's own primary key is widened.
+        """
+        operations_a = [
+            migrations.CreateModel(
+                name='NullPkSelf',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('self_ref', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        to='testapp.nullpkself',
+                        null=True,
+                    )),
+                ],
+            ),
+        ]
+        operations_b = [
+            migrations.AlterField(
+                model_name='nullpkself',
+                name='id',
+                field=models.BigAutoField(primary_key=True),
+            ),
+        ]
+
+        conn = django.db.connections[DEFAULT_DB_ALIAS]
+        initial_migration = Migration('nullpk_self_initial', 'testapp')
+        initial_migration.operations = operations_a
+        widen_migration = Migration('nullpk_self_widen', 'testapp')
+        widen_migration.operations = operations_b
+
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = initial_migration.apply(ProjectState(), editor)
+        with conn.schema_editor(atomic=True) as editor:
+            final_state = widen_migration.apply(project_state, editor)
+
+        model = final_state.apps.get_model('testapp', 'NullPkSelf')
+        constraints = get_constraints(table_name=model._meta.db_table)
+
+        self.assertEqual(self._unique_null_indexes(constraints, 'self_ref_id'), 1)
+        self.assertEqual(self._plain_indexes(constraints, 'self_ref_id'), 0)
+        self.assertTrue(any(
+            info['foreign_key'] and info['columns'] == ['self_ref_id']
+            for info in constraints.values()
+        ))
+        self.assertTrue(any(
+            info['primary_key'] and info['columns'] == ['id']
+            for info in constraints.values()
+        ))
+
+    def test_widening_restores_nullable_unique_indexes_on_altered_model_combined_migration(self):
+        """
+        Same scenario as test_widening_restores_nullable_unique_indexes_on_altered_model,
+        but CreateModel and the widening AlterField run in a SINGLE migration (one
+        schema_editor context) instead of two. create_model() defers a nullable-unique
+        field's filtered-index CREATE into self.deferred_sql rather than executing it
+        immediately; this puts the statement still pending in self.deferred_sql when
+        _alter_field's is_autofield_change restore path runs in the SAME editor, which
+        must not re-execute (and thus collide with) it.
+        """
+        operations = [
+            migrations.CreateModel(
+                name='NullPkRefCombined',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                ],
+            ),
+            migrations.CreateModel(
+                name='NullPkOwnCombined',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('ref', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        to='testapp.nullpkrefcombined',
+                        null=True,
+                    )),
+                    ('code', models.CharField(max_length=20, unique=True, null=True)),
+                ],
+            ),
+            migrations.AlterField(
+                model_name='nullpkowncombined',
+                name='id',
+                field=models.BigAutoField(primary_key=True),
+            ),
+        ]
+
+        conn = django.db.connections[DEFAULT_DB_ALIAS]
+        combined_migration = Migration('nullpk_own_combined', 'testapp')
+        combined_migration.operations = operations
+
+        with conn.schema_editor(atomic=True) as editor:
+            final_state = combined_migration.apply(ProjectState(), editor)
+
+        own = final_state.apps.get_model('testapp', 'NullPkOwnCombined')
+        own_constraints = get_constraints(table_name=own._meta.db_table)
+
+        self.assertEqual(self._unique_null_indexes(own_constraints, 'ref_id'), 1)
+        self.assertEqual(self._unique_null_indexes(own_constraints, 'code'), 1)
+        self.assertEqual(self._plain_indexes(own_constraints, 'ref_id'), 0)
+        self.assertTrue(any(
+            info['foreign_key'] and info['columns'] == ['ref_id']
+            for info in own_constraints.values()
+        ))
+
+        own.objects.create(ref=None, code=None)
+        own.objects.create(ref=None, code=None)
+        own.objects.create(ref=None, code='c1')
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            own.objects.create(ref=None, code='c1')
+
+    def test_widening_restores_nullable_onetoone_unique_index_on_related_model_combined_migration(self):
+        """
+        Same scenario as test_widening_restores_nullable_onetoone_unique_index_on_related_model,
+        but Parent, Child and the widening AlterField run in a SINGLE migration (one
+        schema_editor context) instead of two. Child's CreateModel defers its own
+        OneToOneField's filtered unique index into self.deferred_sql; Parent's PK
+        widening then walks rels_to_update -> Child and restores Child's indexes via
+        the related-model restore loop in the SAME editor, before that deferred
+        statement has been flushed. Without a dedup guard matching the one in the
+        is_autofield_change path, this duplicates the statement and SQL Server raises
+        "index ... already exists" when the editor flushes deferred_sql on exit.
+        """
+        operations = [
+            migrations.CreateModel(
+                name='NullPkParentCombined',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('name', models.CharField(max_length=20, default='x')),
+                ],
+            ),
+            migrations.CreateModel(
+                name='NullPkChildCombined',
+                fields=[
+                    ('id', models.AutoField(primary_key=True)),
+                    ('parent', models.OneToOneField(
+                        on_delete=models.CASCADE,
+                        to='testapp.nullpkparentcombined',
+                        null=True,
+                    )),
+                    ('alias', models.CharField(max_length=20, unique=True, null=True)),
+                ],
+            ),
+            migrations.AlterField(
+                model_name='nullpkparentcombined',
+                name='id',
+                field=models.BigAutoField(primary_key=True),
+            ),
+        ]
+
+        conn = django.db.connections[DEFAULT_DB_ALIAS]
+        combined_migration = Migration('nullpk_related_combined', 'testapp')
+        combined_migration.operations = operations
+
+        with conn.schema_editor(atomic=True) as editor:
+            final_state = combined_migration.apply(ProjectState(), editor)
+
+        child = final_state.apps.get_model('testapp', 'NullPkChildCombined')
+        child_constraints = get_constraints(table_name=child._meta.db_table)
+
+        self.assertEqual(self._unique_null_indexes(child_constraints, 'parent_id'), 1)
+        self.assertEqual(self._unique_null_indexes(child_constraints, 'alias'), 1)
+        self.assertEqual(self._plain_indexes(child_constraints, 'parent_id'), 0)
+        # set(), not list equality: a pre-existing, unrelated gap in the
+        # drop/rebuild-FK logic creates a second (redundant) FK constraint on
+        # this column when CreateModel and the widening AlterField share a
+        # migration, which duplicates 'parent_id' within a single constraint's
+        # column list via the introspection join. Harmless here: we only
+        # assert a FK exists on this column, not that there is exactly one.
+        self.assertTrue(any(
+            info['foreign_key'] and set(info['columns']) == {'parent_id'}
+            for info in child_constraints.values()
+        ))
+
+        parent = final_state.apps.get_model('testapp', 'NullPkParentCombined')
+        p = parent.objects.create(name='p1')
+        child.objects.create(parent=None, alias=None)
+        child.objects.create(parent=p, alias='a')
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            child.objects.create(parent=p, alias='b')
 
 
 
@@ -4300,6 +4779,12 @@ class TestKeepIndexWithDbcomment(TestCase):
 
     @skipIf(VERSION < (4, 2), "db_comment not available before 4.2")
     def test_drop_foreignkey(self):
+        """
+        Test that dropping a ForeignKey's db_constraint keeps or drops the
+        supporting index on the FK column based on the field's db_comment:
+        by default the index is dropped (old behavior); when db_comment
+        contains 'fk_on_delete_keep_index', the index is preserved instead.
+        """
         app_label = "test_drop_foreignkey"
         operations = [
                 migrations.CreateModel(
