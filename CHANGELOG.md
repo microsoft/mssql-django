@@ -11,6 +11,8 @@ All notable user-facing changes to mssql-django are documented in this file.
   across `RenameField`-plus-`AlterField` migrations (split or combined),
   reused/multiple renames, optimizer-folded `CreateModel`, and
   `AutoField`/`BigAutoField` column-rename restoration ([#584]).
+- Enabled MARS by default for Microsoft ODBC drivers on non-Windows
+  platforms when no explicit `MARS_Connection` setting is provided ([#616]).
 
 ## [2.0.0] - 2026-09-18
 
@@ -169,3 +171,4 @@ All notable user-facing changes to mssql-django are documented in this file.
 [#605]: https://github.com/microsoft/mssql-django/pull/605
 [#609]: https://github.com/microsoft/mssql-django/pull/609
 [#613]: https://github.com/microsoft/mssql-django/pull/613
+[#616]: https://github.com/microsoft/mssql-django/pull/616

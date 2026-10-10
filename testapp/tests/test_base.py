@@ -337,7 +337,7 @@ class TestDatabaseWrapperBuildConnectionString(SimpleTestCase):
                     params = {"NAME": "testdb", "OPTIONS": {}}
                     with mock.patch("mssql.base.os.name", platform):
                         result = self.wrapper._build_connection_string(params, driver)
-                    expected = platform == "nt" and driver != "FreeTDS"
+                    expected = driver != "FreeTDS"
                     self.assertEqual("MARS_Connection=yes" in result, expected)
 
     def test_explicit_mars_connection_is_not_overridden(self):
