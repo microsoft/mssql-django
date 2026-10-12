@@ -19,7 +19,7 @@ from django.db.models.sql import compiler
 from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
 if django.VERSION >= (3, 1):
-    from django.db.models.fields.json import KeyTransform as json_KeyTransform
+    from django.db.models.fields.json import KeyTransform as json_KeyTransform, KeyTransformIsNull
     # compile_json_path was moved to connection.ops in Django 6.0
     if django.VERSION < (6, 0):
         from django.db.models.fields.json import compile_json_path
@@ -77,6 +77,72 @@ def _as_sql_json_keytransform(self, compiler, connection):
         "COALESCE(JSON_QUERY(%s, '%s'), JSON_VALUE(%s, '%s'))" %
         ((lhs, json_path) * 2)
     ), tuple(params) * 2
+
+
+def _json_lhs_reaches_column(expr):
+    """
+    OPENJSON requires a column or variable, not an arbitrary expression
+    such as a Value() literal.
+    """
+    if isinstance(expr, Col):
+        return True
+    inner = getattr(expr, 'lhs', None)
+    if inner is not None:
+        return _json_lhs_reaches_column(inner)
+    return False
+
+
+def _as_sql_keytransform_isnull(self, compiler, connection):
+    lhs, params, key_transforms = self.lhs.preprocess_lhs(compiler, connection)
+
+    if hasattr(connection.ops, "compile_json_path"):
+        json_path = connection.ops.compile_json_path(key_transforms)
+    else:
+        json_path = compile_json_path(key_transforms)
+    json_path = json_path.replace("'", "''")
+
+    lhs_is_literal = not _json_lhs_reaches_column(self.lhs)
+    if connection.features.supports_json_path_exists:
+        # SQL Server 2022+, compat >= 160. JSON_PATH_EXISTS accepts
+        # literals, so no Cast guard is needed here.
+        exists_op = "= 0" if self.rhs else "= 1"
+        return (
+            "JSON_PATH_EXISTS(%s, '%s') %s" % (lhs, json_path, exists_op),
+            tuple(params),
+        )
+
+    if connection.features.supports_json_openjson and not lhs_is_literal:
+        # Any version, compat >= 130. Enumerate the parent object's keys
+        *parent_transforms, final_key = key_transforms
+        if hasattr(connection.ops, "compile_json_path"):
+            parent_path = connection.ops.compile_json_path(parent_transforms)
+        else:
+            parent_path = compile_json_path(parent_transforms)
+        parent_path = parent_path.replace("'", "''")
+        final_key_escaped = final_key.replace("'", "''")
+
+        # DATALENGTH guard: SQL Server pads strings in comparisons, so
+        # [key] = 'k' would also match 'k ' without this check.
+        exists_sql = (
+            "EXISTS (SELECT 1 FROM OPENJSON(%s, '%s') "
+            "WHERE [key] = N'%s' AND DATALENGTH([key]) = DATALENGTH(N'%s'))"
+             ) % (lhs, parent_path, final_key_escaped, final_key_escaped)
+
+        exists_op = "= 0" if self.rhs else "= 1"
+        return (
+            "(CASE WHEN %s THEN 1 ELSE 0 END) %s" % (exists_sql, exists_op),
+            tuple(params),
+        )
+
+    # Fallback for compat < 130, or for literal-JSON LHS on compat >= 130.
+    # Cannot distinguish an absent key from a JSON null value; documented
+    # limitation, mirrors HasKey's own pre-2022 fallback.
+    is_null_op = "IS NULL" if self.rhs else "IS NOT NULL"
+    return (
+        "COALESCE(JSON_QUERY(%s, '%s'), JSON_VALUE(%s, '%s')) %s" %
+        ((lhs, json_path) * 2 + (is_null_op,)),
+        tuple(params) * 2,
+    )
 
 def _as_sql_least(self, compiler, connection):
     # SQL Server does not provide LEAST function,
@@ -756,7 +822,9 @@ class SQLCompiler(compiler.SQLCompiler):
         elif django.VERSION >= (6, 0) and isinstance(node, StringAgg):
             as_microsoft = _as_sql_stringagg
         if django.VERSION >= (3, 1):
-            if isinstance(node, json_KeyTransform):
+            if isinstance(node, KeyTransformIsNull):
+                as_microsoft = _as_sql_keytransform_isnull
+            elif isinstance(node, json_KeyTransform):
                 as_microsoft = _as_sql_json_keytransform
         if django.VERSION >= (4, 1):
             if isinstance(node, Window):
