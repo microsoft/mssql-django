@@ -6,7 +6,7 @@ from functools import partial
 from itertools import chain
 
 import django
-from django.db.models.aggregates import Avg, Count, StdDev, Variance
+from django.db.models.aggregates import Aggregate, Avg, Count, StdDev, Variance
 from django.db.models import AutoField
 if django.VERSION >= (6, 0):
     from django.db.models.aggregates import StringAgg
@@ -20,6 +20,7 @@ from django.db.transaction import TransactionManagementError
 from django.db.utils import NotSupportedError
 if django.VERSION >= (3, 1):
     from django.db.models.fields.json import KeyTransform as json_KeyTransform
+    from django.db.models.fields.json import KeyTransformExact, KeyTransformIExact
     # compile_json_path was moved to connection.ops in Django 6.0
     if django.VERSION < (6, 0):
         from django.db.models.fields.json import compile_json_path
@@ -266,7 +267,108 @@ def _cursor_iter(cursor, sentinel, col_count, itersize):
 compiler.cursor_iter = _cursor_iter
 
 
+class _JSONNullDocumentLookup(KeyTransformExact):
+    """Keep the JSON document, not its lossy scalar transform, across a subquery."""
+
+    def __init__(self, lookup):
+        lhs = lookup.lhs
+        self.key_transforms = []
+        while isinstance(lhs, json_KeyTransform):
+            self.key_transforms.insert(0, lhs.key_name)
+            lhs = lhs.lhs
+        super().__init__(lhs, None)
+
+    def as_microsoft(self, compiler, connection):
+        lhs = self.lhs
+        for key in self.key_transforms:
+            lhs = json_KeyTransform(key, lhs)
+        return compiler.compile(KeyTransformExact(lhs, None))
+
+
 class SQLCompiler(compiler.SQLCompiler):
+
+    def get_qualify_sql(self):
+        # Django projects lookup operands into the inner query. Projecting a
+        # KeyTransform loses the distinction between missing and JSON null.
+        # Carry its document across the boundary and evaluate the lookup in
+        # the outer WHERE instead, after any window expression is evaluated.
+        previous_qualify = self.qualify
+        previous_applies = self._json_null_applies
+        replacements = {
+            lookup: _JSONNullDocumentLookup(lookup)
+            for lookup in self.qualify.leaves()
+            if (
+                isinstance(lookup, KeyTransformExact)
+                or django.VERSION >= (6, 1) and isinstance(lookup, KeyTransformIExact)
+            )
+            and lookup.rhs is None
+            and isinstance(lookup.lhs, json_KeyTransform)
+            and self.connection.features.supports_json_openjson
+        }
+        self.qualify = self.qualify.replace_expressions(replacements)
+        self._json_null_applies = None
+        try:
+            return super().get_qualify_sql()
+        finally:
+            self.qualify = previous_qualify
+            self._json_null_applies = previous_applies
+
+    def _compile_json_null_predicate(self, sql, params, contains_aggregate=False):
+        if getattr(self, '_json_null_check_constraint', False):
+            raise NotSupportedError(
+                'JSON-null key lookups are not supported in SQL Server CHECK constraints.'
+            )
+        # SQL Server rejects scalar subqueries inside aggregates and GROUP BY.
+        # Evaluate row-level nullable indicators in FROM instead.
+        applies = getattr(self, '_json_null_applies', None)
+        if applies is None or contains_aggregate:
+            # UPDATE/DELETE and callers compiling expressions on their own do
+            # not have a SELECT FROM clause to attach an APPLY to.
+            # Aggregate-dependent predicates must also stay in their SELECT or
+            # HAVING scope; lifting them into APPLY makes the aggregate refer
+            # to columns from the left side (SQL Server error 4101).
+            return '(%s) = 1' % sql, params
+        params = tuple(params)
+        grouping_aliases = getattr(self, '_json_null_grouping_aliases', None)
+        for alias, existing_sql, existing_params in applies:
+            if sql == existing_sql and params == existing_params:
+                if grouping_aliases is not None and getattr(self, '_json_null_requires_grouping', False):
+                    grouping_aliases.add(alias)
+                return '%s.[value] = 1' % self.connection.ops.quote_name(alias), ()
+        used_aliases = {
+            alias.lower() for alias in (
+                *self.query.alias_map, *getattr(self.query, 'external_aliases', {}),
+                *(item[0] for item in applies), 'subquery',
+            )
+        }
+        index = len(applies)
+        alias = '__mssql_json_null_%d' % index
+        while alias.lower() in used_aliases:
+            index += 1
+            alias = '__mssql_json_null_%d' % index
+        applies.append((alias, sql, params))
+        if grouping_aliases is not None and getattr(self, '_json_null_requires_grouping', False):
+            grouping_aliases.add(alias)
+        return '%s.[value] = 1' % self.connection.ops.quote_name(alias), ()
+
+    def _get_json_null_apply_clauses(self):
+        clauses, params = [], []
+        for alias, sql, sql_params in self._json_null_applies:
+            clauses.append('OUTER APPLY (%s) AS %s' % (
+                sql, self.connection.ops.quote_name(alias),
+            ))
+            params.extend(sql_params)
+        return clauses, params
+
+    def get_from_clause(self):
+        # JOIN ON predicates cannot reference an APPLY alias declared after
+        # the join. Keep their JSON-null subqueries local to the ON clause.
+        previous_applies = getattr(self, '_json_null_applies', None)
+        self._json_null_applies = None
+        try:
+            return super().get_from_clause()
+        finally:
+            self._json_null_applies = previous_applies
 
     def _resolve_order_by_source_expression(self, expression, dereference_ref=True):
         if expression is None:
@@ -324,6 +426,10 @@ class SQLCompiler(compiler.SQLCompiler):
         in the query.
         """
         refcounts_before = self.query.alias_refcount.copy()
+        previous_applies = getattr(self, '_json_null_applies', None)
+        previous_grouping_aliases = getattr(self, '_json_null_grouping_aliases', None)
+        self._json_null_grouping_aliases = set()
+        self._json_null_applies = []
         try:
             extra_select, order_by, group_by = self.pre_sql_setup()
             for_update_part = None
@@ -481,6 +587,13 @@ class SQLCompiler(compiler.SQLCompiler):
                 if for_update_part and self.connection.features.for_update_after_from:
                     from_.insert(1, for_update_part)
 
+                applies, apply_params = self._get_json_null_apply_clauses()
+                if applies and not from_:
+                    # Q.check() and validation compile SELECTs without a model.
+                    # APPLY needs a left input even when its JSON is a literal.
+                    from_.append('(SELECT 1 AS [value]) AS [__mssql_json_source]')
+                from_.extend(applies)
+                f_params.extend(apply_params)
                 result += [', '.join(out_cols)]
                 if from_:
                     result += ['FROM', *from_]
@@ -494,6 +607,8 @@ class SQLCompiler(compiler.SQLCompiler):
                 for g_sql, g_params in group_by:
                     grouping.append(g_sql)
                     params.extend(g_params)
+                for alias in sorted(self._json_null_grouping_aliases):
+                    grouping.append('%s.[value]' % self.connection.ops.quote_name(alias))
                 if grouping:
                     if distinct_fields:
                         raise NotImplementedError('annotate() + distinct(fields) is not implemented.')
@@ -668,10 +783,31 @@ class SQLCompiler(compiler.SQLCompiler):
         finally:
             # Finally do cleanup - get rid of the joins we created above.
             self.query.reset_refcounts(refcounts_before)
+            self._json_null_applies = previous_applies
+            self._json_null_grouping_aliases = previous_grouping_aliases
 
     def compile(self, node, *args, **kwargs):
-        node = self._as_microsoft(node)
-        return super().compile(node, *args, **kwargs)
+        previous_grouping = getattr(self, '_json_null_requires_grouping', False)
+        # Row-level predicates alongside aggregates (including mixed HAVING)
+        # need their APPLY result grouped. Predicates inside an aggregate's
+        # arguments/filter must remain per-row and must not split its groups.
+        if isinstance(node, Aggregate):
+            self._json_null_requires_grouping = False
+        elif getattr(node, 'contains_aggregate', False):
+            self._json_null_requires_grouping = True
+        elif previous_grouping and hasattr(node, 'get_group_by_cols'):
+            group_by_cols = node.get_group_by_cols()
+            if len(group_by_cols) == 1 and group_by_cols[0] is node:
+                # Django groups this entire nonaggregate expression, e.g. the
+                # CASE in Count(...) + Case(...). Grouping its raw APPLY value
+                # as well would split equivalent CASE results (0 and NULL
+                # indicators can both map to the same default result).
+                self._json_null_requires_grouping = False
+        try:
+            node = self._as_microsoft(node)
+            return super().compile(node, *args, **kwargs)
+        finally:
+            self._json_null_requires_grouping = previous_grouping
 
     def collapse_group_by(self, expressions, having):
         expressions = super().collapse_group_by(expressions, having)
@@ -998,4 +1134,58 @@ class SQLUpdateCompiler(compiler.SQLUpdateCompiler, SQLCompiler):
 
 
 class SQLAggregateCompiler(compiler.SQLAggregateCompiler, SQLCompiler):
-    pass
+    def _restore_json_null_documents(self, expression):
+        # Older Django aggregation rewrites project a whole KeyTransform
+        # instead of its document. Preserve other uses of that projection and
+        # add a separate document column for the null lookup.
+        if (
+            isinstance(expression, KeyTransformExact)
+            and expression.rhs is None
+            and isinstance(expression.lhs, Ref)
+            and isinstance(expression.lhs.source, json_KeyTransform)
+            and self.connection.features.supports_json_openjson
+        ):
+            inner = self.query.inner_query
+            source = inner.annotations[expression.lhs.refs]
+            lookup = _JSONNullDocumentLookup(KeyTransformExact(source, None))
+            index = 0
+            alias = '__mssql_json_document_%d' % index
+            while alias in inner.annotations:
+                index += 1
+                alias = '__mssql_json_document_%d' % index
+            document = lookup.lhs
+            inner.add_annotation(document, alias)
+            lookup.lhs = Ref(alias, document)
+            return lookup
+        # Ref sources belong to the inner query, not the outer expression.
+        if isinstance(expression, Ref):
+            return expression
+        sources = expression.get_source_expressions()
+        if not sources:
+            return expression
+        clone = expression.copy() if hasattr(expression, 'copy') else expression.clone()
+        clone.set_source_expressions([
+            self._restore_json_null_documents(source) if source is not None else None
+            for source in sources
+        ])
+        return clone
+
+    def as_sql(self):
+        previous_applies = getattr(self, '_json_null_applies', None)
+        previous_query = self.query
+        self._json_null_applies = []
+        try:
+            self.query = self.query.clone()
+            self.query.inner_query = self.query.inner_query.clone()
+            self.query.annotations = {
+                alias: self._restore_json_null_documents(expression)
+                for alias, expression in self.query.annotations.items()
+            }
+            sql, params = super().as_sql()
+            applies, apply_params = self._get_json_null_apply_clauses()
+            if applies:
+                sql += ' ' + ' '.join(applies)
+            return sql, tuple(params) + tuple(apply_params)
+        finally:
+            self._json_null_applies = previous_applies
+            self.query = previous_query

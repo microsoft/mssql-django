@@ -210,6 +210,9 @@ EXCLUDED_TESTS = [
     # JSONFields
     'model_fields.test_jsonfield.TestQuerying.test_key_quoted_string',
     'model_fields.test_jsonfield.TestQuerying.test_isnull_key',
+    # JSON-null key lookups still use the known-broken fallback below database
+    # compatibility level 130. Keep these excluded until that path is fixed;
+    # supports_json_openjson-gated owned tests cover the OPENJSON implementation.
     'model_fields.test_jsonfield.TestQuerying.test_none_key',
     'model_fields.test_jsonfield.TestQuerying.test_none_key_and_exact_lookup',
     'model_fields.test_jsonfield.TestQuerying.test_key_escape',
@@ -362,8 +365,8 @@ if VERSION >= (6, 1):
         # TODO: strip the redundant boolean comparison in the compiler.
         'lookup.tests.LookupTests.test_exact_booleanfield_annotation',
 
-        # JSON key __iexact=None semantics (no native JSON null handling on SQL Server);
-        # sibling to the existing JSONField exclusions.
+        # Django 6.1 delegates iexact=None to the same JSON-null exact lookup,
+        # whose fallback below compatibility level 130 remains unimplemented.
         'model_fields.test_jsonfield.TestQuerying.test_key_iexact_none',
 
         # bulk_batch_size is capped for SQL Server's 2100-parameter limit, so the
