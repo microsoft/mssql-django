@@ -10,7 +10,6 @@ from collections import defaultdict
 
 from django.db.backends.base.schema import (
     BaseDatabaseSchemaEditor,
-    _is_relevant_relation,
     _related_non_m2m_objects,
     logger,
 )
@@ -398,12 +397,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             WHERE ep.major_id = OBJECT_ID('%(table)s')
             AND ep.name = 'MS_Description'
             AND ep.minor_id = 0)
-                        EXECUTE sp_addextendedproperty 
-                        @name = 'MS_Description', @value = %(comment)s, 
+                        EXECUTE sp_addextendedproperty
+                        @name = 'MS_Description', @value = %(comment)s,
                         @level0type = 'SCHEMA', @level0name = 'dbo',
                         @level1type = 'TABLE', @level1name = %(table)s
             ELSE
-                        EXECUTE sp_updateextendedproperty 
+                        EXECUTE sp_updateextendedproperty
                         @name = 'MS_Description', @value = %(comment)s,
                         @level0type = 'SCHEMA', @level0name = 'dbo',
                         @level1type = 'TABLE', @level1name = %(table)s
@@ -412,16 +411,16 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         IF NOT EXISTS (SELECT NULL FROM sys.extended_properties ep
             WHERE ep.major_id = OBJECT_ID('%(table)s')
             AND ep.name = 'MS_Description'
-            AND ep.minor_id = (SELECT column_id FROM sys.columns 
+            AND ep.minor_id = (SELECT column_id FROM sys.columns
                             WHERE name = '%(column)s'
                             AND object_id = OBJECT_ID('%(table)s')))
-                EXECUTE sp_addextendedproperty 
-                @name = 'MS_Description', @value = %(comment)s, 
+                EXECUTE sp_addextendedproperty
+                @name = 'MS_Description', @value = %(comment)s,
                 @level0type = 'SCHEMA', @level0name = 'dbo',
                 @level1type = 'TABLE', @level1name = %(table)s,
                 @level2type = 'COLUMN', @level2name = %(column)s
             ELSE
-                EXECUTE sp_updateextendedproperty 
+                EXECUTE sp_updateextendedproperty
                 @name = 'MS_Description', @value = %(comment)s,
                 @level0type = 'SCHEMA', @level0name = 'dbo',
                 @level1type = 'TABLE', @level1name = %(table)s,
@@ -470,7 +469,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 'default': default,
             },
             params,
-        )    
+        )
 
     def _alter_column_database_default_sql(
         self, model, old_field, new_field, drop=False
@@ -715,6 +714,40 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             params = ()
         return f"GENERATED ALWAYS AS ({expression_sql}) {persistency_sql}", params
 
+    def _field_needs_unique_null_index(self, field):
+        """A nullable unique field is enforced by a filtered unique INDEX
+        (sql_create_unique_null), not a UNIQUE CONSTRAINT."""
+        return (
+            self.connection.features.supports_nullable_unique_constraints and
+            not field.many_to_many and field.null and field.unique
+        )
+
+    def _column_create_already_queued(self, table, column, post_actions):
+        """Whether a CREATE for `column`'s filtered unique index is already queued
+        in self.deferred_sql or post_actions/other_actions.
+
+        Deliberately avoids str()-comparing against not-yet-executed Statements:
+        a Statement's IndexName part memoizes its generated name on first
+        __str__ and never recomputes it. If some other str() call (e.g. this
+        same check, run earlier for a different field) froze that name before
+        a later RenameField updated the Statement's column reference in place,
+        string comparison would see a stale name and wrongly conclude the
+        pending statement is unrelated - creating a duplicate index here that
+        collides with the stale one once self.deferred_sql is flushed.
+        references_column() reads the live (possibly renamed) column list
+        directly and never touches the memoized name.
+        """
+        def references(sql):
+            return (
+                isinstance(sql, DjStatement)
+                and sql.template == self.sql_create_unique_null
+                and sql.references_column(table, column)
+            )
+
+        return (
+            any(references(sql) for sql in self.deferred_sql)
+            or any(references(action[0]) for action in post_actions)
+        )
 
     def _alter_field(self, model, old_field, new_field, old_type, new_type,
                      old_db_params, new_db_params, strict=False):
@@ -777,11 +810,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         # Drop any FK constraints, we'll remake them later
         fks_dropped = set()
         if (
-            old_field.remote_field 
-            and old_field.db_constraint 
-            and (django_version < (4,2) 
-                or 
-                (django_version >= (4, 2) 
+            old_field.remote_field
+            and old_field.db_constraint
+            and (django_version < (4,2)
+                or
+                (django_version >= (4, 2)
                 and self._field_should_be_altered(
                     old_field,
                     new_field,
@@ -794,7 +827,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 not hasattr(new_field, "db_constraint")
                 or not new_field.db_constraint
             ):
-                if(django_version < (4, 2) 
+                if(django_version < (4, 2)
                    or (
                        not isinstance(new_field, ForeignKey)
                        or type(new_field.db_comment) == type(None)
@@ -826,6 +859,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 (old_field.unique and new_field.unique)
             ) and old_type != new_type
         )
+        related_fk_statements = []
         if drop_foreign_keys:
             # '_meta.related_field' also contains M2M reverse fields, these
             # will be filtered out
@@ -834,6 +868,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     new_rel.related_model, [new_rel.field.column], foreign_key=True
                 )
                 for fk_name in rel_fk_names:
+                    if new_rel.field.db_constraint:
+                        statement = self._create_fk_sql(new_rel.related_model, new_rel.field, "_fk")
+                        statement.parts['name'] = self.quote_name(fk_name)
+                        related_fk_statements.append(statement)
                     self.execute(self._delete_constraint_sql(self.sql_delete_fk, new_rel.related_model, fk_name))
 
         # If working with an AutoField or BigAutoField drop all indexes on the related table
@@ -1169,8 +1207,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             self._delete_primary_key(model, strict)
         # Added a unique?
         if self._unique_should_be_added(old_field, new_field):
-            if (self.connection.features.supports_nullable_unique_constraints and
-                    not new_field.many_to_many and new_field.null):
+            if self._field_needs_unique_null_index(new_field):
 
                 self.execute(
                     self._create_index_sql(
@@ -1313,6 +1350,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # --------------------------------------------------------------------------------
             index_columns = []
             indexes_to_restore = []
+            unique_null_index_fields = []
 
             # Detect if this is an AutoField/BigAutoField type change
             is_autofield_change = (
@@ -1324,10 +1362,14 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             # Collect db_index=True indexes
             # ------------------------------------------------------------------------------------
             if is_autofield_change:
-                # AutoField changes drop ALL indexes - restore ALL db_index=True fields
+                # AutoField changes drop ALL indexes - restore ALL db_index=True fields.
+                # Nullable unique fields are enforced by a filtered unique index (not a
+                # db_index, not a CONSTRAINT); collect them separately and restore below.
                 for field in model._meta.fields:
-                    if field.db_index:
+                    if self._field_should_be_indexed(model, field):
                         index_columns.append([field])
+                    elif self._field_needs_unique_null_index(field):
+                        unique_null_index_fields.append(field)
             elif old_field.db_index and new_field.db_index:
                 index_columns.append([old_field])
 
@@ -1357,6 +1399,19 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                             not in [str(sql) for sql in self.deferred_sql] + [str(statement[0]) for statement in post_actions]
                             ):
                         self.execute(create_index_sql_statement)
+
+            # Restore nullable unique fields' filtered unique indexes (sql_create_unique_null),
+            # collected above alongside index_columns since they are also dropped by the
+            # blanket index drop on AutoField/BigAutoField changes but are neither a
+            # db_index nor a CONSTRAINT.
+            for field in unique_null_index_fields:
+                statement = self._create_index_sql(
+                    model, [field], sql=self.sql_create_unique_null, suffix="_uniq"
+                )
+                if not self._column_create_already_queued(
+                    model._meta.db_table, field.column, post_actions
+                ):
+                    self.execute(statement)
 
             # --------------------------------------------------------------------------------
             # Collect indexes defined in Meta.indexes
@@ -1434,6 +1489,8 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         for old_rel, new_rel in rels_to_update:
             rel_db_params = new_rel.field.db_parameters(connection=self.connection)
             rel_type = rel_db_params['type']
+            related_table = old_rel.related_model._meta.db_table
+            related_column = old_rel.field.column
             if django_version >= (4, 2):
                 fragment, other_actions = self._alter_column_type_sql(
                     new_rel.related_model, old_rel.field, new_rel.field, rel_type, old_collation=None, new_collation=None
@@ -1442,11 +1499,73 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 fragment, other_actions = self._alter_column_type_sql(
                     new_rel.related_model, old_rel.field, new_rel.field, rel_type
                 )
+            # Drop a PRIMARY KEY or UNIQUE CONSTRAINT tied to the related column first
+            # SQL Server refuses to alter a column that such a constraint still
+            # references, and neither constraint kind is picked up by the index=True
+            # lookup below (see mssql/introspection.get_constraints) - both are
+            # CONSTRAINT-backed, not INDEX-backed, so their `index` flag is False.
+            with self.connection.cursor() as cursor:
+                related_constraints = self.connection.introspection.get_constraints(
+                    cursor, related_table
+                )
+            related_column_identifier = self.connection.introspection.identifier_converter(
+                related_column
+            )
+            # The catalog FK join can repeat key columns; deduplicate without
+            # losing the ordinal order of a composite key.
+            related_pk_constraints = {
+                name: list(dict.fromkeys(info['columns']))
+                for name, info in related_constraints.items()
+                if info['primary_key'] and related_column_identifier in info['columns']
+            }
+            related_unique_constraints = {
+                name: list(dict.fromkeys(info['columns']))
+                for name, info in related_constraints.items()
+                if info['unique_constraint'] and related_column_identifier in info['columns']
+            }
+            if len(related_pk_constraints) > 1:
+                raise ValueError(
+                    "Found multiple primary key constraints on column %r of table %r; "
+                    "expected at most one." % (related_column, related_table)
+                )
+
+            # Resolve every restoration statement before dropping constraints.
+            related_pk_statements = [
+                self.sql_create_pk % {
+                    "table": self.quote_name(related_table),
+                    "name": self.quote_name(name),
+                    "columns": ', '.join(self.quote_name(column) for column in columns),
+                }
+                for name, columns in related_pk_constraints.items()
+            ]
+            related_unique_statements = []
+            related_fields_by_column = {
+                field.column: field for field in new_rel.related_model._meta.fields
+            }
+            for name, columns in related_unique_constraints.items():
+                fields = []
+                for column in columns:
+                    try:
+                        fields.append(related_fields_by_column[column])
+                    except KeyError as exc:
+                        raise FieldDoesNotExist(
+                            "Related unique constraint '%s' references unresolved column '%s'."
+                            % (name, column)
+                        ) from exc
+                related_unique_statements.append(
+                    self._create_unique_sql(new_rel.related_model, fields, name=name)
+                )
+            for name in related_pk_constraints:
+                self.execute(self._db_table_delete_constraint_sql(
+                    self.sql_delete_pk, related_table, name))
+            for name in related_unique_constraints:
+                self.execute(self._db_table_delete_constraint_sql(
+                    self.sql_delete_unique, related_table, name))
             # Drop related_model indexes, so it can be altered
-            index_names = self._db_table_constraint_names(old_rel.related_model._meta.db_table, index=True)
+            index_names = self._db_table_constraint_names(related_table, index=True)
             for index_name in index_names:
                 self.execute(self._db_table_delete_constraint_sql(
-                    self.sql_delete_index, old_rel.related_model._meta.db_table, index_name))
+                    self.sql_delete_index, related_table, index_name))
             self.execute(
                 self.sql_alter_column % {
                     "table": self.quote_name(new_rel.related_model._meta.db_table),
@@ -1456,12 +1575,27 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             )
             for sql, params in other_actions:
                 self.execute(sql, params)
-            # Restore related_model indexes
+            # Restore original names and complete ordered keys before field indexes.
+            for statement in related_pk_statements:
+                self.execute(statement)
+            for statement in related_unique_statements:
+                self.execute(statement)
+            # Restore related_model indexes: NOT NULL unique fields via the PK/UNIQUE
+            # constraint blocks above; nullable-unique fields via a filtered index below.
             for field in new_rel.related_model._meta.fields:
-                if field.db_index:
+                if self._field_should_be_indexed(new_rel.related_model, field):
                     self.execute(
                         self._create_index_sql(new_rel.related_model, [field])
                     )
+                elif self._field_needs_unique_null_index(field):
+                    statement = self._create_index_sql(
+                        new_rel.related_model, [field],
+                        sql=self.sql_create_unique_null, suffix="_uniq",
+                    )
+                    if not self._column_create_already_queued(
+                        new_rel.related_model._meta.db_table, field.column, other_actions
+                    ):
+                        self.execute(statement)
             # Restore unique_together clauses
             for field_names in new_rel.related_model._meta.unique_together:
                 columns = [new_rel.related_model._meta.get_field(field).column for field in field_names]
@@ -1482,11 +1616,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 (fks_dropped or not old_field.remote_field or not old_field.db_constraint) and
                 new_field.db_constraint):
             self.execute(self._create_fk_sql(model, new_field, "_fk_%(to_table)s_%(to_column)s"))
-        # Rebuild FKs that pointed to us if we previously had to drop them
-        if drop_foreign_keys:
-            for rel in new_field.model._meta.related_objects:
-                if _is_relevant_relation(rel, new_field) and rel.field.db_constraint:
-                    self.execute(self._create_fk_sql(rel.related_model, rel.field, "_fk"))
+        # Restore only catalog-found FKs dropped above, retaining their names.
+        # Not-yet-created FKs remain in deferred_sql until the editor exits.
+        for statement in related_fk_statements:
+            self.execute(statement)
         # Does it have check constraints we need to add?
         if (old_db_params['check'] != new_db_params['check'] and new_db_params['check']) or (
             # SQL Server requires explicit creation after altering column type with the same constraint
@@ -1938,8 +2071,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if 'DEFAULT' in definition and field.null:
             definition = definition.replace('NULL', 'WITH VALUES')
 
-        if (self.connection.features.supports_nullable_unique_constraints and
-                not field.many_to_many and field.null and field.unique):
+        if self._field_needs_unique_null_index(field):
 
             definition = definition.replace(' UNIQUE', '')
             statement = self._create_index_sql(
@@ -2201,8 +2333,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if (django_version >= (5,0) and field.generated):
                 definition = definition[definition.find('AS'):]
 
-            if (self.connection.features.supports_nullable_unique_constraints and
-                    not field.many_to_many and field.null and field.unique):
+            if self._field_needs_unique_null_index(field):
 
                 definition = definition.replace(' UNIQUE', '')
                 statement = self._create_index_sql(
