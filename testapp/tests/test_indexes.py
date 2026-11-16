@@ -4887,6 +4887,94 @@ class TestPkWideningMigrations(TransactionTestCase):
         with self.assertRaises(IntegrityError), transaction.atomic():
             child.objects.create(parent=None, alias='a')
 
+    def test_widening_restores_nullable_onetoone_unique_index_after_foreignkey_conversion(self):
+        """Queued FK/plain-index creation must not suppress unique-index restoration."""
+        initial_migration = Migration('queued_fk_initial', 'testapp')
+        initial_migration.operations = [
+            migrations.CreateModel(
+                name='QueuedFkParent',
+                fields=[('id', models.AutoField(primary_key=True))],
+            ),
+            migrations.CreateModel(
+                name='QueuedFkChild',
+                fields=[('id', models.AutoField(primary_key=True))],
+            ),
+        ]
+        conn = django.db.connections[DEFAULT_DB_ALIAS]
+        with conn.schema_editor(atomic=True) as editor:
+            project_state = initial_migration.apply(ProjectState(), editor)
+
+        initial_child = project_state.apps.get_model('testapp', 'QueuedFkChild')
+        initial_parent = project_state.apps.get_model('testapp', 'QueuedFkParent')
+
+        def cleanup():
+            with conn.schema_editor(atomic=True) as editor:
+                editor.delete_model(initial_child)
+                editor.delete_model(initial_parent)
+
+        self.addCleanup(cleanup)
+
+        def seed_relationship(apps, schema_editor):
+            parent = apps.get_model('testapp', 'QueuedFkParent')
+            child = apps.get_model('testapp', 'QueuedFkChild')
+            alias = schema_editor.connection.alias
+            seeded_parent = parent.objects.using(alias).create()
+            child.objects.using(alias).create(parent_id=seeded_parent.pk)
+
+        convert_and_widen = Migration('queued_fk_convert_and_widen', 'testapp')
+        convert_and_widen.operations = [
+            migrations.AddField(
+                model_name='queuedfkchild',
+                name='parent',
+                field=models.ForeignKey(
+                    to='testapp.queuedfkparent', on_delete=models.CASCADE, null=True,
+                ),
+            ),
+            migrations.RunPython(seed_relationship),
+            migrations.AlterField(
+                model_name='queuedfkchild',
+                name='parent',
+                field=models.OneToOneField(
+                    to='testapp.queuedfkparent', on_delete=models.CASCADE, null=True,
+                ),
+            ),
+            migrations.AlterField(
+                model_name='queuedfkparent',
+                name='id',
+                field=models.BigAutoField(primary_key=True),
+            ),
+        ]
+        with conn.schema_editor(atomic=True) as editor:
+            final_state = convert_and_widen.apply(project_state, editor)
+
+        parent = final_state.apps.get_model('testapp', 'QueuedFkParent')
+        child = final_state.apps.get_model('testapp', 'QueuedFkChild')
+        parent_id = parent.objects.get().pk
+        seeded_child = child.objects.get()
+        self.assertEqual(seeded_child.parent_id, parent_id)
+        constraints = get_constraints(child._meta.db_table)
+        self.assertEqual(self._unique_null_indexes(constraints, 'parent_id'), 1)
+        self.assertTrue(any(
+            info['columns'] == ['parent_id']
+            and info['foreign_key'] == (parent._meta.db_table, 'id')
+            for info in constraints.values()
+        ))
+
+        child.objects.create(parent_id=None)
+        child.objects.create(parent_id=None)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            child.objects.create(parent_id=parent_id)
+        self.assertEqual(child.objects.get(pk=seeded_child.pk).parent_id, parent_id)
+
+        for model, column in ((parent, 'id'), (child, 'parent_id')):
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    'SELECT TYPE_NAME(system_type_id) FROM sys.columns '
+                    'WHERE object_id = OBJECT_ID(%s) AND name = %s',
+                    [model._meta.db_table, column],
+                )
+                self.assertEqual(cursor.fetchone(), ('bigint',))
+
     def test_widening_restores_nullable_unique_indexes_on_altered_model(self):
         """
         Regression test: widening a model's own primary key (AutoField -> BigAutoField)
