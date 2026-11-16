@@ -738,7 +738,11 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         directly and never touches the memoized name.
         """
         def references(sql):
-            return isinstance(sql, DjStatement) and sql.references_column(table, column)
+            return (
+                isinstance(sql, DjStatement)
+                and sql.template == self.sql_create_unique_null
+                and sql.references_column(table, column)
+            )
 
         return (
             any(references(sql) for sql in self.deferred_sql)
