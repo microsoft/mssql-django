@@ -2959,15 +2959,13 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 )
                 self.assertIn('[a]', self._get_index_catalog(result.model, index_name)[0][2])
 
-    @expectedFailure
     def test_unique_together_retained_when_field_also_has_unique_true(self):
         """
         Test that unique_together constraints are retained when a field with unique=True is altered.
 
-        KNOWN BUG: When a field has BOTH unique=True AND participates in unique_together,
-        only the single-field unique constraint is restored after field alteration.
-        The unique_together constraint is NOT restored because the unique_together restoration is in an
-        'else' block that only executes when the field does NOT have unique=True.
+        The field is unique on its own AND participates in unique_together, so both the
+        single-field unique constraint and the multi-field one must come back after the
+        alteration.
 
         Runs with both split and combined migrations
         """
@@ -3020,7 +3018,6 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 )
 
                 # Check that unique_together constraint on ('a', 'b') was restored
-                # THIS ASSERTION WILL FAIL due to the bug in mssql/schema.py lines 838-871
                 unique_together_constraints = [
                     info for info in result.constraints.values()
                     if info.get('unique') and set(info['columns']) == {'a', 'b'}
@@ -3028,9 +3025,196 @@ class TestMetaIndexesRetained(TransactionTestCase):
                 self.assertTrue(
                     len(unique_together_constraints) > 0,
                     f"unique_together constraint on ('a', 'b') was not restored when field 'a' has unique=True "
-                    f"({self._get_context_description(use_single_migration)}). "
-                    f"This is a bug in mssql/schema.py: unique_together restoration is in an 'else' block "
-                    f"that only executes when the field does NOT have unique=True."
+                    f"({self._get_context_description(use_single_migration)})."
+                )
+
+    def test_unique_together_restored_without_duplicating_queued_create_model(self):
+        """
+        Same scenario as
+        test_unique_together_retained_when_field_also_has_unique_true, but with
+        unique_together declared inline on CreateModel instead of through a
+        separate AlterUniqueTogether.
+
+        The inline form queues the CREATE UNIQUE INDEX in the schema editor's
+        deferred_sql, so the restoration in _alter_field must skip the statement
+        it would otherwise duplicate - running it anyway makes the editor exit
+        fail with SQL Server error 1913 on the second CREATE.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestUniqueAndUniqTogetherInline{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20, unique=True)),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                        options={
+                            'unique_together': {('a', 'b')},
+                        },
+                    ),
+                ]
+
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='a',
+                        field=models.CharField(max_length=40, unique=True),
+                    ),
+                ]
+
+                # Not raising is the point: a duplicated CREATE would surface as
+                # SQL Server error 1913 while the editor runs its deferred SQL.
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_uniq_uniqtog_inline',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                single_unique_constraints = [
+                    info for info in result.constraints.values()
+                    if info.get('unique') and set(info['columns']) == {'a'}
+                ]
+                self.assertTrue(
+                    len(single_unique_constraints) > 0,
+                    f"Single-field unique constraint on 'a' was not restored "
+                    f"({self._get_context_description(use_single_migration)})."
+                )
+
+                unique_together_constraints = [
+                    info for info in result.constraints.values()
+                    if info.get('unique') and set(info['columns']) == {'a', 'b'}
+                ]
+                self.assertTrue(
+                    len(unique_together_constraints) > 0,
+                    f"unique_together constraint on ('a', 'b') was not restored when field 'a' has unique=True "
+                    f"({self._get_context_description(use_single_migration)})."
+                )
+
+    def test_singleton_unique_together_does_not_collide_with_single_field_unique(self):
+        """
+        A non-nullable field that is unique=True and appears in a singleton
+        unique_together gets its single-field unique constraint and the
+        unique_together index from the same (table, columns, suffix) inputs, so
+        both would be generated under the same name. The restoration must not
+        emit the second one, or the split-migration editor exit fails with
+        SQL Server error 1913.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                model_name = f'TestUniqueSingletonUniqTogether{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=model_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20, unique=True)),
+                            ('b', models.CharField(max_length=20)),
+                        ],
+                        options={
+                            'unique_together': {('a',)},
+                        },
+                    ),
+                ]
+
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=model_name.lower(),
+                        name='a',
+                        field=models.CharField(max_length=40, unique=True),
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_uniq_singleton_uniqtog',
+                    model_name=model_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                unique_on_a = [
+                    info for info in result.constraints.values()
+                    if info.get('unique') and set(info['columns']) == {'a'}
+                ]
+                self.assertTrue(
+                    len(unique_on_a) > 0,
+                    f"Unique constraint on 'a' was not restored "
+                    f"({self._get_context_description(use_single_migration)})."
+                )
+
+    def test_singleton_unique_together_keeps_fk_referencable_constraint(self):
+        """
+        Combined migration that creates a model whose unique field is also in a
+        singleton unique_together, widens that field, then adds a child model with
+        a ForeignKey pointing at it.
+
+        SQL Server cannot use a filtered unique index as a foreign key target, so the
+        referenced column has to end up with the unfiltered unique constraint - which
+        is exactly the object the queued singleton index would collide with.
+        """
+        for use_single_migration in [False, True]:
+            with self.subTest(single_migration=use_single_migration):
+                suffix = '_combined' if use_single_migration else '_split'
+                parent_name = f'TestSingletonFkParent{suffix}'
+                child_name = f'TestSingletonFkChild{suffix}'
+
+                operations_a = [
+                    migrations.CreateModel(
+                        name=parent_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('a', models.CharField(max_length=20, unique=True)),
+                        ],
+                        options={
+                            'unique_together': {('a',)},
+                        },
+                    ),
+                ]
+
+                operations_b = [
+                    migrations.AlterField(
+                        model_name=parent_name.lower(),
+                        name='a',
+                        field=models.CharField(max_length=40, unique=True),
+                    ),
+                    migrations.CreateModel(
+                        name=child_name,
+                        fields=[
+                            ('id', models.AutoField(primary_key=True)),
+                            ('parent', models.ForeignKey(
+                                to=parent_name,
+                                to_field='a',
+                                on_delete=models.CASCADE,
+                            )),
+                        ],
+                    ),
+                ]
+
+                result = self._run_migration_test(
+                    operations_a=operations_a,
+                    operations_b=operations_b,
+                    migration_name_prefix='test_uniq_singleton_fk',
+                    model_name=parent_name,
+                    use_single_migration=use_single_migration,
+                )
+
+                unique_on_a = [
+                    info for info in result.constraints.values()
+                    if info.get('unique') and set(info['columns']) == {'a'}
+                ]
+                self.assertTrue(
+                    len(unique_on_a) > 0,
+                    f"Unique constraint on 'a' was not restored "
+                    f"({self._get_context_description(use_single_migration)})."
                 )
 
     def test_plain_meta_index_retained_after_combined_rename_and_alter(self):
@@ -4287,9 +4471,79 @@ class TestAddAndAlterUniqueIndex(TestCase):
 
         try:
             with connection.schema_editor(atomic=True) as editor:
-                migration.apply(new_state, editor)
+                final_state = migration.apply(new_state, editor)
         except django.db.utils.ProgrammingError as e:
             self.fail('Check if can alter field from unique, nullable to unique non-nullable for issue #23, AlterField failed with exception: %s' % e)
+
+        # The column must still be unique afterwards. The nullable field queued a
+        # filtered unique index when it was created; that queued statement must not
+        # stand in for the constraint this migration installs, or uniqueness is
+        # silently lost once the queued index is dropped.
+        model = final_state.apps.get_model('testapp', 'TestAlterNullableInUniqueField')
+        unique_on_a = [
+            info for info in get_constraints(table_name=model._meta.db_table).values()
+            if info.get('unique') and set(info['columns']) == {'a'}
+        ]
+        self.assertTrue(
+            len(unique_on_a) > 0,
+            "Unique constraint on 'a' was not restored when altering "
+            "unique=True, null=True to unique=True, null=False."
+        )
+
+class TestEvictDeferredUniqueForName(TestCase):
+    """Unit tests for DatabaseSchemaEditor._evict_deferred_unique_for_name."""
+
+    class _FakeField:
+        def __init__(self, column):
+            self.column = column
+            self.name = column
+
+        def __str__(self):
+            return self.column
+
+    class _FakeModel:
+        def __init__(self, db_table):
+            self._meta = type('Meta', (), {'db_table': db_table})()
+
+    def _statement(self, table, column, name=None):
+        with connection.schema_editor(collect_sql=True) as editor:
+            return editor._create_unique_sql(
+                self._FakeModel(table), [self._FakeField(column)], name=name
+            )
+
+    def test_evicts_only_the_statement_on_the_same_table(self):
+        altered = self._statement('testapp_altered', 'a')
+        # Same name, different table: an explicit name makes this reachable, and
+        # SQL Server index names are table-scoped so both are legitimate.
+        other = self._statement('testapp_other', 'c', name=str(altered.parts['name']))
+
+        with connection.schema_editor(collect_sql=True) as editor:
+            editor.deferred_sql.extend([other, altered])
+            editor._evict_deferred_unique_for_name(altered)
+
+            remaining = [str(stmt.parts['name']) for stmt in editor.deferred_sql]
+            self.assertEqual(
+                remaining, [str(other.parts['name'])],
+                "Eviction removed the unrelated table's pending statement, which would "
+                "leave that table without unique enforcement."
+            )
+            self.assertEqual(
+                str(editor.deferred_sql[0].parts['table']), '[testapp_other]',
+                "The surviving statement is not the one queued for the other table."
+            )
+
+    def test_evicts_a_matching_statement_on_the_same_table(self):
+        statement = self._statement('testapp_altered', 'a')
+
+        with connection.schema_editor(collect_sql=True) as editor:
+            editor.deferred_sql.append(statement)
+            editor._evict_deferred_unique_for_name(statement)
+
+            self.assertEqual(
+                editor.deferred_sql, [],
+                "A pending statement on the same table with the same name was not evicted."
+            )
+
 
 class TestKeepIndexWithDbcomment(TestCase):
     def _find_key_with_type_idx(self, input_dict):
