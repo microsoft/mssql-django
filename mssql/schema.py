@@ -703,6 +703,36 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             if stmt in self.deferred_sql:
                 self.deferred_sql.remove(stmt)
 
+    def _evict_deferred_unique_for_name(self, statement):
+        """Drop pending unique statements that would take an already-created name.
+
+        In a combined CreateModel + AlterField the unique_together CREATE UNIQUE
+        INDEX is queued before the table exists, so the drop pass cannot see it.
+        Once the restoration has created an unfiltered constraint under that name,
+        the queued statement must not run at editor exit.
+
+        Both table and name have to match: SQL Server index names are table-scoped,
+        so a statement queued for another table can legitimately carry the same
+        name (an explicit Meta.constraints name, or a generated one), and removing
+        it would leave that table without its unique enforcement.
+        """
+        target_table = str(statement.parts['table'])
+        target_name = str(statement.parts['name'])
+
+        def _is_target(pending):
+            if not hasattr(pending, 'parts'):
+                return False
+            if 'name' not in pending.parts or 'table' not in pending.parts:
+                return False
+            return str(pending.parts['table']) == target_table and str(pending.parts['name']) == target_name
+
+        # Filter rather than remove(): Statement.__eq__ compares only template and
+        # name, so list.remove() would drop whichever equal statement comes first,
+        # regardless of which table it belongs to.
+        self.deferred_sql[:] = [
+            pending for pending in self.deferred_sql if not _is_target(pending)
+        ]
+
     def _add_deferred_unique_index_for_field(self, field, statement):
         self._deferred_unique_indexes[str(field)].append(statement)
 
@@ -736,15 +766,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         #
         #
         # KNOWN BUGS/LIMITATIONS:
-
-        #   1. unique_together + unique=True: When a field has BOTH unique=True AND
-        #      participates in unique_together, only the single-field unique constraint
-        #      is restored after field alteration. The unique_together constraint is NOT
-        #      restored because the restoration code is in an 'else' block that only
-        #      executes when the field does NOT have unique=True.
-        #      Test (marked @expectedFailure):
-        #        - test_unique_together_retained_when_field_also_has_unique_true
-
+        #
+        #   (none currently tracked for this method)
+        #
         # ============================================================================
         # 1. Constraint and special case handling
         # ============================================================================
@@ -1210,6 +1234,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if (old_type != new_type or (old_field.null != new_field.null)) and (
             old_field.column == new_field.column  # column rename is handled separately above
         ):
+            pending_statements = [str(sql) for sql in self.deferred_sql] + [str(s[0]) for s in post_actions]
             # --------------------------------------------------------------------------------
             # restore single-field unique constraints
             # --------------------------------------------------------------------------------
@@ -1225,34 +1250,61 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                         )
                     )
                 else:
-                    if django_version >= (4, 0):
-                        self.execute(self._create_unique_sql(model, [old_field]))
-                    else:
-                        self.execute(self._create_unique_sql(model, columns=[old_field.column]))
+                    single_statement = self._create_unique_sql(model, [old_field]) if django_version >= (4, 0) \
+                        else self._create_unique_sql(model, columns=[old_field.column])
+                    self.execute(single_statement)
+                    # A combined CreateModel + AlterField in the same schema-editor
+                    # context queues the unique_together CREATE UNIQUE INDEX before
+                    # the table exists, so _delete_indexes() cannot see it and
+                    # leaves it in deferred_sql. Evict any pending statement that
+                    # would take the name this restoration just created, otherwise
+                    # the editor exit runs it and fails with SQL Server error 1913.
+                    self._evict_deferred_unique_for_name(single_statement)
                 self._delete_deferred_unique_indexes_for_field(old_field)
+            # --------------------------------------------------------------------------------
+            # Restore unique_together constraints
+            # --------------------------------------------------------------------------------
+            # Multi-field unique constraints that reference the altered column are restored
+            # whether or not the column is itself unique. A field with unique=True that also
+            # participates in unique_together needs both constraints back, so this can no
+            # longer live in an else block.
+            # Test: test_unique_together_retained_when_field_also_has_unique_true
+            # https://github.com/microsoft/mssql-django/issues/494
+            #
+            # Deduplication: skip the statement when it is already queued in deferred_sql
+            # (a CreateModel in the same schema-editor context may have queued it) or in
+            # post_actions, otherwise the editor exit runs it a second time and SQL Server
+            # rejects the duplicate index with error 1913.
+            #
+            # A singleton unique_together on a unique field generates the same object name
+            # as that field's own single-field unique constraint, so it is skipped here:
+            # the single-field restoration above already created that name.
+            # --------------------------------------------------------------------------------
+            single_unique_name = None
+            if old_field.unique and new_field.unique and not new_field.primary_key:
+                # The single-field restoration above has already created a unique object
+                # on this column; a singleton unique_together generates the same name
+                # (same table, columns and suffix) and would collide with it.
+                single_unique_name = str(self._create_unique_sql(model, [old_field]).parts['name'])
+            if django_version >= (4, 0):
+                for field_names in model._meta.unique_together:
+                    columns = [model._meta.get_field(field).column for field in field_names]
+                    fields = [model._meta.get_field(field) for field in field_names]
+                    if old_field.column in columns:
+                        condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                        statement = self._create_unique_sql(model, fields, condition=condition)
+                        if statement and str(statement) not in pending_statements and str(
+                                statement.parts['name']) != single_unique_name:
+                            self.execute(statement)
             else:
-                # --------------------------------------------------------------------------------
-                # Restore unique_together constraints
-                # --------------------------------------------------------------------------------
-                # If the field is NOT unique itself but IS part of unique_together,
-                # restore those multi-field unique constraints as filtered indexes.
-                # The filter ensures ANSI NULL behavior (multiple NULLs allowed).
-                # Test: test_unique_together_retained_when_field_also_has_unique_true
-                # https://github.com/microsoft/mssql-django/issues/494
-                # --------------------------------------------------------------------------------
-                if django_version >= (4, 0):
-                    for field_names in model._meta.unique_together:
-                        columns = [model._meta.get_field(field).column for field in field_names]
-                        fields = [model._meta.get_field(field) for field in field_names]
-                        if old_field.column in columns:
-                            condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
-                            self.execute(self._create_unique_sql(model, fields, condition=condition))
-                else:
-                    for fields in model._meta.unique_together:
-                        columns = [model._meta.get_field(field).column for field in fields]
-                        if old_field.column in columns:
-                            condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
-                            self.execute(self._create_unique_sql(model, columns, condition=condition))
+                for fields in model._meta.unique_together:
+                    columns = [model._meta.get_field(field).column for field in fields]
+                    if old_field.column in columns:
+                        condition = ' AND '.join(["[%s] IS NOT NULL" % col for col in columns])
+                        statement = self._create_unique_sql(model, columns, condition=condition)
+                        if statement and str(statement) not in pending_statements and str(
+                                statement.parts['name']) != single_unique_name:
+                            self.execute(statement)
 
             # --------------------------------------------------------------------------------
             # Primary keys
@@ -2267,9 +2319,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 model._meta.db_table, columns, self.quote_name
             )
             if django_version >= (4, 0):
-                self.deferred_sql.append(self._create_unique_sql(model, fields, condition=condition))
+                statement = self._create_unique_sql(model, fields, condition=condition)
             else:
-                self.deferred_sql.append(self._create_unique_sql(model, columns, condition=condition))
+                statement = self._create_unique_sql(model, columns, condition=condition)
+            self.deferred_sql.append(statement)
 
         constraints = []
         for constraint in model._meta.constraints:
