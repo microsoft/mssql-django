@@ -4,6 +4,12 @@ All notable user-facing changes to mssql-django are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added support for Django's `JSONObject()` database function on SQL Server 2022
+  and newer and Azure SQL, compiled to `JSON_OBJECT()`; older versions raise
+  `NotSupportedError` as before ([#408]).
+
 ### Fixed
 
 - Preserved structured `Meta.indexes` and conditional/covering
@@ -169,3 +175,4 @@ All notable user-facing changes to mssql-django are documented in this file.
 [#605]: https://github.com/microsoft/mssql-django/pull/605
 [#609]: https://github.com/microsoft/mssql-django/pull/609
 [#613]: https://github.com/microsoft/mssql-django/pull/613
+[#408]: https://github.com/microsoft/mssql-django/issues/408
