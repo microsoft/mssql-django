@@ -42,6 +42,7 @@ if VERSION >= (3, 1):
         compile_json_path = None
 
 if VERSION >= (3, 2):
+    from django.db.models.functions import JSONObject
     from django.db.models.functions.math import Random
 
 DJANGO3 = VERSION[0] >= 3
@@ -399,6 +400,36 @@ def sqlserver_json_array(self, compiler, connection, **extra_context):
 # Register for Django 5.2+ so that JSONArray uses this implementation on SQL Server
 if VERSION >= (5, 2):
     JSONArray.as_microsoft = sqlserver_json_array
+
+
+class _JSONObjectArgJoiner:
+    """Join JSONObject's flat (key, value, key, value, ...) arguments as key: value pairs."""
+
+    def join(self, args):
+        pairs = zip(args[::2], args[1::2])
+        return ', '.join('%s: %s' % (key, value) for key, value in pairs)
+
+
+def sqlserver_json_object(self, compiler, connection, **extra_context):
+    """
+    SQL Server implementation of JSONObject.
+
+    SQL Server 2022 added JSON_OBJECT(), which takes key: value pairs rather than the
+    SQL standard KEY ... VALUE syntax Django emits by default. Its default
+    NULL ON NULL behaviour keeps keys whose value is NULL, matching Django.
+    JSONObject.as_sql() still checks has_json_object_function, so older versions
+    raise NotSupportedError.
+    """
+    return self.as_sql(
+        compiler,
+        connection,
+        arg_joiner=_JSONObjectArgJoiner(),
+        **extra_context,
+    )
+
+
+if VERSION >= (3, 2):
+    JSONObject.as_microsoft = sqlserver_json_object
 
 def json_KeyTransformExact_process_rhs(self, compiler, connection):
     rhs, rhs_params = key_transform_exact_process_rhs(self, compiler, connection)
